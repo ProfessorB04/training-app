@@ -75,7 +75,16 @@ function renderAuth() {
           <button type="submit">Anmelden</button>
           <p class="error" id="loginError"></p>
         </form>
-        <p class="hint" style="margin-top:16px;text-align:center;">Kein Zugang? Wende dich an deinen Trainer — Konten werden ausschließlich persönlich vergeben, es gibt keine Selbstregistrierung.</p>
+        <form id="forgotForm" class="auth-form" hidden>
+          <label>E-Mail<input type="email" id="forgotEmail" required autocomplete="username"></label>
+          <button type="submit">Link zum Zur&uuml;cksetzen senden</button>
+          <p class="error" id="forgotError"></p>
+          <p class="ok" id="forgotOk"></p>
+        </form>
+        <p class="hint" style="margin-top:16px;text-align:center;">
+          <a href="#" id="forgotToggle">Passwort vergessen?</a>
+        </p>
+        <p class="hint" style="text-align:center;">Kein Zugang? Wende dich an deinen Trainer — Konten werden ausschließlich persönlich vergeben, es gibt keine Selbstregistrierung.</p>
       </div>
     </main>
   `;
@@ -87,6 +96,78 @@ function renderAuth() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     document.getElementById('loginError').textContent = error ? 'E-Mail oder Passwort falsch.' : '';
   };
+
+  const loginForm = document.getElementById('loginForm');
+  const forgotForm = document.getElementById('forgotForm');
+  const forgotToggle = document.getElementById('forgotToggle');
+  forgotToggle.onclick = (e) => {
+    e.preventDefault();
+    const showingForgot = !forgotForm.hidden;
+    loginForm.hidden = !showingForgot;
+    forgotForm.hidden = showingForgot;
+    forgotToggle.textContent = showingForgot ? 'Passwort vergessen?' : 'Zurück zur Anmeldung';
+  };
+
+  forgotForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('forgotEmail').value.trim();
+    const errEl = document.getElementById('forgotError');
+    const okEl = document.getElementById('forgotOk');
+    errEl.textContent = '';
+    okEl.textContent = '';
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname,
+    });
+    if (error) {
+      errEl.textContent = 'Fehler: ' + error.message;
+    } else {
+      okEl.textContent = 'Falls dieses Konto existiert, wurde eine E-Mail zum Zurücksetzen verschickt.';
+      e.target.reset();
+    }
+  };
+}
+
+// ---------------- Neues Passwort setzen (nach Einladung oder "Passwort vergessen") ----------------
+function renderSetPassword() {
+  appEl.innerHTML = `
+    <main class="login-page">
+      <div class="login-card">
+        <h1>Willkommen</h1>
+        <p class="sub">Bitte lege dein eigenes Passwort fest (mind. 10 Zeichen).</p>
+        <form id="setPwForm" class="auth-form">
+          <label>Neues Passwort<input type="password" id="newPassword" required minlength="10" autocomplete="new-password"></label>
+          <label>Passwort wiederholen<input type="password" id="newPassword2" required minlength="10" autocomplete="new-password"></label>
+          <button type="submit">Passwort speichern</button>
+          <p class="error" id="setPwError"></p>
+        </form>
+      </div>
+    </main>
+  `;
+
+  document.getElementById('setPwForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const p1 = document.getElementById('newPassword').value;
+    const p2 = document.getElementById('newPassword2').value;
+    const errEl = document.getElementById('setPwError');
+    if (p1 !== p2) {
+      errEl.textContent = 'Passwörter stimmen nicht überein.';
+      return;
+    }
+    const { error } = await supabase.auth.updateUser({ password: p1 });
+    if (error) {
+      errEl.textContent = 'Fehler: ' + error.message;
+      return;
+    }
+    history.replaceState(null, '', window.location.pathname);
+    toast('Passwort gespeichert.');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) renderDashboard(user);
+  };
+}
+
+function isRecoveryOrInviteLink() {
+  const hash = window.location.hash || '';
+  return hash.includes('type=recovery') || hash.includes('type=invite');
 }
 
 // ---------------- Dashboard-Router ----------------
@@ -200,11 +281,46 @@ async function renderTrainerDashboard(profile) {
 
       <section class="card">
         <h2>Neue Athletin / neuen Athleten aufnehmen</h2>
-        <p class="hint">Selbstregistrierung ist aus Sicherheitsgründen deaktiviert. Neue Zugänge werden ausschließlich persönlich vergeben — sag mir einfach Name + gewünschte E-Mail, ich lege das Konto direkt mit sicherem Passwort an, oder lege es selbst im Supabase-Dashboard unter „Authentication → Users" an.</p>
+        <p class="hint">Selbstregistrierung ist deaktiviert. Name + E-Mail eintragen — die Person bekommt einen sicheren Einladungslink per E-Mail und legt sich damit ihr eigenes Passwort an.</p>
+        <form id="inviteForm" class="inline-form">
+          <label>Name<input type="text" id="inviteName" required></label>
+          <label>E-Mail<input type="email" id="inviteEmail" required></label>
+          <button type="submit">Einladen</button>
+        </form>
+        <p class="notice" id="inviteMsg" hidden></p>
+        <div id="inviteQrWrap" hidden style="margin-top:16px;text-align:center;">
+          <p class="hint">QR-Code zur Anmeldeseite (führt zum Login, nicht zur Einladung selbst — die kommt per E-Mail):</p>
+          <canvas id="inviteQr"></canvas>
+        </div>
       </section>
     </main>
   `;
   wireLogout(profile);
+
+  document.getElementById('inviteForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('inviteName').value.trim();
+    const email = document.getElementById('inviteEmail').value.trim();
+    const msgEl = document.getElementById('inviteMsg');
+    msgEl.hidden = false;
+    msgEl.textContent = 'Sende Einladung…';
+
+    const { data, error } = await supabase.functions.invoke('invite-athlete', {
+      body: { name, email },
+    });
+
+    if (error || (data && data.error)) {
+      msgEl.textContent = 'Fehler: ' + (data && data.error ? data.error : error.message);
+      return;
+    }
+
+    msgEl.textContent = 'Einladung an ' + email + ' verschickt.';
+    e.target.reset();
+
+    const qrWrap = document.getElementById('inviteQrWrap');
+    qrWrap.hidden = false;
+    QRCode.toCanvas(document.getElementById('inviteQr'), location.origin + location.pathname, { width: 200 });
+  };
 }
 
 // ---------------- Athlet:in-Ansicht ----------------
@@ -291,7 +407,9 @@ async function renderAthleteDashboard(profile) {
 
 // ---------------- Start ----------------
 supabase.auth.onAuthStateChange((_event, session) => {
-  if (session) {
+  if (session && isRecoveryOrInviteLink()) {
+    renderSetPassword();
+  } else if (session) {
     renderDashboard(session.user);
   } else {
     renderAuth();
