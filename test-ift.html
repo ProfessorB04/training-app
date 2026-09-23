@@ -1,0 +1,2091 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>30-15 IFT — Balance Movement</title>
+<style>
+  :root{
+    color-scheme: light;
+    --bg:#f9f9f7; --surface:#fcfcfb; --surface-2:#f3f2ef; --surface-3:#ecebe7;
+    --text:#0b0b0b; --text-2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --border:rgba(11,11,11,0.10);
+    --blue:#0042fc; --blue-dark:#0036c9; --blue-tint:#a1d7ff;
+    --orange:#eb6834;
+    --good:#0ca30c; --critical:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      color-scheme: dark;
+      --bg:#0d0d0d; --surface:#1a1a19; --surface-2:#222221; --surface-3:#2a2a28;
+      --text:#ffffff; --text-2:#c3c2b7; --muted:#9a988f;
+      --grid:#2c2c2a; --border:rgba(255,255,255,0.12);
+      --blue:#4d7aff; --blue-dark:#7ea6ff; --blue-tint:#a1d7ff;
+      --orange:#d95926;
+      --good:#0ca30c; --critical:#e66767;
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:60px;
+  }
+  .container{max-width:1100px;margin:0 auto;padding:0 16px;}
+  header.app{padding:20px 16px 12px;}
+  header.app h1{margin:0 0 4px;font-size:22px;letter-spacing:-.01em;}
+  header.app p{margin:0;color:var(--text-2);font-size:13px;}
+  .tabs{display:flex;gap:6px;margin:18px 0;border-bottom:1px solid var(--grid);}
+  .tab-btn{
+    appearance:none;border:none;background:none;color:var(--text-2);
+    font-size:14px;font-weight:600;padding:10px 14px;cursor:pointer;
+    border-bottom:2px solid transparent;margin-bottom:-1px;
+  }
+  .tab-btn.active{color:var(--blue);border-bottom-color:var(--blue);}
+  .panel{display:none;}
+  .panel.active{display:block;}
+  .card{
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:16px;margin-bottom:16px;
+  }
+  .card h2{margin:0 0 12px;font-size:15px;}
+  .card h3{margin:0 0 10px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.04em;}
+  .muted{color:var(--muted);}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+  .field{display:flex;flex-direction:column;gap:4px;}
+  .field label{font-size:12px;color:var(--text-2);}
+  input, select{
+    background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
+    padding:8px 10px;font-size:14px;color:var(--text);font-family:inherit;
+  }
+  input:focus, select:focus{outline:2px solid var(--blue);outline-offset:-1px;}
+  .btn{
+    appearance:none;border:1px solid var(--border);border-radius:8px;
+    background:var(--surface-2);color:var(--text);font-size:13px;font-weight:600;
+    padding:9px 14px;cursor:pointer;
+  }
+  .btn:hover{background:var(--surface-3);}
+  .btn-primary{background:var(--blue);border-color:var(--blue);color:#fff;}
+  .btn-primary:hover{background:var(--blue-dark);}
+  .btn-danger{color:var(--critical);}
+  .btn-sm{padding:5px 9px;font-size:12px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{
+    text-align:left;color:var(--muted);font-weight:600;font-size:11px;
+    text-transform:uppercase;letter-spacing:.03em;padding:6px 8px;
+    border-bottom:1px solid var(--grid);white-space:nowrap;
+  }
+  td{padding:6px 8px;border-bottom:1px solid var(--grid);vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+  table input, table select{width:100%;min-width:60px;padding:6px 7px;font-size:13px;}
+  .roster-table td.narrow input{width:60px;}
+  .roster-table td.name input{min-width:108px;}
+  .roster-table th[data-sort]:hover{color:var(--blue);}
+  .roster-table th .sarr{font-size:10px;margin-left:3px;color:var(--blue);}
+  .roster-table input.est::placeholder{color:var(--blue);opacity:.75;}
+  .roster-table input.est{background:color-mix(in oklab, var(--blue) 6%, var(--surface-2));}
+  /* Aktions-Spalte immer sichtbar, auch wenn die Tabelle seitlich scrollt */
+  .roster-table th:last-child, .roster-table td:last-child{
+    position:sticky; right:0; background:var(--surface);
+    box-shadow:-7px 0 7px -5px rgba(0,0,0,.16); text-align:center;
+  }
+  .roster-table th:last-child{ background:var(--surface-2); }
+  .btn-icon{ padding:5px 9px; font-size:14px; line-height:1; }
+  .datecell{display:flex;gap:3px;}
+  .datecell input{width:auto !important;min-width:0;padding:6px 3px;text-align:center;}
+  .datecell input.d2{width:30px !important;}
+  .datecell input.d4{width:46px !important;}
+  .num{text-align:right;font-variant-numeric:tabular-nums;}
+  #results-table input.time-edit{width:86px;text-align:right;font-variant-numeric:tabular-nums;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface);}
+  #results-table input.time-edit:focus{outline:2px solid var(--blue);outline-offset:-1px;}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;}
+  .stat-tile{
+    background:var(--surface-2);border:1px solid var(--border);border-radius:10px;
+    padding:12px 14px;
+  }
+  .stat-tile .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+  .stat-tile .value{font-size:22px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums;}
+  .stat-tile .sub{font-size:12px;color:var(--text-2);margin-top:2px;}
+  .participant-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+  .participant-card{
+    background:var(--surface-2);border:1px solid var(--border);border-radius:10px;
+    padding:10px;text-align:center;
+  }
+  .participant-card .pname{font-weight:600;font-size:13px;margin-bottom:8px;min-height:34px;display:flex;align-items:center;justify-content:center;}
+  .tap-btn{
+    width:100%;padding:16px 8px;border-radius:8px;border:none;cursor:pointer;
+    font-size:14px;font-weight:700;background:var(--critical);color:#fff;
+  }
+  .tap-btn:active{transform:scale(0.97);}
+  .participant-card.done{background:color-mix(in oklab, var(--good) 12%, var(--surface-2));}
+  .participant-card.done .tap-btn{background:var(--surface-3);color:var(--text);font-weight:600;}
+  .participant-card .result{font-size:12px;margin-top:6px;color:var(--text-2);font-variant-numeric:tabular-nums;}
+  .participant-card .result b{color:var(--text);font-size:14px;}
+  .clock{
+    font-size:34px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;
+    letter-spacing:.01em;margin:0;
+  }
+  .live-head{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:10px;}
+  .live-right{display:flex;flex-direction:column;align-items:center;gap:6px;}
+  .live-stage{display:flex;align-items:center;gap:22px;flex-wrap:wrap;}
+  .ls-main{display:flex;align-items:baseline;gap:10px;}
+  .ls-label{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
+  .ls-main b{font-size:46px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;}
+  .ls-speed{font-size:22px;font-weight:700;color:var(--blue-dark);}
+  .ls-phase{display:flex;align-items:baseline;gap:8px;}
+  .ls-phase span:first-child{font-weight:800;padding:4px 12px;border-radius:999px;font-size:14px;}
+  .ls-phase .phase-run{background:color-mix(in oklab, var(--good) 20%, var(--surface-2));color:var(--good);}
+  .ls-phase .phase-rest{background:color-mix(in oklab, var(--orange) 22%, var(--surface-2));color:var(--orange);}
+  .ls-phase .phase-done{background:var(--surface-3);color:var(--text-2);}
+  .ls-phase b{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;}
+  .select-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px;margin-top:8px;}
+  .select-chip{
+    display:flex;align-items:center;gap:6px;background:var(--surface-2);
+    border:1px solid var(--border);border-radius:8px;padding:7px 9px;font-size:13px;cursor:pointer;
+  }
+  .bar-track{background:var(--surface-3);border-radius:5px;height:10px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:5px;}
+  .zone-item{margin-bottom:13px;}
+  .zone-item .zone-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:4px;}
+  .zone-item .zlabel{font-weight:700;font-size:12.5px;}
+  .zdot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;}
+  .zone-item .zpurpose{font-weight:600;color:var(--text-2);font-size:12px;margin-left:4px;}
+  .zone-item .zval{font-variant-numeric:tabular-nums;color:var(--text-2);font-size:12px;white-space:nowrap;flex:none;}
+  .zone-item .zdesc{font-size:11.5px;color:var(--muted);margin-top:3px;}
+  .hr-chip-row{display:flex;flex-direction:column;gap:12px;}
+  .hr-chip{display:flex;align-items:flex-start;gap:10px;font-size:13px;}
+  .hr-chip .swatch{width:12px;height:12px;border-radius:3px;flex:none;margin-top:3px;}
+  .hr-chip .hr-chip-top{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;}
+  .hr-chip .hr-chip-top b{font-weight:700;}
+  .hr-chip .zrange{color:var(--text-2);font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap;flex:none;}
+  .hr-chip .hr-chip-desc{font-size:11.5px;color:var(--muted);margin-top:2px;}
+  .empty{color:var(--muted);font-size:13px;padding:20px 0;text-align:center;}
+  .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media (max-width:720px){.detail-grid{grid-template-columns:1fr;}}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;background:var(--surface-3);color:var(--text-2);}
+  .badge.rank1{background:color-mix(in oklab, var(--good) 20%, var(--surface-2));color:var(--good);}
+  .team-bar-row{display:grid;grid-template-columns:110px 1fr 56px;align-items:center;gap:8px;margin-bottom:5px;font-size:12.5px;}
+  .team-bar-row .tname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .team-bar-row .tval{text-align:right;font-variant-numeric:tabular-nums;color:var(--text-2);}
+  .trend-wrap{margin-top:4px;}
+  details.info summary{cursor:pointer;font-size:13px;color:var(--text-2);}
+  details.info{margin-top:6px;}
+  details.info p{font-size:12.5px;color:var(--text-2);line-height:1.5;}
+  footer.credit{text-align:center;color:var(--muted);font-size:11.5px;padding:24px 16px 10px;}
+  .team-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0 2px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;}
+  .team-bar label{font-size:12px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.04em;}
+  .team-bar select{min-width:180px;font-weight:600;}
+  .it-result-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;}
+  .it-big{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+  .it-big .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+  .it-big .v{font-size:22px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums;}
+  .it-big .s{font-size:12px;color:var(--text-2);margin-top:2px;}
+  .group-col{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:12.5px;}
+  .group-col b{display:block;margin-bottom:5px;color:var(--blue-dark);}
+  .delta-up{color:var(--good);font-weight:700;} .delta-down{color:var(--critical);font-weight:700;}
+  #print-doc h1{font-size:20px;margin:0 0 2px;} #print-doc h2{font-size:15px;margin:18px 0 8px;border-bottom:2px solid #1a1a1a;padding-bottom:3px;}
+  #print-doc table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px;}
+  #print-doc th,#print-doc td{border:1px solid #ccc;padding:5px 8px;text-align:left;}
+  #print-doc .pd-swatch{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:middle;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  @page{margin:14mm;}
+  @media print{
+    body{background:#fff;}
+    body > .container, #print-view .no-print{display:none !important;}
+    #print-view{position:static !important;display:block !important;}
+    #print-doc td,#print-doc th{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* Trainings-App: Login-Schutz (nur Admin + Trainer:innen) */
+(function(){
+  document.documentElement.style.visibility = "hidden";
+  var sb = window.supabase.createClient("https://hbrtzjrhaluoabvfkbkb.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhicnR6anJoYWx1b2FidmZrYmtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDkxMTgsImV4cCI6MjEwNTcyNTExOH0.fSav78jlqCLFBhwObAe5CS3cTlccndJlyDaY640j0nI");
+  sb.auth.getSession().then(function(res){
+    var s = res.data.session;
+    if(!s){ window.location.replace("index.html"); return; }
+    sb.from("profiles").select("role").eq("id", s.user.id).single().then(function(r){
+      if(r.data && (r.data.role === "admin" || r.data.role === "trainer")){
+        document.documentElement.style.visibility = "";
+      } else {
+        window.location.replace("index.html");
+      }
+    });
+  });
+})();
+</script>
+</head>
+<body>
+<div style="background:#a1d7ff;color:#00113d;font-family:-apple-system,sans-serif;font-size:13px;font-weight:600;padding:9px 16px;">
+  <a href="index.html#testungen" style="color:#00113d;text-decoration:none;">&larr; Zur&uuml;ck zum Men&uuml;</a>
+</div>
+
+<div class="container">
+  <header class="app">
+    <h1>30-15 IFT Testtool</h1>
+    <p>Testdurchführung, Auswertung &amp; Trainingssteuerung auf Basis des 30-15 Intermittent Fitness Tests</p>
+  </header>
+
+  <div class="team-bar">
+    <label for="team-select">Team</label>
+    <select id="team-select"></select>
+    <button class="btn btn-sm" id="team-new">+ Neues Team</button>
+    <button class="btn btn-sm" id="team-rename">Umbenennen</button>
+    <button class="btn btn-sm btn-danger" id="team-delete">Team löschen</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="kader">Kader</button>
+    <button class="tab-btn" data-tab="test">Test durchführen</button>
+    <button class="tab-btn" data-tab="ergebnisse">Ergebnisse</button>
+    <button class="tab-btn" data-tab="zonen">Trainingszonen</button>
+    <button class="tab-btn" data-tab="intervalle">Intervalltraining</button>
+  </div>
+
+  <!-- KADER -->
+  <section class="panel active" id="panel-kader">
+    <div class="card">
+      <h2>Kader</h2>
+      <div style="overflow-x:auto;">
+        <table class="roster-table" id="roster-table">
+          <thead>
+            <tr>
+              <th>Nr</th>
+              <th data-sort="nachname" data-label="Nachname" style="min-width:110px;cursor:pointer;">Nachname<span class="sarr"></span></th>
+              <th data-sort="vorname" data-label="Vorname" style="min-width:100px;cursor:pointer;">Vorname<span class="sarr"></span></th>
+              <th>Geburtsdatum</th><th>Geschl.</th>
+              <th data-sort="groesse" data-label="Größe [cm]" style="cursor:pointer;">Größe [cm]<span class="sarr"></span></th>
+              <th data-sort="gewicht" data-label="Gewicht [kg]" style="cursor:pointer;">Gewicht [kg]<span class="sarr"></span></th>
+              <th data-sort="ruhepuls" data-label="Ruhepuls" style="cursor:pointer;">Ruhepuls<span class="sarr"></span></th>
+              <th data-sort="maxpuls" data-label="Maxpuls" style="cursor:pointer;">Maxpuls<span class="sarr"></span></th>
+              <th data-sort="alter" data-label="Alter" style="cursor:pointer;">Alter<span class="sarr"></span></th>
+              <th>Entf.</th>
+            </tr>
+          </thead>
+          <tbody id="roster-tbody"></tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px;">
+        <button class="btn btn-primary" id="add-athlete">+ Spieler:in hinzufügen</button>
+        <button class="btn btn-sm" id="import-open">📋 Kader importieren</button>
+        <button class="btn btn-sm" id="kader-csv">⬇️ Kader als CSV</button>
+        <button class="btn btn-sm" id="backup-export">💾 Sicherung speichern</button>
+        <button class="btn btn-sm" id="backup-import">📂 Sicherung laden</button>
+        <input type="file" id="backup-file-input" accept="application/json" style="display:none;">
+      </div>
+
+      <div id="import-box" style="display:none;margin-top:14px;border-top:1px solid var(--grid);padding-top:14px;">
+        <h3>Kader importieren</h3>
+        <p class="muted" style="font-size:12px;margin:0 0 8px;line-height:1.5;">
+          Tabelle aus Excel / Numbers markieren, kopieren und unten einfügen (Tabulator-, Semikolon- oder Komma-getrennt).
+          <b>Mit Kopfzeile</b> werden die Spalten frei erkannt (u. a. Vorname, Nachname bzw. „Name“, Geburtsdatum, Geschlecht, „Größe (cm)“, „Gewicht (kg)“, Ruhepuls, Maxpuls) – Reihenfolge egal, Zusatzspalten werden ignoriert.
+          <b>Ohne Kopfzeile</b> gilt: Name · Geburtsdatum · Geschlecht · Größe · Gewicht · Ruhepuls · Maxpuls.
+          Geburtsdatum als <code>TT.MM.JJJJ</code> oder nur Jahrgang. Größe in cm (<code>170</code>).
+          Geschlecht <code>m</code>/<code>w</code>. Ruhe-/Maxpuls leer lassen = automatisch geschätzt. Nur <b>Name</b> ist Pflicht.
+        </p>
+        <textarea id="import-text" rows="8" spellcheck="false"
+          style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.45;"
+          placeholder="Vorname;Nachname;Geburtsdatum;Geschlecht;Größe (cm);Gewicht (kg)&#10;Marija;Ilic;05.04.2007;w;170;&#10;Julia;Martin;23.03.2002;w;175;63"></textarea>
+        <div class="row" style="margin-top:8px;align-items:center;">
+          <label class="select-chip"><input type="radio" name="import-mode" value="append" checked><span>Zum Kader hinzufügen</span></label>
+          <label class="select-chip"><input type="radio" name="import-mode" value="replace"><span>Kader ersetzen</span></label>
+          <span class="muted" id="import-preview" style="font-size:12px;"></span>
+        </div>
+        <div style="margin-top:10px;">
+          <button class="btn btn-primary btn-sm" id="import-run">Importieren</button>
+          <button class="btn btn-sm" id="import-template">Kopfzeile kopieren</button>
+          <button class="btn btn-sm" id="import-cancel">Abbrechen</button>
+        </div>
+      </div>
+
+      <details class="info">
+        <summary>Hinweise zu den Feldern</summary>
+        <p>Geburtsdatum als Tag / Monat / Jahr (Jahr genügt für eine grobe Altersschätzung, mit Tag und Monat ist sie exakt). <b>Ruhepuls und Maxpuls</b> werden zunächst aus Alter und Geschlecht geschätzt (Maxpuls: Frauen 206−0,88·Alter, Männer 208−0,7·Alter; Ruhepuls Näherung für Trainierte). Sobald ein gemessener Wert eingetragen wird, zählt dieser. Spaltenkopf anklicken sortiert den Kader. Mehrere Athlet:innen auf einmal über <b>„Kader importieren“</b>.</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- TEST -->
+  <section class="panel" id="panel-test">
+    <div class="card" id="test-config-card">
+      <h2>Testeinstellungen</h2>
+      <div class="row">
+        <div class="field"><label>Testdatum</label><input type="date" id="cfg-date"></div>
+        <div class="field"><label>Bezeichnung (optional)</label><input type="text" id="cfg-label" placeholder="z. B. IFT August"></div>
+        <div class="field">
+          <label>Feld / Variante (nach Buchheit)</label>
+          <select id="cfg-field">
+            <option value="40" selected>40 m – Standard (Feld)</option>
+            <option value="28">28 m – Basketballfeld / Halle</option>
+            <option value="20">20 m – kleine Halle</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Pieptakt (Wendelinien)</label>
+          <select id="cfg-beepmode">
+            <option value="half" selected>Mitte + Enden (halbe Streckenlänge)</option>
+            <option value="full">nur Endlinien (volle Streckenlänge)</option>
+          </select>
+        </div>
+        <div class="field"><label>Startgeschwindigkeit [km/h]</label><input type="number" step="0.5" id="cfg-start" value="8"></div>
+        <div class="field"><label>Steigerung je Stufe [km/h]</label><input type="number" step="0.1" id="cfg-inc" value="0.5"></div>
+        <div class="field"><label>Laufzeit / Pause je Stufe [s]</label><input type="number" step="1" id="cfg-stage" value="45"></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:6px 0 0;">
+        30 s Laufen + Pause bis zur eingestellten Stufendauer (Standard 45 → 15 s Pause). Stufen und Tempo sind
+        feldunabhängig (nach Buchheit) – nur der Pieptakt für die Wendelinien wird beim 28-m-Basketballfeld enger.
+        Standard-30-15-IFT: Piep an der Mittel- und den Endlinien = halbe Streckenlänge (40 m → alle 20 m, 28 m → alle 14 m).
+        Falls deine offizielle Audiospur nur an den Endlinien piept, auf „volle Streckenlänge“ stellen.
+      </p>
+      <h3 style="margin-top:16px;">Teilnehmer:innen</h3>
+      <div class="row" style="margin-bottom:4px;align-items:center;">
+        <button class="btn btn-sm" id="select-all">Alle auswählen</button>
+        <button class="btn btn-sm" id="select-none">Auswahl leeren</button>
+        <span style="margin-left:12px;font-size:12px;color:var(--text-2);">Startgruppen:</span>
+        <input type="number" id="cfg-groups" min="1" max="8" value="1" style="width:56px;">
+        <button class="btn btn-sm" id="make-groups">einteilen</button>
+      </div>
+      <div id="group-plan" style="margin:8px 0;"></div>
+      <div class="select-grid" id="participant-select"></div>
+      <div style="margin-top:16px;">
+        <button class="btn btn-primary" id="start-test">Test starten</button>
+        <span class="muted" id="start-hint" style="font-size:12px;"></span>
+      </div>
+    </div>
+
+    <div class="card" id="test-live-card" style="display:none;">
+      <div class="live-head">
+        <div class="live-stage">
+          <div class="ls-main"><span class="ls-label">Stufe</span><b id="live-stage">1</b><span id="live-speed" class="ls-speed">8,0 km/h</span></div>
+          <div class="ls-phase"><span id="live-phase" class="phase-run">Laufen</span><b id="live-count">30</b><span>s</span></div>
+        </div>
+        <div class="live-right">
+          <div class="clock" id="clock">00:00.0</div>
+          <label class="select-chip" style="cursor:pointer;"><input type="checkbox" id="live-sound" checked><span>🔊 Ton</span></label>
+        </div>
+      </div>
+      <div id="live-field-note" class="muted" style="font-size:12px;margin:-4px 0 12px;"></div>
+      <div class="participant-grid" id="participant-grid"></div>
+      <div class="row" style="margin-top:18px;">
+        <button class="btn btn-primary" id="finish-test">Test beenden &amp; speichern</button>
+        <button class="btn btn-danger" id="cancel-test">Test abbrechen</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ERGEBNISSE -->
+  <section class="panel" id="panel-ergebnisse">
+    <div class="card">
+      <h2>Ergebnisse</h2>
+      <div class="row">
+        <div class="field" style="min-width:220px;">
+          <label>Testtermin</label>
+          <select id="session-select"></select>
+        </div>
+        <button class="btn btn-sm" id="export-csv">CSV exportieren</button>
+        <button class="btn btn-sm" id="results-print">📄 Als PDF exportieren</button>
+        <button class="btn btn-sm btn-danger" id="delete-session">Testtag löschen</button>
+      </div>
+      <div id="session-empty" class="empty">Noch keine Testergebnisse vorhanden. Führe zuerst einen Test durch.</div>
+      <div id="session-content" style="display:none;">
+        <div class="stat-grid" style="margin-top:14px;">
+          <div class="stat-tile"><div class="label">Ø VIFT</div><div class="value" id="team-avg-vift">–</div><div class="sub" id="team-avg-delta"></div></div>
+          <div class="stat-tile"><div class="label">Getestet</div><div class="value" id="team-count">–</div></div>
+          <div class="stat-tile"><div class="label">Höchster VIFT</div><div class="value" id="team-max-vift">–</div></div>
+          <div class="stat-tile"><div class="label">Startgeschw.</div><div class="value" id="team-start">–</div><div class="sub" id="team-field"></div></div>
+        </div>
+        <div id="team-progress" class="muted" style="font-size:12.5px;margin-top:10px;"></div>
+        <div id="team-field-note" class="muted" style="font-size:12px;margin-top:4px;"></div>
+        <h3 style="margin-top:18px;">VIFT je Athlet:in</h3>
+        <div id="team-bars"></div>
+        <h3 style="margin-top:18px;">Tabelle</h3>
+        <div style="overflow-x:auto;">
+          <table id="results-table">
+            <thead><tr>
+              <th>Rang</th><th>Name</th><th class="num">Zeit</th><th class="num">VIFT</th><th class="num">Δ VIFT</th><th class="num">vVO2max</th><th class="num">vVT2 (Schwelle)</th><th class="num">VO2max</th><th></th>
+            </tr></thead>
+            <tbody id="results-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- TRAININGSZONEN -->
+  <section class="panel" id="panel-zonen">
+    <div class="card">
+      <h2>Trainingsempfehlungen</h2>
+      <div class="row">
+        <div class="field" style="min-width:200px;">
+          <label>Athlet:in</label>
+          <select id="zonen-athlete-select"></select>
+        </div>
+        <div class="field" style="min-width:200px;">
+          <label>Testtermin</label>
+          <select id="zonen-session-select"></select>
+        </div>
+      </div>
+      <div id="zonen-empty" class="empty">Kein Kader vorhanden. Lege zuerst Athlet:innen im Tab "Kader" an.</div>
+      <div class="row" id="zonen-actions" style="margin:6px 0 0;">
+        <label class="select-chip" style="cursor:pointer;"><input type="checkbox" id="zonen-karvonen"><span>HF-Zonen nach Karvonen (Herzfrequenzreserve)</span></label>
+        <button class="btn btn-sm" id="zonen-print">🖨️ Einzelblatt drucken</button>
+      </div>
+      <div id="zonen-body" style="margin-top:14px;"></div>
+    </div>
+  </section>
+
+  <!-- INTERVALLTRAINING -->
+  <section class="panel" id="panel-intervalle">
+    <div class="card">
+      <h2>Intervalltraining nach Buchheit (% VIFT)</h2>
+      <div id="it-empty" class="empty">Kein abgeschlossener Test vorhanden. Führe zuerst einen 30-15-IFT durch.</div>
+      <div id="it-wrap" style="display:none;">
+        <div class="row">
+          <div class="field" style="min-width:200px;"><label>Athlet:in</label><select id="it-athlete"></select></div>
+          <div class="field" style="min-width:200px;"><label>Testtermin</label><select id="it-session"></select></div>
+          <div class="field" style="min-width:240px;">
+            <label>Vorlage (Buchheit-Übungskatalog)</label>
+            <select id="it-preset"></select>
+          </div>
+        </div>
+        <div class="row" style="margin-top:6px;">
+          <div class="field"><label>% VIFT</label><input type="number" step="1" id="it-pct" value="95"></div>
+          <div class="field"><label>Laufzeit [s]</label><input type="number" step="1" id="it-run" value="15"></div>
+          <div class="field"><label>Pause [s]</label><input type="number" step="1" id="it-rest" value="15"></div>
+          <div class="field"><label>Pause-Intensität [% VIFT, 0 = passiv]</label><input type="number" step="1" id="it-restpct" value="0"></div>
+          <div class="field">
+            <label>Laufform</label>
+            <select id="it-form"><option value="straight">Gerade</option><option value="shuttle" selected>Pendel</option></select>
+          </div>
+          <div class="field" id="it-shuttle-field"><label>Pendellänge [m]</label><input type="number" step="1" id="it-shuttle" value="20"></div>
+          <div class="field" id="it-angle-field">
+            <label>Richtungswechsel</label>
+            <select id="it-angle"><option value="180" selected>180° (Wende)</option><option value="90">90°</option><option value="45">45°</option></select>
+          </div>
+        </div>
+        <div id="it-out" style="margin-top:16px;"></div>
+        <details class="info"><summary>Rechenweg</summary>
+          <p>Zieltempo = VIFT × %/100. Gerade Strecke = Zieltempo × Laufzeit. Pendel: pro Richtungswechsel gehen ~0,7 s (180°) / 0,4 s (90°) / 0,5 s (45°) Laufzeit für Abbremsen + Beschleunigen verloren (Buchheit). Anzahl Pendel = ganze Vielfache der Pendellänge, Rest = Strecke bis zur nächsten Linie. Serien-Vorgaben stammen aus Buchheits Übungskatalog (Januar 2003).</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <footer class="credit">
+    30-15 Intermittent Fitness Test nach der Idee von Martin Buchheit · Formel-Adaption ursprünglich von Rexhep Kushutani (VfL Bochum) &amp; Florian Maierhofer (MFT) · lokal im Browser gespeichert (keine Cloud, keine Übertragung)
+  </footer>
+</div>
+
+<div id="print-view" style="display:none;position:fixed;inset:0;background:#fff;color:#111;z-index:9999;overflow:auto;">
+  <div class="no-print" style="position:sticky;top:0;display:flex;gap:10px;justify-content:flex-end;padding:12px 16px;background:#f3f2ef;border-bottom:1px solid #ddd;">
+    <button class="btn btn-primary btn-sm" id="print-now">Drucken / als PDF</button>
+    <button class="btn btn-sm" id="print-close">Schließen</button>
+  </div>
+  <div id="print-doc" style="max-width:820px;margin:0 auto;padding:26px 24px 60px;"></div>
+</div>
+
+<script>
+"use strict";
+const STORAGE_KEY = "ift3015_data_v1";
+
+function uid(){ return Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
+function todayISO(){ const d=new Date(); return d.toISOString().slice(0,10); }
+
+function loadState(){
+  let s = { athletes: [], sessions: [], teams: [], activeTeamId: null };
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw) s = Object.assign(s, JSON.parse(raw));
+  }catch(e){ console.warn("Konnte gespeicherte Daten nicht laden:", e); }
+  return migrateState(s);
+}
+// Fügt fehlende Team-Struktur hinzu und ordnet Bestandsdaten einem Standardteam zu.
+function migrateState(s){
+  if(!Array.isArray(s.teams)) s.teams = [];
+  if(!Array.isArray(s.athletes)) s.athletes = [];
+  if(!Array.isArray(s.sessions)) s.sessions = [];
+  if(s.teams.length === 0){
+    s.teams.push({ id: uid(), name: "Mein Team" });
+  }
+  if(!s.activeTeamId || !s.teams.some(t=>t.id===s.activeTeamId)) s.activeTeamId = s.teams[0].id;
+  const fb = s.activeTeamId;
+  s.athletes.forEach(a=>{ if(!a.teamId || !s.teams.some(t=>t.id===a.teamId)) a.teamId = fb; });
+  s.sessions.forEach(x=>{ if(!x.teamId || !s.teams.some(t=>t.id===x.teamId)) x.teamId = fb; });
+  // Name -> Vorname / Nachname
+  s.athletes.forEach(a=>{
+    if((a.vorname == null && a.nachname == null) && a.name){
+      const parts = String(a.name).trim().split(/\s+/).filter(Boolean);
+      if(parts.length <= 1){ a.vorname = ""; a.nachname = parts[0] || ""; }
+      else { a.nachname = parts.pop(); a.vorname = parts.join(" "); }
+    }
+    if(a.vorname == null) a.vorname = "";
+    if(a.nachname == null) a.nachname = a.name || "";
+  });
+  // Größe von Metern auf cm (einmalig)
+  if(!s._heightCm){
+    s.athletes.forEach(a=>{ if(a.groesse != null && a.groesse > 0 && a.groesse < 3.5) a.groesse = Math.round(a.groesse * 100); });
+    s._heightCm = true;
+  }
+  return s;
+}
+function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+// Aktives Team – alle Ansichten filtern hierüber
+function teamAthletes(){ return state.athletes.filter(a => a.teamId === state.activeTeamId); }
+function teamSessions(){ return state.sessions.filter(s => s.teamId === state.activeTeamId); }
+function activeTeam(){ return state.teams.find(t => t.id === state.activeTeamId) || state.teams[0]; }
+
+// ---------------- Sicherung (JSON-Export/Import) ----------------
+// Zweck: localStorage ist an den genauen Datei-Pfad gebunden — beim Verschieben/Umbenennen
+// dieser HTML-Datei "verschwinden" alle Werte im Browser (sind aber nicht gelöscht). Diese
+// Sicherung erlaubt einen sauberen Umzug: exportieren, Datei verschieben, dort importieren.
+function backupExport(){
+  const payload = {
+    tool: "IFT_30-15_Testtool",
+    exportedAt: new Date().toISOString(),
+    teams: state.teams,
+    activeTeamId: state.activeTeamId,
+    athletes: state.athletes,
+    sessions: state.sessions
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type: "application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "IFT3015_Sicherung_" + todayISO() + ".json";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+function backupImport(file){
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    let data;
+    try{ data = JSON.parse(reader.result); }catch(e){ alert("Diese Datei ist keine gültige Sicherung."); return; }
+    if(!data || !Array.isArray(data.athletes) || !Array.isArray(data.sessions)){ alert("Diese Datei ist keine gültige Sicherung."); return; }
+
+    if(Array.isArray(data.teams) && data.teams.length){
+      // Vollständige Sicherung -> alles ersetzen
+      if(!confirm(`Komplette Sicherung wiederherstellen? Ersetzt ALLE aktuellen ${state.teams.length} Team(s) durch ${data.teams.length} Team(s) aus der Datei (Stand ${data.exportedAt ? data.exportedAt.slice(0,10) : "?"}).`)) return;
+      state.teams = data.teams;
+      state.athletes = data.athletes;
+      state.sessions = data.sessions;
+      state.activeTeamId = (data.activeTeamId && data.teams.some(t=>t.id===data.activeTeamId)) ? data.activeTeamId : data.teams[0].id;
+      migrateState(state);
+    } else {
+      // Einzelner Kader (altes Format / einzelne Team-Datei) -> als neues Team anhängen
+      const defName = data.teamName || file.name.replace(/\.json$/i,"").replace(/^IFT3015[_ ]*/i,"").replace(/[_-]+/g," ").trim() || "Importiertes Team";
+      const name = prompt("Import als NEUES Team – Teamname:", defName);
+      if(name === null) return;
+      const t = { id: uid(), name: (name.trim() || "Importiertes Team") };
+      const idMap = {};
+      const ath = data.athletes.map(a => { const na = Object.assign({}, a, { id: uid(), teamId: t.id }); idMap[a.id] = na.id; return na; });
+      const ses = data.sessions.map(s => Object.assign({}, s, {
+        id: uid(), teamId: t.id,
+        results: (s.results || []).map(r => Object.assign({}, r, { athleteId: idMap[r.athleteId] || r.athleteId }))
+      }));
+      state.teams.push(t);
+      state.athletes = state.athletes.concat(ath);
+      state.sessions = state.sessions.concat(ses);
+      state.activeTeamId = t.id;
+    }
+    delete state._heightCm;              // Größen der importierten Athlet:innen ggf. m -> cm
+    migrateState(state);                 // Name -> Vor-/Nachname, Teamzuordnung, cm
+    saveState();
+    renderAll();
+    alert("Import abgeschlossen.");
+  };
+  reader.readAsText(file);
+}
+
+let state = loadState();
+
+// Exaktes Alter aus Tag/Monat/Jahr; ist nur das Geburtsjahr bekannt, Kalenderjahr-Differenz als Näherung
+function ageFromBirthdate(a){
+  if(a.geburtsjahr == null || isNaN(a.geburtsjahr)) return null;
+  const now = new Date();
+  if(a.geburtstag != null && a.geburtsmonat != null && !isNaN(a.geburtstag) && !isNaN(a.geburtsmonat)){
+    let age = now.getFullYear() - a.geburtsjahr;
+    const m = (now.getMonth()+1) - a.geburtsmonat;
+    if(m < 0 || (m === 0 && now.getDate() < a.geburtstag)) age--;
+    return age;
+  }
+  return now.getFullYear() - a.geburtsjahr;
+}
+
+function num(v){ const n = parseFloat(v); return isNaN(n) ? null : n; }
+
+function athleteName(a){
+  if(!a) return "?";
+  const n = ((a.vorname || "") + " " + (a.nachname || "")).replace(/\s+/g, " ").trim();
+  return n || a.name || "";
+}
+
+// Maxpuls-Schätzung aus Alter/Geschlecht: Frauen nach Gulati (206−0,88·A), sonst Tanaka (208−0,7·A)
+function estMaxpuls(a){
+  const age = ageFromBirthdate(a);
+  if(age == null) return null;
+  return Math.round(a.geschlecht === "w" ? (206 - 0.88 * age) : (208 - 0.7 * age));
+}
+// Ruhepuls-Näherung für trainierte Sportler:innen (bitte morgens im Liegen messen und eintragen)
+function estRuhepuls(a){
+  const age = ageFromBirthdate(a);
+  let hr = a.geschlecht === "w" ? 62 : 60;
+  if(age != null && age < 16) hr += 3;
+  return hr;
+}
+// Effektiver Wert: gemessen (im Kader eingetragen) sonst Schätzung
+function effMaxpuls(a){ return a.maxpuls != null ? a.maxpuls : estMaxpuls(a); }
+function effRuhepuls(a){ return a.ruhepuls != null ? a.ruhepuls : estRuhepuls(a); }
+
+// -- Core 30-15 IFT scoring, replicated from the source spreadsheet's formulas --
+function computeVIFT(runningTimeSec, startSpeed, increment, stageSeconds){
+  const peakVelocity = startSpeed + (runningTimeSec / stageSeconds) * increment;
+  const floor = Math.floor(peakVelocity);
+  const frac = peakVelocity - floor;
+  let vift;
+  if(frac <= 0.1) vift = floor - 0.5;
+  else if(frac >= 0.5) vift = floor + 0.5;
+  else vift = floor;
+  return { peakVelocity, vift };
+}
+
+// Weist Rängen in einer Ergebnisliste neu zu (absteigend nach VIFT, Punktegleichheit = gleicher Rang)
+function recomputeRanks(results){
+  const withVift = results.filter(r=>r.vift != null).sort((a,b)=>b.vift-a.vift);
+  withVift.forEach((r,i)=>{
+    r.rank = i===0 ? 1 : (r.vift === withVift[i-1].vift ? withVift[i-1].rank : i+1);
+  });
+}
+
+function paceFromSpeedKmh(kmh){
+  if(!kmh || kmh <= 0) return "–";
+  const totalSec = Math.round(3600 / kmh);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return m + ":" + String(s).padStart(2,"0");
+}
+
+// Formats seconds as mm:ss.t without rounding-carry glitches (e.g. "01:60.0")
+function formatMMSS(totalSeconds){
+  if(totalSeconds == null) return "–";
+  const totalTenths = Math.round(totalSeconds * 10);
+  const m = Math.floor(totalTenths / 600);
+  const remTenths = totalTenths % 600;
+  const s = (remTenths/10).toFixed(1).padStart(4,"0");
+  return String(m).padStart(2,"0") + ":" + s;
+}
+
+// Umkehrung von formatMMSS: "17:39.0" -> Sekunden. Erlaubt auch reine Sekundenangabe.
+function parseMMSS(str){
+  const s = String(str == null ? "" : str).trim();
+  if(!s) return null;
+  const m = /^(\d{1,3}):([0-5]?\d(?:[.,]\d+)?)$/.exec(s);
+  if(m) return parseInt(m[1], 10) * 60 + parseFloat(m[2].replace(",", "."));
+  const n = parseFloat(s.replace(",", "."));
+  return isNaN(n) ? null : n;
+}
+
+function computeDerived(athlete, vift){
+  const age = ageFromBirthdate(athlete);
+  const vVO2max = vift != null ? vift / 1.2 : null;
+  const vVT2 = vVO2max != null ? vVO2max * 0.85 : null; // "vANAEROB (VT2)" 4mmol threshold speed
+  const sexFactor = athlete.geschlecht === "w" ? 2 : 1;
+  let vo2max = null;
+  if(vift != null && age != null && athlete.gewicht != null){
+    vo2max = 28.3 - (2.15*sexFactor) - (0.741*age) - (0.0357*athlete.gewicht) + (0.0586*age*vift) + (1.03*vift);
+  }
+
+  const maxHR = effMaxpuls(athlete);
+  const restHR = effRuhepuls(athlete);
+  const maxHrEstimated = athlete.maxpuls == null;
+  const restHrEstimated = athlete.ruhepuls == null;
+
+  let hrZones = null, hrZonesKarvonen = null, aerobicThresholdHR = null, anaerobicThresholdHR = null;
+  if(maxHR != null){
+    const bands = [[64,71],[72,78],[79,84],[85,91],[92,100]];
+    hrZones = bands.map(([lo,hi],i) => ({
+      idx:i, pctLo:lo, pctHi:hi,
+      bpmLo: Math.round(maxHR*lo/100), bpmHi: Math.round(maxHR*hi/100)
+    }));
+    if(restHR != null){
+      aerobicThresholdHR = (maxHR-restHR)*0.5 + restHR;
+      anaerobicThresholdHR = (maxHR-restHR)*0.7 + restHR;
+      const kb = [[50,60],[60,70],[70,80],[80,90],[90,100]];
+      hrZonesKarvonen = kb.map(([lo,hi],i) => ({
+        idx:i, pctLo:lo, pctHi:hi,
+        bpmLo: Math.round((maxHR-restHR)*lo/100 + restHR),
+        bpmHi: Math.round((maxHR-restHR)*hi/100 + restHR)
+      }));
+    }
+  }
+
+  let speedZones = null;
+  if(vVT2 != null){
+    const intAne = vVT2;
+    const extAne = intAne*0.9;
+    const aerob = extAne*0.9;
+    const reg = aerob*0.9;
+    const anaer = intAne*1.1;
+    speedZones = [
+      {label:"REG", kmh:reg},
+      {label:"AEROB", kmh:aerob},
+      {label:"EXT ANE", kmh:extAne},
+      {label:"INT ANE", kmh:intAne},
+      {label:"ANAER", kmh:anaer},
+    ].map(z => ({...z, pace: paceFromSpeedKmh(z.kmh)}));
+  }
+
+  return { age, vVO2max, vVT2, vo2max, hrZones, hrZonesKarvonen, maxHR, restHR, maxHrEstimated, restHrEstimated, aerobicThresholdHR, anaerobicThresholdHR, speedZones };
+}
+
+function fmt(n, digits){
+  if(n == null || isNaN(n)) return "–";
+  return n.toFixed(digits == null ? 1 : digits);
+}
+
+// ---------------- Tabs ----------------
+document.querySelectorAll(".tab-btn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p=>p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("panel-"+btn.dataset.tab).classList.add("active");
+    if(btn.dataset.tab === "test") renderParticipantSelect();
+    if(btn.dataset.tab === "ergebnisse") renderSessionSelect();
+    if(btn.dataset.tab === "zonen") renderZonenAthleteSelect();
+    if(btn.dataset.tab === "intervalle") renderIntervalTab();
+  });
+});
+
+// ---------------- Kader ----------------
+function newAthlete(){
+  return { id: uid(), teamId: state.activeTeamId, vorname: "", nachname: "", geburtstag: null, geburtsmonat: null, geburtsjahr: null, geschlecht: "m",
+    groesse: null, gewicht: null, ruhepuls: null, maxpuls: null };
+}
+
+// Kader des aktiven Teams, nach der aktuellen Spaltensortierung
+function sortedRoster(){
+  const list = teamAthletes().slice();
+  const srt = state._rosterSort;
+  if(srt && srt.key){
+    const val = a => {
+      switch(srt.key){
+        case "nachname": return (a.nachname || a.name || "").toLowerCase();
+        case "vorname":  return (a.vorname || "").toLowerCase();
+        case "alter":    return ageFromBirthdate(a) == null ? -1 : ageFromBirthdate(a);
+        case "groesse":  return a.groesse == null ? -1 : a.groesse;
+        case "gewicht":  return a.gewicht == null ? -1 : a.gewicht;
+        case "ruhepuls": return effRuhepuls(a) == null ? -1 : effRuhepuls(a);
+        case "maxpuls":  return effMaxpuls(a) == null ? -1 : effMaxpuls(a);
+      }
+      return "";
+    };
+    list.sort((x,y)=>{
+      const vx = val(x), vy = val(y);
+      const c = (typeof vx === "string") ? vx.localeCompare(vy, "de") : (vx - vy);
+      return srt.dir === "desc" ? -c : c;
+    });
+  }
+  return list;
+}
+function updateRosterSortArrows(){
+  document.querySelectorAll("#roster-table th[data-sort]").forEach(th=>{
+    const s = state._rosterSort || {};
+    const arr = th.querySelector(".sarr");
+    if(arr) arr.textContent = (s.key === th.dataset.sort) ? (s.dir === "desc" ? "▼" : "▲") : "";
+  });
+}
+
+function renderRoster(){
+  const tbody = document.getElementById("roster-tbody");
+  tbody.innerHTML = "";
+  updateRosterSortArrows();
+  sortedRoster().forEach((a, i) => {
+    // Migration: ältere gespeicherte Daten nutzten ein einzelnes ISO-Geburtsdatum (YYYY-MM-DD)
+    if(a.geburtsjahr == null && a.geburtsdatum){
+      const dm = new Date(a.geburtsdatum);
+      if(!isNaN(dm)){
+        a.geburtsjahr = dm.getFullYear();
+        a.geburtstag = dm.getDate();
+        a.geburtsmonat = dm.getMonth()+1;
+      }
+      delete a.geburtsdatum;
+    }
+    const age = ageFromBirthdate(a);
+    const eMax = estMaxpuls(a), eRuhe = estRuhepuls(a);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="num">${i+1}</td>
+      <td class="name"><input type="text" value="${escapeAttr(a.nachname || "")}" data-field="nachname" placeholder="Nachname"></td>
+      <td class="name"><input type="text" value="${escapeAttr(a.vorname || "")}" data-field="vorname" placeholder="Vorname"></td>
+      <td class="narrow">
+        <div class="datecell">
+          <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" class="d2" value="${a.geburtstag ?? ""}" data-field="geburtstag" placeholder="TT">
+          <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" class="d2" value="${a.geburtsmonat ?? ""}" data-field="geburtsmonat" placeholder="MM">
+          <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" class="d4" value="${a.geburtsjahr ?? ""}" data-field="geburtsjahr" placeholder="JJJJ">
+        </div>
+      </td>
+      <td class="narrow">
+        <select data-field="geschlecht">
+          <option value="m" ${a.geschlecht==="m"?"selected":""}>m</option>
+          <option value="w" ${a.geschlecht==="w"?"selected":""}>w</option>
+        </select>
+      </td>
+      <td class="narrow"><input type="number" step="1" value="${a.groesse ?? ""}" data-field="groesse" placeholder="170"></td>
+      <td class="narrow"><input type="number" step="0.1" value="${a.gewicht ?? ""}" data-field="gewicht" placeholder="65"></td>
+      <td class="narrow"><input type="number" step="1" value="${a.ruhepuls ?? ""}" data-field="ruhepuls" class="${a.ruhepuls==null?"est":""}" placeholder="${eRuhe!=null?"≈ "+eRuhe:""}" title="${a.ruhepuls==null?"geschätzt aus Alter/Geschlecht – gemessenen Wert eintragen":"gemessener Wert"}"></td>
+      <td class="narrow"><input type="number" step="1" value="${a.maxpuls ?? ""}" data-field="maxpuls" class="${a.maxpuls==null?"est":""}" placeholder="${eMax!=null?"≈ "+eMax:""}" title="${a.maxpuls==null?"geschätzt aus Alter/Geschlecht – gemessenen Wert eintragen":"gemessener Wert"}"></td>
+      <td class="num">${age ?? "–"}</td>
+      <td><button class="btn btn-icon btn-danger" data-del="${a.id}" title="Aus Kader entfernen" aria-label="Aus Kader entfernen">✕</button></td>
+    `;
+    tbody.appendChild(tr);
+    tr.querySelectorAll("[data-field]").forEach(inp=>{
+      inp.addEventListener("change", ()=>{
+        const field = inp.dataset.field;
+        let v = inp.value;
+        if(["geburtstag","geburtsmonat","geburtsjahr"].includes(field)){
+          const digits = v.replace(/[^0-9]/g, "");
+          v = digits === "" ? null : parseInt(digits, 10);
+        } else if(["groesse","gewicht","ruhepuls","maxpuls"].includes(field)){
+          v = v === "" ? null : parseFloat(v);
+          if(field === "groesse" && v != null && v > 0 && v < 3.5) v = Math.round(v * 100); // Meter -> cm
+        }
+        a[field] = v;
+        saveState();
+        renderRoster();
+      });
+    });
+    tr.querySelector("[data-del]").addEventListener("click", ()=>{
+      if(confirm(`${athleteName(a) || "Spieler:in"} wirklich aus dem Kader löschen?`)){
+        state.athletes = state.athletes.filter(x=>x.id!==a.id);
+        saveState();
+        renderRoster();
+      }
+    });
+  });
+}
+function escapeAttr(s){ return (s||"").replace(/"/g,"&quot;"); }
+
+document.getElementById("add-athlete").addEventListener("click", ()=>{
+  state.athletes.push(newAthlete());
+  saveState();
+  renderRoster();
+});
+
+// Kader sortieren: Spaltenkopf anklicken (auf/ab/aus)
+document.querySelectorAll("#roster-table th[data-sort]").forEach(th=>{
+  th.addEventListener("click", ()=>{
+    const k = th.dataset.sort;
+    const s = state._rosterSort || {};
+    if(s.key === k && s.dir === "asc") state._rosterSort = { key: k, dir: "desc" };
+    else if(s.key === k && s.dir === "desc") state._rosterSort = null;   // 3. Klick: Sortierung aus
+    else state._rosterSort = { key: k, dir: "asc" };
+    saveState();
+    renderRoster();
+  });
+});
+
+// ---------------- Test durchführen ----------------
+document.getElementById("cfg-date").value = todayISO();
+
+function renderParticipantSelect(){
+  const wrap = document.getElementById("participant-select");
+  const list = teamAthletes();
+  if(list.length === 0){
+    wrap.innerHTML = `<div class="empty">Kein Kader in diesem Team. Lege zuerst Athlet:innen im Tab "Kader" an.</div>`;
+    return;
+  }
+  wrap.innerHTML = list.map(a => `
+    <label class="select-chip">
+      <input type="checkbox" value="${a.id}" class="participant-check" checked>
+      <span>${escapeAttr(athleteName(a) || "(ohne Namen)")}</span>
+    </label>
+  `).join("");
+}
+renderParticipantSelect();
+
+document.getElementById("select-all").addEventListener("click", ()=>{
+  document.querySelectorAll(".participant-check").forEach(c=>c.checked=true);
+});
+document.getElementById("select-none").addEventListener("click", ()=>{
+  document.querySelectorAll(".participant-check").forEach(c=>c.checked=false);
+});
+
+let timerState = null;
+
+function readTestConfig(){
+  return {
+    date: document.getElementById("cfg-date").value || todayISO(),
+    label: document.getElementById("cfg-label").value.trim(),
+    fieldLength: num(document.getElementById("cfg-field").value) ?? 40,
+    beepMode: document.getElementById("cfg-beepmode").value || "half",
+    startSpeed: num(document.getElementById("cfg-start").value) ?? 8,
+    increment: num(document.getElementById("cfg-inc").value) ?? 0.5,
+    stageSeconds: num(document.getElementById("cfg-stage").value) ?? 45,
+  };
+}
+// Abstand zweier Piep-Linien in Metern
+function lineSpacingOf(cfg){
+  return cfg.beepMode === "full" ? cfg.fieldLength : cfg.fieldLength / 2;
+}
+
+// Stufe / Phase / Tempo aus der verstrichenen Zeit (30 s Laufen + Rest = Stufendauer)
+function ivalStage(elapsed, cfg){
+  const stageLen = Math.max(31, cfg.stageSeconds || 45);
+  const runLen = 30;
+  const stage = Math.floor(elapsed / stageLen) + 1;
+  const into = elapsed - (stage - 1) * stageLen;
+  const phase = into < runLen ? "run" : "rest";
+  const remaining = phase === "run" ? (runLen - into) : (stageLen - into);
+  const speed = (cfg.startSpeed || 8) + (stage - 1) * (cfg.increment || 0.5);
+  return { stage, into, phase, remaining, runLen, stageLen, speed };
+}
+
+// --- Signaltöne (WebAudio, keine externen Dateien) – Takt wie in der offiziellen 30-15-App ---
+function makeAudio(){
+  try{
+    const AC = window.AudioContext || window.webkitAudioContext;
+    return AC ? { ctx: new AC() } : null;
+  }catch(e){ return null; }
+}
+function beep(freq, durMs, gain){
+  const a = timerState && timerState.audio;
+  const sw = document.getElementById("live-sound");
+  if(!a || !a.ctx || a.ctx.state === "closed" || (sw && !sw.checked)) return;
+  try{
+    const ctx = a.ctx;
+    if(ctx.state === "suspended") ctx.resume();
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(gain == null ? 0.28 : gain, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + durMs/1000);
+    osc.connect(g); g.connect(ctx.destination);
+    osc.start(t); osc.stop(t + durMs/1000 + 0.03);
+  }catch(e){ /* Kontext geschlossen o. Ä. – Ton einfach auslassen */ }
+}
+function beepSeq(notes){
+  let d = 0;
+  notes.forEach(n => { setTimeout(() => beep(n.f, n.d, n.g), d); d += (n.gap == null ? n.d + 45 : n.gap); });
+}
+
+document.getElementById("start-test").addEventListener("click", ()=>{
+  const ids = Array.from(document.querySelectorAll(".participant-check:checked")).map(c=>c.value);
+  if(ids.length === 0){ alert("Bitte mindestens eine Person auswählen."); return; }
+  const cfg = readTestConfig();
+  timerState = { startTs: performance.now(), participants: ids, captures: {}, cfg,
+    audio: makeAudio(), mark: { stage: 0, phase: null, lineIdx: 0, countSec: null } };
+  if(timerState.audio && timerState.audio.ctx && timerState.audio.ctx.state === "suspended") timerState.audio.ctx.resume();
+  const lineDist = lineSpacingOf(cfg);
+  const s1 = lineDist / (cfg.startSpeed / 3.6);
+  document.getElementById("live-field-note").textContent =
+    `${cfg.fieldLength} m Feld · Piep alle ${fmt(lineDist,0)} m (Stufe 1 ≈ alle ${fmt(s1,1)} s) · tiefer Ton = Pause, Aufwärts-Doppelton = neue Stufe. „Ton“ schaltet stumm.`;
+  document.getElementById("test-config-card").style.display = "none";
+  document.getElementById("test-live-card").style.display = "block";
+  renderParticipantGrid();
+  tickClock();
+  timerState.intervalId = setInterval(tickClock, 100);
+});
+
+function stopAudio(){
+  try{ if(timerState && timerState.audio && timerState.audio.ctx) timerState.audio.ctx.close(); }catch(e){}
+}
+
+function tickClock(){
+  if(!timerState) return;
+  const elapsed = (performance.now() - timerState.startTs) / 1000;
+  const s = ivalStage(elapsed, timerState.cfg);
+  document.getElementById("clock").textContent = formatMMSS(elapsed);
+  document.getElementById("live-stage").textContent = s.stage;
+  document.getElementById("live-speed").textContent = fmt(s.speed, 1) + " km/h";
+  const phEl = document.getElementById("live-phase");
+  phEl.textContent = s.phase === "run" ? "Laufen" : "Gehpause";
+  phEl.className = s.phase === "run" ? "phase-run" : "phase-rest";
+  document.getElementById("live-count").textContent = Math.ceil(s.remaining);
+
+  const m = timerState.mark;
+  // Beginn einer Laufphase: Teststart bzw. Ende der Pause -> neue Stufe/Tempo.
+  // Kurzer Aufwärts-Doppelton wie in der offiziellen Audiospur ("los, jetzt schneller").
+  if(s.stage !== m.stage){
+    if(m.stage === 0) beepSeq([{f:760,d:90},{f:1000,d:110},{f:1250,d:150}]);   // Teststart
+    else beepSeq([{f:900,d:110},{f:1250,d:150}]);                              // neue Stufe
+    m.stage = s.stage; m.phase = s.phase; m.lineIdx = 0; m.countSec = null;
+  }
+  // Laufen -> Gehpause: ein tiefer, längerer Ton.
+  if(s.phase !== m.phase){
+    if(s.phase === "rest") beep(480, 320, 0.32);
+    m.phase = s.phase; m.lineIdx = 0; m.countSec = null;
+  }
+  // Wendelinien-Piepton während der Laufphase (an Mittel-/Endlinie bzw. nur Endlinie).
+  if(s.phase === "run"){
+    const lineTime = lineSpacingOf(timerState.cfg) / (s.speed / 3.6);
+    const idx = Math.floor(s.into / lineTime);
+    if(idx > m.lineIdx && (idx * lineTime) <= s.runLen + 0.05){ beep(1050, 55, 0.24); m.lineIdx = idx; }
+  }
+  // "Achtung, gleich geht's los": leises Ticken in den letzten 5 s der Gehpause.
+  if(s.phase === "rest"){
+    const cd = Math.ceil(s.remaining);
+    if(cd <= 5 && cd >= 1 && cd !== m.countSec){ beep(560, 45, 0.14); m.countSec = cd; }
+  }
+}
+
+function renderParticipantGrid(){
+  const grid = document.getElementById("participant-grid");
+  grid.innerHTML = timerState.participants.map(id=>{
+    const a = state.athletes.find(x=>x.id===id);
+    const name = a ? (athleteName(a) || "(ohne Namen)") : "?";
+    const captured = timerState.captures[id];
+    if(captured != null){
+      const {vift} = computeVIFT(captured, timerState.cfg.startSpeed, timerState.cfg.increment, timerState.cfg.stageSeconds);
+      const st = ivalStage(captured, timerState.cfg);
+      return `
+        <div class="participant-card done">
+          <div class="pname">${name}</div>
+          <button class="tap-btn" data-correct="${id}">Zeit korrigieren</button>
+          <div class="result">Stufe ${st.stage} · ${formatMMSS(captured)} min<br><b>VIFT ${fmt(vift,1)} km/h</b></div>
+        </div>`;
+    }
+    return `
+      <div class="participant-card">
+        <div class="pname">${name}</div>
+        <button class="tap-btn" data-capture="${id}">STOPP</button>
+        <div class="result muted">läuft …</div>
+      </div>`;
+  }).join("");
+
+  grid.querySelectorAll("[data-capture]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const elapsed = (performance.now() - timerState.startTs) / 1000;
+      timerState.captures[btn.dataset.capture] = elapsed;
+      renderParticipantGrid();
+    });
+  });
+  grid.querySelectorAll("[data-correct]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const id = btn.dataset.correct;
+      const current = timerState.captures[id];
+      const input = prompt("Laufzeit in Sekunden korrigieren:", current.toFixed(1));
+      if(input === null) return;
+      const v = num(input);
+      if(v == null || v < 0){ alert("Ungültiger Wert."); return; }
+      timerState.captures[id] = v;
+      renderParticipantGrid();
+    });
+  });
+}
+
+document.getElementById("cancel-test").addEventListener("click", ()=>{
+  if(!confirm("Laufenden Test wirklich abbrechen? Die erfassten Zeiten gehen verloren.")) return;
+  clearInterval(timerState.intervalId);
+  stopAudio();
+  timerState = null;
+  document.getElementById("test-live-card").style.display = "none";
+  document.getElementById("test-config-card").style.display = "block";
+});
+
+document.getElementById("finish-test").addEventListener("click", ()=>{
+  clearInterval(timerState.intervalId);
+  const cfg = timerState.cfg;
+  let results = timerState.participants.map(id=>{
+    const t = timerState.captures[id];
+    if(t == null) return { athleteId:id, time:null, peakVelocity:null, vift:null, rank:null };
+    const {peakVelocity, vift} = computeVIFT(t, cfg.startSpeed, cfg.increment, cfg.stageSeconds);
+    return { athleteId:id, time:t, peakVelocity, vift, rank:null };
+  });
+  recomputeRanks(results);
+
+  const session = { id: uid(), teamId: state.activeTeamId, date: cfg.date, label: cfg.label, startSpeed: cfg.startSpeed,
+    increment: cfg.increment, stageSeconds: cfg.stageSeconds, fieldLength: cfg.fieldLength,
+    beepMode: cfg.beepMode, results };
+  state.sessions.push(session);
+  saveState();
+
+  stopAudio();
+  timerState = null;
+  document.getElementById("test-live-card").style.display = "none";
+  document.getElementById("test-config-card").style.display = "block";
+
+  document.querySelector('.tab-btn[data-tab="ergebnisse"]').click();
+  renderSessionSelect(session.id);
+});
+
+// ---------------- Ergebnisse ----------------
+function sortedSessions(){
+  return [...teamSessions()].sort((a,b)=> (b.date||"").localeCompare(a.date||""));
+}
+
+function renderSessionSelect(preselectId){
+  const sel = document.getElementById("session-select");
+  const sessions = sortedSessions();
+  if(sessions.length === 0){
+    document.getElementById("session-empty").style.display = "block";
+    document.getElementById("session-content").style.display = "none";
+    sel.innerHTML = "";
+    return;
+  }
+  document.getElementById("session-empty").style.display = "none";
+  document.getElementById("session-content").style.display = "block";
+  sel.innerHTML = sessions.map(s => {
+    const d = s.date ? new Date(s.date).toLocaleDateString("de-DE") : "?";
+    const label = s.label ? ` – ${s.label}` : "";
+    return `<option value="${s.id}">${d}${label}</option>`;
+  }).join("");
+  if(preselectId) sel.value = preselectId;
+  renderSessionContent(sel.value);
+}
+document.getElementById("session-select").addEventListener("change", (e)=>{
+  renderSessionContent(e.target.value);
+});
+
+// Feste 5-Zonen-Ampelfarben (grau/blau/grün/gelb/rot), analog zur Original-Excel-Tabelle.
+// Gilt gleichermaßen für Lauftempo- und Herzfrequenz-Zonen (Zone 1 = REG/Regeneration ... Zone 5 = ANAER/Spitzenbelastung).
+const ZONE_COLORS = ["#BFBFBF", "#a1d7ff", "#A9D18E", "#FFE066", "#EF5B5B"];
+const ZONE_TEXT_DARK = "#1a1a1a";
+function zoneColor(i){ return ZONE_COLORS[i]; }
+
+// Trainingsreiz je Zone: welchen Effekt erzielt man, wenn man in dieser Zone trainiert
+const SPEED_ZONE_INFO = {
+  "REG":     { title:"Regeneration",        desc:"Aktive Erholung / lockeres Auslaufen zwischen intensiven Einheiten." },
+  "AEROB":   { title:"Grundlagenausdauer",  desc:"Aerobe Basis, Fettstoffwechsel – lange, ruhige Läufe / Fahrtspiel." },
+  "EXT ANE": { title:"Ext. anaerobe Ausdauer", desc:"Lange Intervalle (2–4 min) nahe der Schwelle, verbessert VO2max-Ausnutzung." },
+  "INT ANE": { title:"Schwellentraining",   desc:"Intervalle im Bereich der 4-mmol-Schwelle, verbessert Laktattoleranz (z. B. 15-15/30-15)." },
+  "ANAER":   { title:"Anaerobe Kapazität",  desc:"Kurze maximale Intervalle (10–30 s), Sprintausdauer & VO2max-Reiz." },
+};
+const HR_ZONE_INFO = [
+  { title:"Regeneration",           desc:"Lockere Belastung, aktive Erholung." },
+  { title:"Grundlagenausdauer 1",   desc:"Aerobe Basis, Fettstoffwechsel." },
+  { title:"Grundlagenausdauer 2",   desc:"Aerobe Schwelle, Tempoläufe." },
+  { title:"Schwellentraining",      desc:"Anaerobe Schwelle, wettkampfnahe Intensität." },
+  { title:"VO2max / Spitzenbelastung", desc:"Hochintensive Intervalle, maximale Sauerstoffaufnahme." },
+];
+
+function renderSessionContent(sessionId){
+  const session = state.sessions.find(s=>s.id===sessionId);
+  if(!session) return;
+
+  const rows = session.results.map(r=>{
+    const a = state.athletes.find(x=>x.id===r.athleteId);
+    const derived = a ? computeDerived(a, r.vift) : {};
+    return { r, a, derived };
+  });
+
+  const finished = rows.filter(x=>x.r.vift != null);
+  const avgVift = finished.length ? finished.reduce((s,x)=>s+x.r.vift,0)/finished.length : null;
+  const maxVift = finished.length ? Math.max(...finished.map(x=>x.r.vift)) : null;
+
+  document.getElementById("team-avg-vift").textContent = avgVift!=null ? fmt(avgVift,1) : "–";
+  document.getElementById("team-count").textContent = finished.length + " / " + session.results.length;
+  document.getElementById("team-max-vift").textContent = maxVift!=null ? fmt(maxVift,1) : "–";
+  document.getElementById("team-start").textContent = fmt(session.startSpeed,1) + " km/h";
+  document.getElementById("team-field").textContent = session.fieldLength ? (session.fieldLength + " m Feld") : "";
+
+  // Fortschritt gegenüber dem jeweils letzten Vortest
+  const deltas = finished.map(x => {
+    const p = prevViftFor(x.r.athleteId, session);
+    return p != null ? (x.r.vift - p) : null;
+  }).filter(v => v != null);
+  const up = deltas.filter(v => v > 0.001).length;
+  const down = deltas.filter(v => v < -0.001).length;
+  const same = deltas.length - up - down;
+  const avgD = deltas.length ? deltas.reduce((s,v)=>s+v,0)/deltas.length : null;
+  document.getElementById("team-avg-delta").textContent = avgD != null ? ((avgD>0?"+":"") + fmt(avgD,1) + " vs. Vortest") : "";
+  document.getElementById("team-progress").innerHTML = deltas.length
+    ? `Fortschritt: <span class="delta-up">▲ ${up} verbessert</span> · ${same} gleich · <span class="delta-down">▼ ${down} schwächer</span> (von ${deltas.length} mit Vortest)`
+    : "";
+  document.getElementById("team-field-note").textContent =
+    (session.fieldLength && session.fieldLength != 40)
+      ? `Testvariante ${session.fieldLength} m: Stufen/Tempo/VIFT sind identisch zur 40-m-Variante, die VO2max-Schätzung nach Buchheit ist jedoch nur für 40 m validiert.`
+      : "";
+
+  const barsWrap = document.getElementById("team-bars");
+  const sortedRows = [...finished].sort((a,b)=>b.r.vift - a.r.vift);
+  const barMax = maxVift || 1;
+  barsWrap.innerHTML = sortedRows.map(({r,a})=>{
+    const pct = Math.max(4, (r.vift / barMax) * 100);
+    const name = a ? (athleteName(a) || "(ohne Namen)") : "?";
+    return `
+      <div class="team-bar-row">
+        <div class="tname" title="${escapeAttr(name)}">${name}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:var(--blue);"></div></div>
+        <div class="tval">${fmt(r.vift,1)}</div>
+      </div>`;
+  }).join("") || `<div class="empty">Keine abgeschlossenen Läufe in diesem Test.</div>`;
+
+  const tbody = document.getElementById("results-tbody");
+  const allSorted = [...rows].sort((a,b)=>{
+    if(a.r.vift == null) return 1;
+    if(b.r.vift == null) return -1;
+    return b.r.vift - a.r.vift;
+  });
+  tbody.innerHTML = allSorted.map(({r,a,derived})=>{
+    const name = a ? (athleteName(a) || "(ohne Namen)") : "?";
+    const timeStr = formatMMSS(r.time);
+    const rankBadge = r.rank != null ? `<span class="badge ${r.rank===1?'rank1':''}">${r.rank}</span>` : "–";
+    const prev = r.vift != null ? prevViftFor(r.athleteId, session) : null;
+    const dv = (r.vift != null && prev != null) ? (r.vift - prev) : null;
+    return `
+      <tr>
+        <td>${rankBadge}</td>
+        <td>${name}</td>
+        <td class="num"><input class="time-edit" type="text" inputmode="decimal" data-edit-time="${r.athleteId}" value="${timeStr}" title="Test-Endzeit bearbeiten (MM:SS.s). VIFT, Rang und Werte werden neu berechnet."></td>
+        <td class="num">${r.vift!=null ? fmt(r.vift,1) : "–"}</td>
+        ${deltaCell(dv)}
+        <td class="num">${derived.vVO2max!=null ? fmt(derived.vVO2max,1) : "–"}</td>
+        <td class="num">${derived.vVT2!=null ? fmt(derived.vVT2,1) : "–"}</td>
+        <td class="num">${derived.vo2max!=null ? fmt(derived.vo2max,1) : "–"}</td>
+        <td><button class="btn btn-sm btn-danger" data-remove-result="${r.athleteId}" title="Ergebnis dieser Person aus diesem Test entfernen">✕</button></td>
+      </tr>`;
+  }).join("");
+
+  tbody.querySelectorAll("[data-remove-result]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const athleteId = btn.dataset.removeResult;
+      const a = state.athletes.find(x=>x.id===athleteId);
+      const name = a ? (athleteName(a) || "diese Person") : "diese Person";
+      if(!confirm(`Ergebnis von ${name} aus diesem Testtag entfernen?`)) return;
+      session.results = session.results.filter(r=>r.athleteId!==athleteId);
+      recomputeRanks(session.results);
+      saveState();
+      renderSessionContent(session.id);
+    });
+  });
+
+  // Test-Endzeit korrigieren (z. B. falsche Reihenfolge beim Stoppen). VIFT/Rang/Werte werden neu berechnet.
+  tbody.querySelectorAll("[data-edit-time]").forEach(inp=>{
+    inp.addEventListener("change", ()=>{
+      const athleteId = inp.dataset.editTime;
+      const rr = session.results.find(x=>x.athleteId===athleteId);
+      if(!rr) return;
+      const secs = parseMMSS(inp.value);
+      if(secs == null || secs <= 0){
+        alert("Zeit im Format MM:SS.s eingeben, z. B. 17:39.0");
+        renderSessionContent(session.id);
+        return;
+      }
+      rr.time = secs;
+      const { peakVelocity, vift } = computeVIFT(secs, session.startSpeed || 8, session.increment || 0.5, session.stageSeconds || 45);
+      rr.peakVelocity = peakVelocity;
+      rr.vift = vift;
+      recomputeRanks(session.results);
+      saveState();
+      renderSessionContent(session.id);
+    });
+  });
+
+  document.getElementById("export-csv").onclick = ()=> exportCSV(session, allSorted);
+  document.getElementById("results-print").onclick = ()=> openResultsPrintSheet(session, allSorted);
+}
+
+// ---------------- Ergebnisse als PDF (Druckansicht, nutzt #print-view) ----------------
+function openResultsPrintSheet(session, allSorted){
+  if(!session){ alert("Bitte zuerst einen Testtermin wählen."); return; }
+  const finished = allSorted.filter(x=>x.r.vift != null);
+  const avgVift = finished.length ? finished.reduce((s,x)=>s+x.r.vift,0)/finished.length : null;
+  const maxVift = finished.length ? Math.max(...finished.map(x=>x.r.vift)) : null;
+  const d = session.date ? new Date(session.date).toLocaleDateString("de-DE") : "";
+  const rows = allSorted.map(({r,a,derived})=>{
+    const name = a ? (athleteName(a) || "(ohne Namen)") : "?";
+    const timeStr = formatMMSS(r.time);
+    const rank = r.rank != null ? r.rank : "–";
+    const prev = r.vift != null ? prevViftFor(r.athleteId, session) : null;
+    const dv = (r.vift != null && prev != null) ? (r.vift - prev) : null;
+    const dvStr = dv==null ? "–" : (Math.abs(dv)<0.001 ? "±0" : (dv>0?"+":"")+fmt(dv,1));
+    return `<tr><td>${rank}</td><td>${escapeAttr(name)}</td><td>${timeStr}</td><td>${r.vift!=null?fmt(r.vift,1):"–"}</td><td>${dvStr}</td><td>${derived.vVO2max!=null?fmt(derived.vVO2max,1):"–"}</td><td>${derived.vVT2!=null?fmt(derived.vVT2,1):"–"}</td><td>${derived.vo2max!=null?fmt(derived.vo2max,1):"–"}</td></tr>`;
+  }).join("");
+  const fieldNote = (session.fieldLength && session.fieldLength != 40)
+    ? `<div style="font-size:12px;color:#555;margin-top:2px;">Testvariante ${session.fieldLength} m: Stufen/Tempo/VIFT identisch zur 40-m-Variante; VO2max-Schätzung nach Buchheit nur für 40 m validiert.</div>` : "";
+  document.getElementById("print-doc").innerHTML = `
+    <h1>30-15 IFT – Ergebnisse</h1>
+    <div style="color:#555;font-size:13px;">${d}${session.label ? " – " + escapeAttr(session.label) : ""}${session.fieldLength ? " · " + session.fieldLength + " m Feld" : ""} · Start ${fmt(session.startSpeed,1)} km/h</div>
+    ${fieldNote}
+    <h2>Kennwerte</h2>
+    <table><tbody>
+      <tr><td>Ø VIFT</td><td>${avgVift!=null?fmt(avgVift,1):"–"}</td><td>Getestet</td><td>${finished.length} / ${session.results.length}</td></tr>
+      <tr><td>Höchster VIFT</td><td>${maxVift!=null?fmt(maxVift,1):"–"}</td><td>Startgeschw.</td><td>${fmt(session.startSpeed,1)} km/h</td></tr>
+    </tbody></table>
+    <h2>Tabelle</h2>
+    <table>
+      <thead><tr><th>Rang</th><th>Name</th><th>Zeit</th><th>VIFT</th><th>Δ VIFT</th><th>vVO2max</th><th>vVT2 (Schwelle)</th><th>VO2max</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-top:26px;color:#888;font-size:11px;">30-15 Intermittent Fitness Test nach Martin Buchheit · Blatt erstellt ${new Date().toLocaleDateString("de-DE")}</div>
+  `;
+  document.getElementById("print-view").style.display = "block";
+}
+
+document.getElementById("delete-session").addEventListener("click", ()=>{
+  const sel = document.getElementById("session-select");
+  const id = sel.value;
+  const session = state.sessions.find(s=>s.id===id);
+  if(!session) return;
+  const d = session.date ? new Date(session.date).toLocaleDateString("de-DE") : "?";
+  const label = session.label ? ` – ${session.label}` : "";
+  if(!confirm(`Testtag "${d}${label}" wirklich unwiderruflich löschen? Alle Ergebnisse dieses Termins gehen verloren.`)) return;
+  state.sessions = state.sessions.filter(s=>s.id!==id);
+  saveState();
+  renderSessionSelect();
+});
+
+// Baut den Lauftempo-Zonen-Block (farbige Ampel-Balken + Trainingsreiz-Text)
+function speedZonesHTML(speedZones){
+  if(!speedZones) return `<div class="empty">Kein VIFT-Wert für diesen Test vorhanden.</div>`;
+  const max = speedZones[speedZones.length-1].kmh * 1.15;
+  return speedZones.map((z,i)=>{
+    const info = SPEED_ZONE_INFO[z.label] || {title:"",desc:""};
+    return `
+      <div class="zone-item" title="${escapeAttr(info.desc)}">
+        <div class="zone-head">
+          <div class="zlabel"><span class="zdot" style="background:${zoneColor(i)};"></span>${z.label}<span class="zpurpose">${info.title}</span></div>
+          <div class="zval">${fmt(z.kmh,1)} km/h · ${z.pace}/km</div>
+        </div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.max(6,(z.kmh/max)*100)}%;background:${zoneColor(i)};"></div></div>
+        <div class="zdesc">${info.desc}</div>
+      </div>`;
+  }).join("");
+}
+
+// Baut den Herzfrequenz-Zonen-Block (farbige Ampel-Chips + Trainingsreiz-Text)
+function hrZonesHTML(hrZones, unitLabel){
+  if(!hrZones) return `<div class="empty">Für die HF-Zonen wird der Maxpuls benötigt – Geburtsjahr im Kader eintragen (dann wird er geschätzt) oder einen gemessenen Maxpuls hinterlegen.</div>`;
+  const u = unitLabel || "HFmax";
+  return hrZones.map((z,i)=>{
+    const info = HR_ZONE_INFO[i] || {title:"",desc:""};
+    return `
+      <div class="hr-chip" title="${escapeAttr(info.desc)}">
+        <div class="swatch" style="background:${zoneColor(i)};"></div>
+        <div style="flex:1;">
+          <div class="hr-chip-top"><b>${info.title}</b><span class="zrange">${z.bpmLo}–${z.bpmHi} S/min · ${z.pctLo}–${z.pctHi}% ${u}</span></div>
+          <div class="hr-chip-desc">${info.desc}</div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function hrThresholdsText(derived){
+  let thr = "";
+  if(derived.aerobicThresholdHR != null) thr += `Aerobe Schwelle: ${Math.round(derived.aerobicThresholdHR)} S/min · `;
+  if(derived.anaerobicThresholdHR != null) thr += `Anaerobe Schwelle: ${Math.round(derived.anaerobicThresholdHR)} S/min`;
+  return thr;
+}
+
+// Kompletter Empfehlungs-Block für eine:n Athlet:in + ein Testergebnis.
+// Wird sowohl im Ergebnisse-Tab (Klick auf eine Zeile) als auch im Trainingszonen-Tab verwendet.
+function buildRecommendationHTML(athlete, r, rankTotal){
+  const vift = r ? r.vift : null;
+  const derived = computeDerived(athlete, vift);
+
+  let html = `<div class="stat-grid">
+    <div class="stat-tile"><div class="label">VIFT</div><div class="value">${vift!=null?fmt(vift,1):"–"}</div><div class="sub">${(r&&r.rank!=null)?("Rang "+r.rank+(rankTotal?(" / "+rankTotal):"")):""}</div></div>
+    <div class="stat-tile"><div class="label">vVO2max</div><div class="value">${derived.vVO2max!=null?fmt(derived.vVO2max,1):"–"}</div><div class="sub">km/h</div></div>
+    <div class="stat-tile"><div class="label">vVT2 (4mmol-Schwelle)</div><div class="value">${derived.vVT2!=null?fmt(derived.vVT2,1):"–"}</div><div class="sub">km/h</div></div>
+    <div class="stat-tile"><div class="label">VO2max (geschätzt)</div><div class="value">${derived.vo2max!=null?fmt(derived.vo2max,1):"–"}</div><div class="sub">ml/min/kg</div></div>
+  </div>
+  <div class="detail-grid" style="margin-top:18px;">
+    <div>
+      <h3>Lauftempo-Trainingszonen</h3>
+      ${speedZonesHTML(derived.speedZones)}
+    </div>
+    <div>
+      <h3>Herzfrequenz-Zonen ${typeof hrZoneMode !== "undefined" && hrZoneMode === "karvonen" ? "(Karvonen · HFR)" : "(% HFmax)"}</h3>
+      <div class="hr-chip-row">${(typeof hrZoneMode !== "undefined" && hrZoneMode === "karvonen")
+        ? hrZonesHTML(derived.hrZonesKarvonen, "HFR")
+        : hrZonesHTML(derived.hrZones, "HFmax")}</div>
+      <div class="muted" style="font-size:12px;margin-top:8px;">${hrThresholdsText(derived)}</div>
+      ${(derived.maxHR != null && (derived.maxHrEstimated || derived.restHrEstimated)) ? `<div class="muted" style="font-size:11.5px;margin-top:4px;color:var(--blue);">${derived.maxHrEstimated ? "Maxpuls" : ""}${derived.maxHrEstimated && derived.restHrEstimated ? " & " : ""}${derived.restHrEstimated ? "Ruhepuls" : ""} geschätzt (Alter/Geschlecht) – gemessene Werte im Kader eintragen.</div>` : ""}
+    </div>
+  </div>`;
+
+  const history = sortedSessions().slice().reverse()
+    .map(s => ({ date:s.date, r: s.results.find(x=>x.athleteId===athlete.id) }))
+    .filter(x => x.r && x.r.vift != null);
+  if(history.length > 1){
+    html += `<div class="trend-wrap">
+      <h3 style="margin-top:18px;">VIFT-Verlauf</h3>
+      ${renderTrendSVG(history)}
+    </div>`;
+  }
+  return html;
+}
+
+
+// ---------------- Trainingszonen (Namen wählen -> Empfehlungen) ----------------
+function renderZonenAthleteSelect(){
+  const sel = document.getElementById("zonen-athlete-select");
+  const empty = document.getElementById("zonen-empty");
+  const list = teamAthletes();
+  if(list.length === 0){
+    empty.style.display = "block";
+    document.getElementById("zonen-body").innerHTML = "";
+    sel.innerHTML = "";
+    document.getElementById("zonen-session-select").innerHTML = "";
+    return;
+  }
+  empty.style.display = "none";
+  const prev = sel.value;
+  sel.innerHTML = list.map(a => `<option value="${a.id}">${escapeAttr(athleteName(a) || "(ohne Namen)")}</option>`).join("");
+  if(prev && list.some(a=>a.id===prev)) sel.value = prev;
+  renderZonenSessionSelect();
+}
+
+function renderZonenSessionSelect(){
+  const athleteId = document.getElementById("zonen-athlete-select").value;
+  const sel = document.getElementById("zonen-session-select");
+  const sessions = sortedSessions().filter(s => s.results.some(r => r.athleteId === athleteId && r.vift != null));
+  if(sessions.length === 0){
+    sel.innerHTML = `<option value="">– kein Test vorhanden –</option>`;
+    document.getElementById("zonen-body").innerHTML = `<div class="empty">Für diese:n Athlet:in liegt noch kein abgeschlossener 30-15-IFT-Test vor.</div>`;
+    return;
+  }
+  sel.innerHTML = sessions.map(s => {
+    const d = s.date ? new Date(s.date).toLocaleDateString("de-DE") : "?";
+    const label = s.label ? ` – ${s.label}` : "";
+    return `<option value="${s.id}">${d}${label}</option>`;
+  }).join("");
+  renderZonenBody();
+}
+
+function renderZonenBody(){
+  const athleteId = document.getElementById("zonen-athlete-select").value;
+  const sessionId = document.getElementById("zonen-session-select").value;
+  const a = state.athletes.find(x=>x.id===athleteId);
+  const session = state.sessions.find(s=>s.id===sessionId);
+  const body = document.getElementById("zonen-body");
+  if(!a || !session){ body.innerHTML = ""; return; }
+  const r = session.results.find(x=>x.athleteId===athleteId);
+  if(!r || r.vift == null){
+    body.innerHTML = `<div class="empty">Für diesen Testtermin liegt kein VIFT-Wert vor.</div>`;
+    return;
+  }
+  body.innerHTML = buildRecommendationHTML(a, r, session.results.length);
+}
+
+document.getElementById("zonen-athlete-select").addEventListener("change", renderZonenSessionSelect);
+document.getElementById("zonen-session-select").addEventListener("change", renderZonenBody);
+
+function renderTrendSVG(history){
+  const W = 560, H = 120, padL = 30, padR = 12, padT = 14, padB = 22;
+  const vals = history.map(h=>h.r.vift);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = (max - min) || 1;
+  const x = i => padL + (i/(history.length-1)) * (W-padL-padR);
+  const y = v => padT + (1 - (v-min)/range) * (H-padT-padB);
+  const points = history.map((h,i)=>`${x(i)},${y(h.r.vift)}`).join(" ");
+  const dots = history.map((h,i)=>`<circle cx="${x(i)}" cy="${y(h.r.vift)}" r="3.5" fill="var(--blue)"></circle>`).join("");
+  const labels = history.map((h,i)=>{
+    const d = new Date(h.date);
+    const short = isNaN(d) ? "" : d.toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"});
+    return `<text x="${x(i)}" y="${H-4}" font-size="10" fill="var(--muted)" text-anchor="middle">${short}</text>`;
+  }).join("");
+  const last = history[history.length-1];
+  const lastLabel = `<text x="${x(history.length-1)}" y="${y(last.r.vift)-10}" font-size="11" fill="var(--text)" text-anchor="middle" font-weight="700">${fmt(last.r.vift,1)}</text>`;
+  return `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;">
+      <line x1="${padL}" y1="${H-padB}" x2="${W-padR}" y2="${H-padB}" stroke="var(--grid)" stroke-width="1"></line>
+      <polyline points="${points}" fill="none" stroke="var(--blue)" stroke-width="2"></polyline>
+      ${dots}
+      ${labels}
+      ${lastLabel}
+    </svg>`;
+}
+
+function exportCSV(session, rows){
+  const header = ["Rang","Name","Zeit_s","VIFT","Delta_VIFT","vVO2max_kmh","vVT2_kmh","VO2max_mlminkg","Feld_m"];
+  const lines = [header.join(";")];
+  rows.forEach(({r,a,derived})=>{
+    const name = athleteName(a);
+    const prev = r.vift!=null ? prevViftFor(r.athleteId, session) : null;
+    const dv = (r.vift!=null && prev!=null) ? (r.vift-prev) : null;
+    lines.push([
+      r.rank ?? "", name, r.time!=null?r.time.toFixed(1):"", r.vift!=null?r.vift.toFixed(1):"",
+      dv!=null?dv.toFixed(1):"",
+      derived.vVO2max!=null?derived.vVO2max.toFixed(2):"",
+      derived.vVT2!=null?derived.vVT2.toFixed(2):"",
+      derived.vo2max!=null?derived.vo2max.toFixed(1):"",
+      session.fieldLength || ""
+    ].join(";"));
+  });
+  const blob = new Blob(["﻿"+lines.join("\n")], {type:"text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const d = session.date || todayISO();
+  a.href = url;
+  a.download = `IFT_${d}${session.label ? "_"+session.label.replace(/\s+/g,"-") : ""}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById("backup-export").addEventListener("click", backupExport);
+document.getElementById("backup-import").addEventListener("click", ()=> document.getElementById("backup-file-input").click());
+document.getElementById("backup-file-input").addEventListener("change", (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  backupImport(file);
+  e.target.value = "";
+});
+
+// ---------------- Kader-Import (Tabelle einfügen) ----------------
+// Erlaubt, viele Athlet:innen auf einmal aus einer Excel-/Numbers-Tabelle zu übernehmen,
+// statt jede Zeile im Kader einzeln zu tippen.
+function impNorm(s){
+  return String(s || "").toLowerCase()
+    .replace(/ä/g,"ae").replace(/ö/g,"oe").replace(/ü/g,"ue").replace(/ß/g,"ss")
+    .replace(/[^a-z0-9]/g,"");
+}
+const IMPORT_HEADERS = {
+  name:        ["name","spielerin","spieler","athletin","athlet","person"],
+  vorname:     ["vorname","firstname"],
+  nachname:    ["nachname","lastname","familienname","surname"],
+  geburtsdatum:["geburtsdatum","geburtstag","geburt","geboren","birthday"],
+  tag:         ["gebtag"],
+  monat:       ["gebmonat"],
+  jahr:        ["geburtsjahr","gebjahr","jahrgang"],
+  geschlecht:  ["geschlecht","geschl","sex","gender"],
+  groesse:     ["groesse","koerpergroesse","koerperhoehe","hoehe","height"],
+  gewicht:     ["gewicht","koerpergewicht","weight","masse"],
+  ruhepuls:    ["ruhepuls","ruhehf","restingheartrate","rhr"],
+  maxpuls:     ["maxpuls","maximalpuls","maximaleherzfrequenz","maxherzfrequenz","hrmax","maxhr","hfmax"],
+};
+const IMPORT_FIXED_ORDER = ["name","geburtsdatum","geschlecht","groesse","gewicht","ruhepuls","maxpuls"];
+// normalisierte Alias -> Feldschlüssel
+const IMPORT_LOOKUP = {};
+for(const key in IMPORT_HEADERS){ IMPORT_HEADERS[key].forEach(a => { IMPORT_LOOKUP[impNorm(a)] = key; }); }
+// Kopfzelle -> Feld: exakt, sonst „enthält Alias" (Alias ≥ 3 Zeichen), längster gewinnt.
+// Fängt „Groesse (cm)", „Gewicht [kg]", „Geb.-Datum" usw. ab.
+function headerKeyFor(h){
+  if(!h) return null;
+  if(IMPORT_LOOKUP[h]) return IMPORT_LOOKUP[h];
+  let best = null, bestLen = 0;
+  for(const alias in IMPORT_LOOKUP){
+    if(alias.length >= 3 && h.indexOf(alias) >= 0 && alias.length > bestLen){ best = IMPORT_LOOKUP[alias]; bestLen = alias.length; }
+  }
+  return best;
+}
+function impInt(v){ const n = parseInt(String(v).replace(/[^0-9]/g,""),10); return isNaN(n) ? null : n; }
+function impFloat(v){
+  if(v == null) return null;
+  const s = String(v).replace(/\s/g,"").replace(/,/g,".").replace(/[^0-9.\-]/g,"");
+  if(s === "" || s === "-" || s === ".") return null;
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+function impBirthdate(raw){
+  const s = String(raw || "").trim();
+  let m;
+  if((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))            return { jahr:+m[1], monat:+m[2], tag:+m[3] };
+  if((m = s.match(/^(\d{1,2})[.\/\- ](\d{1,2})[.\/\- ](\d{2,4})/))){
+    let y = +m[3]; if(y < 100) y += (y > 30 ? 1900 : 2000);
+    return { tag:+m[1], monat:+m[2], jahr:y };
+  }
+  if((m = s.match(/^(20\d{2}|19\d{2})$/)))                     return { jahr:+m[1], monat:null, tag:null };
+  return { tag:null, monat:null, jahr:null };
+}
+function impSplit(line){
+  if(line.indexOf("\t") >= 0) return line.split("\t");
+  if(line.indexOf(";")  >= 0) return line.split(";");
+  if(line.indexOf(",")  >= 0) return line.split(",");
+  return line.split(/\s{2,}/);
+}
+
+function parseKaderText(text){
+  const lines = String(text || "").split(/\r?\n/).map(l => l.replace(/\s+$/,"")).filter(l => l.trim() !== "");
+  if(!lines.length) return { athletes: [], skipped: 0 };
+  const rows = lines.map(impSplit).map(cells => cells.map(c => c.trim()));
+
+  // Kopfzeile erkennen?
+  let colMap = null;
+  const head = rows[0].map(impNorm);
+  const isHeader = head.some(h => headerKeyFor(h) != null);
+  let dataRows = rows;
+  if(isHeader){
+    colMap = {};
+    head.forEach((h, idx) => {
+      const key = headerKeyFor(h);
+      if(key && colMap[key] == null) colMap[key] = idx;
+    });
+    dataRows = rows.slice(1);
+  }
+  const cell = (row, key, fixedIdx) => {
+    const idx = colMap ? colMap[key] : fixedIdx;
+    if(idx == null || idx < 0 || idx >= row.length) return "";
+    return (row[idx] || "").trim();
+  };
+
+  const out = [];
+  let skipped = 0;
+  dataRows.forEach(row => {
+    if(!row.length || row.every(c => c === "")) return;
+    const fi = i => IMPORT_FIXED_ORDER.indexOf(i);
+
+    // Name: getrennte Spalten Vorname/Nachname, sonst kombinierte Spalte am letzten Leerzeichen trennen
+    let vorname = colMap && colMap.vorname != null ? cell(row, "vorname") : "";
+    let nachname = colMap && colMap.nachname != null ? cell(row, "nachname") : "";
+    if(!vorname && !nachname){
+      const parts = cell(row, "name", fi("name")).trim().split(/\s+/).filter(Boolean);
+      if(parts.length === 1) nachname = parts[0];
+      else if(parts.length > 1){ nachname = parts.pop(); vorname = parts.join(" "); }
+    }
+
+    let tag = null, monat = null, jahr = null;
+    const jRaw = colMap ? cell(row, "jahr") : "";
+    if(jRaw){ jahr = impInt(jRaw); tag = impInt(colMap ? cell(row, "tag") : ""); monat = impInt(colMap ? cell(row, "monat") : ""); }
+    else {
+      const d = impBirthdate(cell(row, "geburtsdatum", fi("geburtsdatum")));
+      tag = d.tag; monat = d.monat; jahr = d.jahr;
+    }
+
+    const gRaw = impNorm(cell(row, "geschlecht", fi("geschlecht")));
+    let geschlecht = "m";
+    if(/^(w|f|weib|frau|maedchen|girl|female)/.test(gRaw)) geschlecht = "w";
+
+    let groesse = impFloat(cell(row, "groesse", fi("groesse")));
+    if(groesse != null && groesse > 0 && groesse < 3.5) groesse = Math.round(groesse * 100); // Meter -> cm
+    if(groesse != null && (groesse < 90 || groesse > 235)) groesse = null;
+
+    const a = {
+      id: uid(),
+      vorname: vorname, nachname: nachname,
+      geburtstag: tag, geburtsmonat: monat, geburtsjahr: jahr,
+      geschlecht: geschlecht,
+      groesse: groesse,
+      gewicht: impFloat(cell(row, "gewicht", fi("gewicht"))),
+      ruhepuls: impInt(cell(row, "ruhepuls", fi("ruhepuls"))),
+      maxpuls: impInt(cell(row, "maxpuls", fi("maxpuls"))),
+    };
+    if(!a.vorname && !a.nachname && a.groesse == null && a.gewicht == null && a.geburtsjahr == null && a.maxpuls == null){ skipped++; return; }
+    out.push(a);
+  });
+  return { athletes: out, skipped: skipped };
+}
+
+const importBox = document.getElementById("import-box");
+const importText = document.getElementById("import-text");
+const importPreview = document.getElementById("import-preview");
+
+function refreshImportPreview(){
+  const { athletes, skipped } = parseKaderText(importText.value);
+  if(!importText.value.trim()){ importPreview.textContent = ""; return; }
+  const named = athletes.filter(a => a.vorname || a.nachname).length;
+  importPreview.textContent = `${athletes.length} Zeile${athletes.length===1?"":"n"} erkannt`
+    + (named !== athletes.length ? ` (${athletes.length - named} ohne Namen)` : "")
+    + (skipped ? ` · ${skipped} leer übersprungen` : "");
+}
+
+document.getElementById("import-open").addEventListener("click", ()=>{
+  const show = importBox.style.display === "none";
+  importBox.style.display = show ? "block" : "none";
+  if(show){ importText.focus(); }
+});
+document.getElementById("import-cancel").addEventListener("click", ()=>{
+  importBox.style.display = "none";
+  importText.value = "";
+  importPreview.textContent = "";
+});
+importText.addEventListener("input", refreshImportPreview);
+
+document.getElementById("import-template").addEventListener("click", async ()=>{
+  const header = "Vorname\tNachname\tGeburtsdatum\tGeschlecht\tGröße (cm)\tGewicht (kg)\tRuhepuls\tMaxpuls";
+  try{
+    await navigator.clipboard.writeText(header);
+    importPreview.textContent = "Kopfzeile in die Zwischenablage kopiert – in Excel einfügen.";
+  }catch(e){
+    importText.value = header + "\n" + importText.value;
+    refreshImportPreview();
+  }
+});
+
+document.getElementById("import-run").addEventListener("click", ()=>{
+  const { athletes, skipped } = parseKaderText(importText.value);
+  if(!athletes.length){ alert("Keine verwertbaren Zeilen erkannt. Prüfe die Spalten (Tabulator- oder Semikolon-getrennt)."); return; }
+  const mode = document.querySelector('input[name="import-mode"]:checked').value;
+  const verb = mode === "replace" ? "ersetzen" : "zum Kader hinzufügen";
+  const tName = activeTeam() ? activeTeam().name : "";
+  if(!confirm(`${athletes.length} Athlet:in${athletes.length===1?"":"nen"} ${verb} – Team „${tName}"?` + (skipped ? ` (${skipped} leere Zeilen übersprungen)` : ""))) return;
+  const tagged = athletes.map(a => Object.assign({}, a, { teamId: state.activeTeamId }));
+  if(mode === "replace"){
+    state.athletes = state.athletes.filter(a => a.teamId !== state.activeTeamId).concat(tagged);
+  } else {
+    state.athletes = state.athletes.concat(tagged);
+  }
+  saveState();
+  renderAll();
+  importBox.style.display = "none";
+  importText.value = "";
+  importPreview.textContent = "";
+  alert(`${athletes.length} Athlet:in${athletes.length===1?"":"nen"} in Team „${tName}" übernommen.`);
+});
+
+// ---------------- Kader als CSV ----------------
+function downloadText(text, filename, type){
+  const blob = new Blob([text], {type: type || "text/plain;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+function exportKaderCsv(){
+  const list = teamAthletes();
+  if(!list.length){ alert("Kein Kader in diesem Team."); return; }
+  const head = ["Vorname","Nachname","Geburtstag","Geburtsmonat","Geburtsjahr","Alter","Geschlecht","Groesse_cm","Gewicht_kg","Ruhepuls","Ruhepuls_Quelle","Maxpuls","Maxpuls_Quelle"];
+  const lines = [head.join(";")];
+  const clean = s => String(s||"").replace(/;/g,",");
+  list.forEach(a=>{
+    lines.push([
+      clean(a.vorname), clean(a.nachname),
+      a.geburtstag==null?"":a.geburtstag, a.geburtsmonat==null?"":a.geburtsmonat,
+      a.geburtsjahr==null?"":a.geburtsjahr, ageFromBirthdate(a)==null?"":ageFromBirthdate(a), a.geschlecht||"",
+      a.groesse==null?"":a.groesse, a.gewicht==null?"":a.gewicht,
+      effRuhepuls(a)==null?"":effRuhepuls(a), a.ruhepuls==null?"geschätzt":"gemessen",
+      effMaxpuls(a)==null?"":effMaxpuls(a), a.maxpuls==null?"geschätzt":"gemessen"
+    ].join(";"));
+  });
+  const tn = (activeTeam() ? activeTeam().name : "Kader").replace(/[^\w äöüÄÖÜß-]/g,"").replace(/\s+/g,"_");
+  downloadText("﻿"+lines.join("\n"), "IFT_Kader_"+tn+"_"+todayISO()+".csv", "text/csv;charset=utf-8;");
+}
+document.getElementById("kader-csv").addEventListener("click", exportKaderCsv);
+
+// ---------------- Startgruppen (Planungshilfe) ----------------
+function lastViftOf(athleteId){
+  const list = sortedSessions();
+  for(let i=0;i<list.length;i++){
+    const r = list[i].results.find(x=>x.athleteId===athleteId && x.vift!=null);
+    if(r) return r.vift;
+  }
+  return -1;
+}
+function makeGroupPlan(){
+  const n = Math.max(1, Math.min(8, parseInt(document.getElementById("cfg-groups").value,10) || 1));
+  const ids = Array.from(document.querySelectorAll(".participant-check:checked")).map(c=>c.value);
+  const plan = document.getElementById("group-plan");
+  if(n < 2 || ids.length < 2){ plan.innerHTML = ""; return; }
+  const items = ids.map(id=>{
+    const a = state.athletes.find(x=>x.id===id);
+    return { id:id, name: a ? (athleteName(a) || "(ohne Namen)") : "?", v: lastViftOf(id) };
+  }).sort((x,y)=> (y.v - x.v) || x.name.localeCompare(y.name));
+  const groups = []; for(let i=0;i<n;i++) groups.push([]);
+  let gi = 0, dir = 1;
+  items.forEach(it=>{
+    groups[gi].push(it);
+    gi += dir;
+    if(gi >= n){ gi = n-1; dir = -1; } else if(gi < 0){ gi = 0; dir = 1; }
+  });
+  plan.innerHTML = '<div class="participant-grid">' + groups.map((g,i)=>{
+    const names = g.map(x=> escapeAttr(x.name) + (x.v>0 ? " · "+fmt(x.v,1) : "")).join("<br>");
+    return `<div class="group-col"><b>Gruppe ${i+1} (${g.length})</b>${names}
+      <div style="margin-top:8px;"><button class="btn btn-sm" data-testgroup="${i}">nur diese Gruppe auswählen</button></div></div>`;
+  }).join("") + '</div>';
+  plan.querySelectorAll("[data-testgroup]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const gids = groups[+btn.dataset.testgroup].map(x=>x.id);
+      document.querySelectorAll(".participant-check").forEach(c=> c.checked = gids.indexOf(c.value) >= 0);
+      document.getElementById("start-hint").textContent = "Gruppe " + (+btn.dataset.testgroup + 1) + " ausgewählt (" + gids.length + ").";
+    });
+  });
+}
+document.getElementById("make-groups").addEventListener("click", makeGroupPlan);
+
+// ---------------- Δ VIFT / Team-Fortschritt ----------------
+function prevViftFor(athleteId, session){
+  const older = state.sessions
+    .filter(s => s.id !== session.id && s.teamId === session.teamId && String(s.date||"") < String(session.date||""))
+    .sort((a,b)=> String(b.date||"").localeCompare(String(a.date||"")));
+  for(let i=0;i<older.length;i++){
+    const r = older[i].results.find(x=>x.athleteId===athleteId && x.vift!=null);
+    if(r) return r.vift;
+  }
+  return null;
+}
+function deltaCell(dv){
+  if(dv == null) return '<td class="num">–</td>';
+  if(Math.abs(dv) < 0.001) return '<td class="num">±0</td>';
+  const cls = dv > 0 ? "delta-up" : "delta-down";
+  return `<td class="num ${cls}">${dv>0?"+":""}${fmt(dv,1)}</td>`;
+}
+
+// ---------------- Karvonen-HF-Zonen ----------------
+let hrZoneMode = "hrmax";
+function karvonenZones(maxHR, restHR){
+  if(maxHR == null || restHR == null) return null;
+  const bands = [[50,60],[60,70],[70,80],[80,90],[90,100]];
+  return bands.map(([lo,hi],i)=>({
+    idx:i, pctLo:lo, pctHi:hi,
+    bpmLo: Math.round((maxHR-restHR)*lo/100 + restHR),
+    bpmHi: Math.round((maxHR-restHR)*hi/100 + restHR),
+  }));
+}
+
+// ---------------- Intervalltraining nach Buchheit ----------------
+const IT_PRESETS = [
+  {n:"— manuell —", manual:true},
+  {n:"Zentral · 3 min · 85–88% · gerade", focus:"Zentral", run:180, pct:86, rest:0, restPct:0, form:"straight", series:"5–6 Serien", maxSerie:"–", between:"3 min"},
+  {n:"Zentral · 45/15 · 90% · gerade", focus:"Zentral", run:45, pct:90, rest:15, restPct:0, form:"straight", series:"2–3 Serien", maxSerie:"7–8 min", between:"3 min"},
+  {n:"Zentral · 30/15 · 90% · gerade", focus:"Zentral", run:30, pct:90, rest:15, restPct:0, form:"straight", series:"2–3 Serien", maxSerie:"7–8 min", between:"3 min"},
+  {n:"Zentral · 30/30 · 90% / 40% · gerade", focus:"Zentral", run:30, pct:90, rest:30, restPct:40, form:"straight", series:"2 Serien", maxSerie:">12 min", between:"3 min"},
+  {n:"Zentral · 30/30 · 93% · Pendel 40 m", focus:"Zentral", run:30, pct:93, rest:30, restPct:0, form:"shuttle", shuttle:40, series:"2–3 Serien", maxSerie:"12 min", between:"3 min"},
+  {n:"Zentral · 15/15 · 100% · gerade", focus:"Zentral", run:15, pct:100, rest:15, restPct:0, form:"straight", series:"2–3 Serien", maxSerie:"10 min", between:"3 min"},
+  {n:"Zentral · 15/15 · 95% / 25% · Pendel 40 m", focus:"Zentral", run:15, pct:95, rest:15, restPct:25, form:"shuttle", shuttle:40, series:"2 Serien", maxSerie:"15 min", between:"3 min"},
+  {n:"Peripher · 20/20 · 95% · gerade", focus:"Peripher", run:20, pct:95, rest:20, restPct:0, form:"straight", series:"2 Serien", maxSerie:"7–8 min", between:"6–7 min aktiv"},
+  {n:"Peripher · 20/20 · 90% / 45% · Pendel 30 m", focus:"Peripher", run:20, pct:90, rest:20, restPct:45, form:"shuttle", shuttle:30, series:"2 Serien", maxSerie:"7–8 min", between:"6–7 min aktiv"},
+  {n:"Peripher · 20/15 · 95% · Pendel 30 m", focus:"Peripher", run:20, pct:95, rest:15, restPct:0, form:"shuttle", shuttle:30, series:"2 Serien", maxSerie:"7–8 min", between:"6–7 min aktiv"},
+  {n:"Peripher · 15/15 · 100% · Pendel 40 m", focus:"Peripher", run:15, pct:100, rest:15, restPct:0, form:"shuttle", shuttle:40, series:"2 Serien", maxSerie:"7–8 min", between:"6–7 min aktiv"},
+  {n:"Peripher · 15/15 · 95% / 25% · gerade", focus:"Peripher", run:15, pct:95, rest:15, restPct:25, form:"straight", series:"2 Serien", maxSerie:"7 min", between:"6–7 min aktiv"},
+  {n:"Peripher · 15/10 · 95% · Pendel 40 m", focus:"Peripher", run:15, pct:95, rest:10, restPct:0, form:"shuttle", shuttle:40, series:"2 Serien", maxSerie:"7 min", between:"6–7 min aktiv"},
+  {n:"Peripher · 10/10 · 90% · Pendel 10 m", focus:"Peripher", run:10, pct:90, rest:10, restPct:0, form:"shuttle", shuttle:10, series:"2 Serien", maxSerie:"6 min", between:"6–7 min aktiv"},
+  {n:"Peripher · 10/10 · 95% · gerade", focus:"Peripher", run:10, pct:95, rest:10, restPct:0, form:"straight", series:"2 Serien", maxSerie:"6 min", between:"6–7 min aktiv"},
+];
+function turnPenaltySec(angle){ return angle === 90 ? 0.4 : angle === 45 ? 0.5 : 0.7; }
+function intervalCalc(vift, o){
+  const v = vift * (o.pct/100) / 3.6;            // m/s
+  const straight = v * o.runSec;
+  const res = { targetKmh: vift * (o.pct/100), v: v, straight: straight };
+  if(o.form === "shuttle" && o.shuttleLen > 0){
+    const penM = turnPenaltySec(o.angle) * v;    // Meter, die pro Richtungswechsel verloren gehen
+    let dist = straight, turns = 0;
+    for(let i=0;i<8;i++){
+      const t = Math.max(0, Math.floor(dist / o.shuttleLen));
+      dist = Math.max(0, straight - t * penM);
+      if(t === turns && i > 0) { turns = t; break; }
+      turns = t;
+    }
+    res.shuttleDist = dist;
+    res.turns = turns;
+    res.shuttles = Math.floor(dist / o.shuttleLen);
+    res.remainder = dist - res.shuttles * o.shuttleLen;
+  }
+  if(o.restPct > 0){
+    res.restKmh = vift * (o.restPct/100);
+    res.restDist = res.restKmh / 3.6 * o.restSec;
+  }
+  return res;
+}
+function readItOpts(){
+  return {
+    pct: num(document.getElementById("it-pct").value) ?? 95,
+    runSec: num(document.getElementById("it-run").value) ?? 15,
+    restSec: num(document.getElementById("it-rest").value) ?? 15,
+    restPct: num(document.getElementById("it-restpct").value) ?? 0,
+    form: document.getElementById("it-form").value,
+    shuttleLen: num(document.getElementById("it-shuttle").value) ?? 20,
+    angle: parseInt(document.getElementById("it-angle").value, 10) || 180,
+  };
+}
+function toggleItFields(){
+  const sh = document.getElementById("it-form").value === "shuttle";
+  document.getElementById("it-shuttle-field").style.display = sh ? "" : "none";
+  document.getElementById("it-angle-field").style.display = sh ? "" : "none";
+}
+function currentItSelection(){
+  const aId = document.getElementById("it-athlete").value;
+  const sId = document.getElementById("it-session").value;
+  const a = state.athletes.find(x=>x.id===aId);
+  const s = state.sessions.find(x=>x.id===sId);
+  const r = s ? s.results.find(x=>x.athleteId===aId) : null;
+  return { a: a, s: s, vift: r ? r.vift : null };
+}
+function renderIntervalTab(){
+  const wrap = document.getElementById("it-wrap");
+  const empty = document.getElementById("it-empty");
+  const ts = teamSessions();
+  const withTest = teamAthletes().filter(a => ts.some(s => s.results.some(r => r.athleteId===a.id && r.vift!=null)));
+  if(!withTest.length){ empty.style.display = "block"; wrap.style.display = "none"; return; }
+  empty.style.display = "none"; wrap.style.display = "block";
+  const asel = document.getElementById("it-athlete");
+  const prevA = asel.value;
+  asel.innerHTML = withTest.map(a=>`<option value="${a.id}">${escapeAttr(athleteName(a) || "(ohne Namen)")}</option>`).join("");
+  if(prevA && withTest.some(a=>a.id===prevA)) asel.value = prevA;
+  const psel = document.getElementById("it-preset");
+  if(!psel.dataset.filled){
+    psel.innerHTML = IT_PRESETS.map((p,i)=>`<option value="${i}">${escapeAttr(p.n)}</option>`).join("");
+    psel.dataset.filled = "1";
+  }
+  toggleItFields();
+  renderItSession();
+}
+function renderItSession(){
+  const aId = document.getElementById("it-athlete").value;
+  const ssel = document.getElementById("it-session");
+  const sessions = sortedSessions().filter(s => s.results.some(r=>r.athleteId===aId && r.vift!=null));
+  ssel.innerHTML = sessions.map(s=>{
+    const d = s.date ? new Date(s.date).toLocaleDateString("de-DE") : "?";
+    return `<option value="${s.id}">${d}${s.label ? " – " + escapeAttr(s.label) : ""}</option>`;
+  }).join("");
+  renderItOut();
+}
+function applyItPreset(){
+  const p = IT_PRESETS[parseInt(document.getElementById("it-preset").value,10)];
+  if(!p || p.manual){ renderItOut(); return; }
+  document.getElementById("it-pct").value = p.pct;
+  document.getElementById("it-run").value = p.run;
+  document.getElementById("it-rest").value = p.rest;
+  document.getElementById("it-restpct").value = p.restPct || 0;
+  document.getElementById("it-form").value = p.form;
+  if(p.shuttle) document.getElementById("it-shuttle").value = p.shuttle;
+  toggleItFields();
+  renderItOut();
+}
+function renderItOut(){
+  const out = document.getElementById("it-out");
+  const sel = currentItSelection();
+  if(!sel.a || sel.vift == null){ out.innerHTML = `<div class="empty">Kein VIFT für diese Auswahl.</div>`; return; }
+  const o = readItOpts();
+  const c = intervalCalc(sel.vift, o);
+  const p = IT_PRESETS[parseInt(document.getElementById("it-preset").value,10)] || {};
+  let tiles = `
+    <div class="it-big"><div class="l">Zieltempo</div><div class="v">${fmt(c.targetKmh,1)} km/h</div><div class="s">${paceFromSpeedKmh(c.targetKmh)}/km · ${o.pct}% VIFT</div></div>
+    <div class="it-big"><div class="l">Gerade Strecke</div><div class="v">${fmt(c.straight,1)} m</div><div class="s">in ${o.runSec} s</div></div>`;
+  if(o.form === "shuttle"){
+    tiles += `
+    <div class="it-big"><div class="l">Pendelstrecke</div><div class="v">${fmt(c.shuttleDist,1)} m</div><div class="s">${c.turns} Richtungswechsel · −${fmt(turnPenaltySec(o.angle),1)} s je Wechsel</div></div>
+    <div class="it-big"><div class="l">Auf ${o.shuttleLen} m</div><div class="v">${c.shuttles} × &nbsp;+&nbsp; ${fmt(c.remainder,1)} m</div><div class="s">volle Pendel + Rest bis zur Linie</div></div>`;
+  }
+  if(o.restPct > 0){
+    tiles += `<div class="it-big"><div class="l">Pause aktiv</div><div class="v">${fmt(c.restKmh,1)} km/h</div><div class="s">${fmt(c.restDist,1)} m in ${o.restSec} s (${o.restPct}%)</div></div>`;
+  } else {
+    tiles += `<div class="it-big"><div class="l">Pause</div><div class="v">${o.restSec} s</div><div class="s">passiv</div></div>`;
+  }
+  let seriesLine = "";
+  if(!p.manual && p.series){
+    seriesLine = `<div class="muted" style="font-size:12.5px;margin-top:10px;"><b>${escapeAttr(p.focus||"")}</b> · ${escapeAttr(p.series)} · max. Seriendauer ${escapeAttr(p.maxSerie||"–")} · Pause zwischen Serien ${escapeAttr(p.between||"–")}</div>`;
+  }
+  out.innerHTML = `<div class="it-result-grid">${tiles}</div>${seriesLine}
+    <div class="muted" style="font-size:11.5px;margin-top:8px;">Basis: VIFT ${fmt(sel.vift,1)} km/h – ${escapeAttr(athleteName(sel.a))}. Rechenmodell nach Buchheit (IT-prescription-Spreadsheet).</div>`;
+}
+["it-athlete"].forEach(id=>document.getElementById(id).addEventListener("change", renderItSession));
+["it-session","it-pct","it-run","it-rest","it-restpct","it-shuttle","it-angle"].forEach(id=>document.getElementById(id).addEventListener("change", renderItOut));
+document.getElementById("it-form").addEventListener("change", ()=>{ toggleItFields(); renderItOut(); });
+document.getElementById("it-preset").addEventListener("change", applyItPreset);
+
+// ---------------- Einzelblatt drucken ----------------
+function zonesPrintTable(zones, unitLabel, isSpeed){
+  if(!zones || !zones.length) return "<p>–</p>";
+  const rows = zones.map((z,i)=>{
+    if(isSpeed){
+      const info = SPEED_ZONE_INFO[z.label] || {title:""};
+      return `<tr><td><span class="pd-swatch" style="background:${zoneColor(i)}"></span>${z.label} · ${info.title}</td><td>${fmt(z.kmh,1)} km/h</td><td>${z.pace}/km</td></tr>`;
+    }
+    const info = HR_ZONE_INFO[i] || {title:""};
+    return `<tr><td><span class="pd-swatch" style="background:${zoneColor(i)}"></span>${info.title}</td><td>${z.bpmLo}–${z.bpmHi} S/min</td><td>${z.pctLo}–${z.pctHi}% ${unitLabel}</td></tr>`;
+  }).join("");
+  return `<table><tbody>${rows}</tbody></table>`;
+}
+function itPrescriptionPrint(vift){
+  const presets = [
+    {label:"15/15 · 100% · gerade", o:{pct:100,runSec:15,restSec:15,restPct:0,form:"straight",shuttleLen:0,angle:180}},
+    {label:"30/15 · 90% · gerade", o:{pct:90,runSec:30,restSec:15,restPct:0,form:"straight",shuttleLen:0,angle:180}},
+    {label:"30/30 · 93% · Pendel 40 m", o:{pct:93,runSec:30,restSec:30,restPct:0,form:"shuttle",shuttleLen:40,angle:180}},
+  ];
+  const rows = presets.map(pr=>{
+    const c = intervalCalc(vift, pr.o);
+    const dist = pr.o.form==="shuttle" ? `${fmt(c.shuttleDist,0)} m (${c.shuttles}×${pr.o.shuttleLen} m + ${fmt(c.remainder,0)} m)` : `${fmt(c.straight,0)} m`;
+    return `<tr><td>${pr.label}</td><td>${fmt(c.targetKmh,1)} km/h</td><td>${dist}</td></tr>`;
+  }).join("");
+  return `<table><thead><tr><th>Intervall</th><th>Tempo</th><th>Strecke je Wiederholung</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function openPrintSheet(){
+  const aId = document.getElementById("zonen-athlete-select").value;
+  const sId = document.getElementById("zonen-session-select").value;
+  const a = state.athletes.find(x=>x.id===aId);
+  const s = state.sessions.find(x=>x.id===sId);
+  if(!a || !s){ alert("Bitte Athlet:in und Testtermin im Tab Trainingszonen wählen."); return; }
+  const r = s.results.find(x=>x.athleteId===aId);
+  if(!r || r.vift == null){ alert("Für diese Auswahl liegt kein VIFT vor."); return; }
+  const derived = computeDerived(a, r.vift);
+  const d = s.date ? new Date(s.date).toLocaleDateString("de-DE") : "";
+  const stage = (s.startSpeed!=null && s.increment) ? Math.round((r.vift - s.startSpeed)/s.increment) + 1 : null;
+  const karv = hrZoneMode === "karvonen";
+  const hrZ = karv ? derived.hrZonesKarvonen : derived.hrZones;
+  const prev = prevViftFor(aId, s);
+  const dv = prev != null ? r.vift - prev : null;
+  document.getElementById("print-doc").innerHTML = `
+    <h1>30-15 IFT – Einzelblatt</h1>
+    <div style="color:#555;font-size:13px;">${escapeAttr(athleteName(a)||"(ohne Namen)")} · ${d}${s.label ? " – " + escapeAttr(s.label) : ""}${s.fieldLength ? " · " + s.fieldLength + " m Feld" : ""}</div>
+    <h2>Kennwerte</h2>
+    <table><tbody>
+      <tr><td>VIFT</td><td>${fmt(r.vift,1)} km/h${stage!=null ? " (≈ Stufe " + stage + ")" : ""}</td><td>${dv!=null ? "Δ zum Vortest: " + (dv>0?"+":"") + fmt(dv,1) + " km/h" : ""}</td></tr>
+      <tr><td>vVO2max / vVT2</td><td>${fmt(derived.vVO2max,1)} / ${fmt(derived.vVT2,1)} km/h</td><td></td></tr>
+      <tr><td>VO2max (geschätzt)</td><td>${fmt(derived.vo2max,1)} ml/min/kg</td><td>${(s.fieldLength && s.fieldLength != 40) ? "Hinweis: nur für 40-m-Variante validiert" : ""}</td></tr>
+      <tr><td>Alter · Geschlecht · Größe · Gewicht</td><td>${derived.age==null?"–":derived.age} J · ${a.geschlecht} · ${a.groesse==null?"–":a.groesse} cm · ${a.gewicht==null?"–":a.gewicht} kg</td><td></td></tr>
+      <tr><td>Maxpuls · Ruhepuls</td><td>${derived.maxHR==null?"–":derived.maxHR}${derived.maxHrEstimated?" (geschätzt)":""} · ${derived.restHR==null?"–":derived.restHR}${derived.restHrEstimated?" (geschätzt)":""} S/min</td><td></td></tr>
+    </tbody></table>
+    <h2>Lauftempo-Trainingszonen</h2>
+    ${zonesPrintTable(derived.speedZones, "", true)}
+    <h2>Herzfrequenz-Zonen ${karv ? "(Karvonen · HFR)" : "(% HFmax)"}</h2>
+    ${zonesPrintTable(hrZ, karv ? "HFR" : "HFmax", false)}
+    <div style="font-size:12px;color:#555;">${hrThresholdsText(derived)}</div>
+    <h2>Intervallvorgaben (Beispiele nach Buchheit)</h2>
+    ${itPrescriptionPrint(r.vift)}
+    <div style="margin-top:26px;color:#888;font-size:11px;">30-15 Intermittent Fitness Test nach Martin Buchheit · Blatt erstellt ${new Date().toLocaleDateString("de-DE")}</div>
+  `;
+  document.getElementById("print-view").style.display = "block";
+}
+document.getElementById("zonen-print").addEventListener("click", openPrintSheet);
+document.getElementById("print-close").addEventListener("click", ()=>{ document.getElementById("print-view").style.display = "none"; });
+document.getElementById("print-now").addEventListener("click", ()=>{ window.print(); });
+document.getElementById("zonen-karvonen").addEventListener("change", (e)=>{
+  hrZoneMode = e.target.checked ? "karvonen" : "hrmax";
+  renderZonenBody();
+});
+
+// ---------------- Teams (Mehrere Kader) ----------------
+function renderTeamSelect(){
+  const sel = document.getElementById("team-select");
+  sel.innerHTML = state.teams.map(t => `<option value="${t.id}">${escapeAttr(t.name)}</option>`).join("");
+  sel.value = state.activeTeamId;
+  document.getElementById("team-delete").disabled = state.teams.length <= 1;
+}
+function renderAll(){
+  renderTeamSelect();
+  renderRoster();
+  renderParticipantSelect();
+  document.getElementById("group-plan").innerHTML = "";
+  renderSessionSelect();
+  renderZonenAthleteSelect();
+  const active = document.querySelector(".tab-btn.active");
+  if(active && active.dataset.tab === "intervalle") renderIntervalTab();
+}
+document.getElementById("team-select").addEventListener("change", e=>{
+  state.activeTeamId = e.target.value;
+  saveState();
+  renderAll();
+});
+document.getElementById("team-new").addEventListener("click", ()=>{
+  const name = prompt("Name des neuen Teams:", "");
+  if(name === null || !name.trim()) return;
+  const t = { id: uid(), name: name.trim() };
+  state.teams.push(t);
+  state.activeTeamId = t.id;
+  saveState();
+  renderAll();
+});
+document.getElementById("team-rename").addEventListener("click", ()=>{
+  const t = activeTeam();
+  if(!t) return;
+  const name = prompt("Team umbenennen:", t.name);
+  if(name === null || !name.trim()) return;
+  t.name = name.trim();
+  saveState();
+  renderAll();
+});
+document.getElementById("team-delete").addEventListener("click", ()=>{
+  if(state.teams.length <= 1){ alert("Das letzte Team kann nicht gelöscht werden."); return; }
+  const t = activeTeam();
+  if(!t) return;
+  const nA = state.athletes.filter(a=>a.teamId===t.id).length;
+  const nS = state.sessions.filter(s=>s.teamId===t.id).length;
+  if(!confirm(`Team „${t.name}" mit ${nA} Athlet:in${nA===1?"":"nen"} und ${nS} Testtag${nS===1?"":"en"} unwiderruflich löschen?`)) return;
+  state.athletes = state.athletes.filter(a=>a.teamId!==t.id);
+  state.sessions = state.sessions.filter(s=>s.teamId!==t.id);
+  state.teams = state.teams.filter(x=>x.id!==t.id);
+  state.activeTeamId = state.teams[0].id;
+  saveState();
+  renderAll();
+});
+
+// ---------------- init ----------------
+renderAll();
+</script>
+</body>
+</html>
