@@ -6,6 +6,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const appEl = document.getElementById('app');
+const LOGO_SRC = 'logo-balance-movement.png';
 
 function esc(s) {
   const d = document.createElement('div');
@@ -34,29 +35,74 @@ function weekDates() {
   return days;
 }
 
-function topbar(profile, showBack) {
-  return `
-    <header class="topbar">
-      <div class="brand">Balance Movement <span>Training</span></div>
-      <div class="who">
-        ${showBack ? '<a href="#" id="backBtn">&larr; Men&uuml;</a> &middot; ' : ''}
-        ${esc(profile.name)} (${profile.role === 'trainer' ? 'Trainer' : 'Athlet:in'}) &middot; <a href="#" id="logoutBtn">Abmelden</a>
-      </div>
-    </header>
-  `;
-}
+// ---------------- App-Shell (Sidebar + Kopfzeile) ----------------
+const NAV_ITEMS = [
+  { key: 'menu', label: 'Dashboard', icon: '&#127968;' },
+  { key: 'trainingsplan', label: 'Trainingsplan-Builder', icon: '&#128203;' },
+  { key: 'loadmanagement', label: 'Load Management', icon: '&#128200;' },
+  { key: 'team', label: 'Team', icon: '&#128101;', trainerOnly: true },
+  { key: 'testungen', label: 'Testungen & Assessments', icon: '&#129514;', soon: true },
+  { key: 'warmup', label: 'Warm-up & Dynamics', icon: '&#128293;', soon: true },
+];
 
-function wireLogout(profile) {
-  document.getElementById('logoutBtn').onclick = async (e) => {
-    e.preventDefault();
+function renderShell(profile, activeKey, title, contentHtml) {
+  const navHtml = NAV_ITEMS
+    .filter(item => !item.trainerOnly || profile.role === 'trainer')
+    .map(item => {
+      const isActive = item.key === activeKey;
+      const cls = 'nav-item' + (isActive ? ' active' : '') + (item.soon ? ' disabled' : '');
+      const soonTag = item.soon ? '<span class="soon-tag">bald</span>' : '';
+      return `<button type="button" class="${cls}" data-nav="${item.key}" ${item.soon ? 'disabled' : ''}>
+        <span class="ic">${item.icon}</span>${esc(item.label)}${soonTag}
+      </button>`;
+    }).join('');
+
+  appEl.innerHTML = `
+    <div class="shell">
+      <div class="sidebar-scrim" id="sidebarScrim"></div>
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <img src="${LOGO_SRC}" alt="Balance Movement">
+          <div class="org-sub">Trainings-App</div>
+        </div>
+        <nav class="sidebar-nav">${navHtml}</nav>
+        <div class="sidebar-footer">
+          <div class="sidebar-user"><b>${esc(profile.name)}</b>${profile.role === 'trainer' ? 'Trainer' : 'Athlet:in'}</div>
+          <button type="button" id="logoutBtn">Abmelden</button>
+        </div>
+      </aside>
+      <div class="main-area">
+        <header class="topbar">
+          <button class="menu-toggle" id="menuToggle" type="button" aria-label="Men&uuml;">&#9776;</button>
+          <h1>${esc(title)}</h1>
+          <span></span>
+        </header>
+        <main class="wrap">${contentHtml}</main>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('logoutBtn').onclick = async () => {
     await sb.auth.signOut();
   };
-  const backBtn = document.getElementById('backBtn');
-  if (backBtn) {
-    backBtn.onclick = (e) => {
-      e.preventDefault();
-      renderMenu(profile);
+
+  appEl.querySelectorAll('.nav-item[data-nav]').forEach(btn => {
+    btn.onclick = () => {
+      const key = btn.dataset.nav;
+      if (key === 'menu') renderMenu(profile);
+      else if (key === 'trainingsplan') window.location.href = 'trainingsplan.html';
+      else if (key === 'loadmanagement') {
+        profile.role === 'trainer' ? renderTrainerDashboard(profile) : renderAthleteDashboard(profile);
+      } else if (key === 'team') renderTeamPage(profile);
     };
+  });
+
+  const sidebar = document.getElementById('sidebar');
+  const scrim = document.getElementById('sidebarScrim');
+  const toggle = document.getElementById('menuToggle');
+  if (toggle) {
+    toggle.onclick = () => { sidebar.classList.add('open'); scrim.classList.add('show'); };
+    scrim.onclick = () => { sidebar.classList.remove('open'); scrim.classList.remove('show'); };
   }
 }
 
@@ -67,6 +113,7 @@ function renderAuth() {
   appEl.innerHTML = `
     <main class="login-page">
       <div class="login-card">
+        <div class="login-logo"><img src="${LOGO_SRC}" alt="Balance Movement"></div>
         <h1>Balance Movement</h1>
         <p class="sub">Trainings-App</p>
         <form id="loginForm" class="auth-form">
@@ -132,6 +179,7 @@ function renderSetPassword() {
   appEl.innerHTML = `
     <main class="login-page">
       <div class="login-card">
+        <div class="login-logo"><img src="${LOGO_SRC}" alt="Balance Movement"></div>
         <h1>Willkommen</h1>
         <p class="sub">Bitte lege dein eigenes Passwort fest (mind. 10 Zeichen).</p>
         <form id="setPwForm" class="auth-form">
@@ -190,30 +238,38 @@ async function renderDashboard(user) {
 
 // ---------------- Kategorie-Menü ----------------
 function renderMenu(profile) {
-  appEl.innerHTML = `
-    ${topbar(profile, false)}
-    <main class="wrap">
-      <div class="menu-grid">
-        <button class="menu-card" type="button" data-cat="trainingsplan">
-          <span class="mc-title">Trainingsplan-Builder</span>
-          <span class="mc-sub">Übungen zusammenstellen, als Excel exportieren</span>
-        </button>
-        <button class="menu-card" type="button" data-cat="loadmanagement">
-          <span class="mc-title">Load Management</span>
-          <span class="mc-sub">Tägliche sRPE-Werte, Team-Übersicht</span>
-        </button>
-        <button class="menu-card soon" type="button" disabled>
-          <span class="mc-title">Testungen &amp; Assessments</span>
-          <span class="mc-sub">Bald verfügbar</span>
-        </button>
-        <button class="menu-card soon" type="button" disabled>
-          <span class="mc-title">Warm-up &amp; Dynamics</span>
-          <span class="mc-sub">Bald verfügbar</span>
-        </button>
-      </div>
-    </main>
+  const content = `
+    <div class="menu-grid">
+      <button class="menu-card" type="button" data-cat="trainingsplan">
+        <span class="mc-icon">&#128203;</span>
+        <span class="mc-title">Trainingsplan-Builder</span>
+        <span class="mc-sub">&Uuml;bungen zusammenstellen, als Excel exportieren</span>
+      </button>
+      <button class="menu-card" type="button" data-cat="loadmanagement">
+        <span class="mc-icon">&#128200;</span>
+        <span class="mc-title">Load Management</span>
+        <span class="mc-sub">T&auml;gliche sRPE-Werte, Team-&Uuml;bersicht</span>
+      </button>
+      ${profile.role === 'trainer' ? `
+      <button class="menu-card" type="button" data-cat="team">
+        <span class="mc-icon">&#128101;</span>
+        <span class="mc-title">Team</span>
+        <span class="mc-sub">Athletinnen &amp; Athleten verwalten, neue einladen</span>
+      </button>` : ''}
+      <button class="menu-card soon" type="button" disabled>
+        <span class="mc-icon">&#129514;</span>
+        <span class="mc-title">Testungen &amp; Assessments</span>
+        <span class="mc-sub">Bald verf&uuml;gbar</span>
+      </button>
+      <button class="menu-card soon" type="button" disabled>
+        <span class="mc-icon">&#128293;</span>
+        <span class="mc-title">Warm-up &amp; Dynamics</span>
+        <span class="mc-sub">Bald verf&uuml;gbar</span>
+      </button>
+    </div>
   `;
-  wireLogout(profile);
+
+  renderShell(profile, 'menu', 'Dashboard', content);
 
   appEl.querySelectorAll('.menu-card[data-cat]').forEach(btn => {
     btn.onclick = () => {
@@ -221,17 +277,15 @@ function renderMenu(profile) {
       if (cat === 'trainingsplan') {
         window.location.href = 'trainingsplan.html';
       } else if (cat === 'loadmanagement') {
-        if (profile.role === 'trainer') {
-          renderTrainerDashboard(profile);
-        } else {
-          renderAthleteDashboard(profile);
-        }
+        profile.role === 'trainer' ? renderTrainerDashboard(profile) : renderAthleteDashboard(profile);
+      } else if (cat === 'team') {
+        renderTeamPage(profile);
       }
     };
   });
 }
 
-// ---------------- Trainer-Ansicht ----------------
+// ---------------- Trainer-Ansicht: Load Management ----------------
 async function renderTrainerDashboard(profile) {
   const days = weekDates();
   const dayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
@@ -265,37 +319,42 @@ async function renderTrainerDashboard(profile) {
       }).join('')
     : `<tr><td colspan="8" class="muted">Noch keine Athletinnen/Athleten registriert.</td></tr>`;
 
-  appEl.innerHTML = `
-    ${topbar(profile, true)}
-    <main class="wrap">
-      <section class="card">
-        <h2>Load Management — diese Woche</h2>
-        <div class="tablewrap">
-          <table>
-            <thead><tr><th>Name</th>${dayLabels.map(l => `<th>${l}</th>`).join('')}</tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-        <p class="hint">Wert je Zelle = sRPE &times; Trainingsdauer in Minuten (Session-Load nach Foster). Ab 500 farblich hervorgehoben.</p>
-      </section>
-
-      <section class="card">
-        <h2>Neue Athletin / neuen Athleten aufnehmen</h2>
-        <p class="hint">Selbstregistrierung ist deaktiviert. Name + E-Mail eintragen — die Person bekommt einen sicheren Einladungslink per E-Mail und legt sich damit ihr eigenes Passwort an.</p>
-        <form id="inviteForm" class="inline-form">
-          <label>Name<input type="text" id="inviteName" required></label>
-          <label>E-Mail<input type="email" id="inviteEmail" required></label>
-          <button type="submit">Einladen</button>
-        </form>
-        <p class="notice" id="inviteMsg" hidden></p>
-        <div id="inviteQrWrap" hidden style="margin-top:16px;text-align:center;">
-          <p class="hint">QR-Code zur Anmeldeseite (führt zum Login, nicht zur Einladung selbst — die kommt per E-Mail):</p>
-          <canvas id="inviteQr"></canvas>
-        </div>
-      </section>
-    </main>
+  const content = `
+    <div class="card">
+      <h2>Load Management — diese Woche</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Name</th>${dayLabels.map(l => `<th>${l}</th>`).join('')}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <p class="hint">Wert je Zelle = sRPE &times; Trainingsdauer in Minuten (Session-Load nach Foster). Ab 500 farblich hervorgehoben.</p>
+    </div>
   `;
-  wireLogout(profile);
+
+  renderShell(profile, 'loadmanagement', 'Load Management', content);
+}
+
+// ---------------- Trainer-Ansicht: Team ----------------
+function renderTeamPage(profile) {
+  const content = `
+    <div class="card">
+      <h2>Neue Athletin / neuen Athleten aufnehmen</h2>
+      <p class="hint">Selbstregistrierung ist deaktiviert. Name + E-Mail eintragen — die Person bekommt einen sicheren Einladungslink per E-Mail und legt sich damit ihr eigenes Passwort an.</p>
+      <form id="inviteForm" class="inline-form">
+        <label>Name<input type="text" id="inviteName" required></label>
+        <label>E-Mail<input type="email" id="inviteEmail" required></label>
+        <button type="submit">Einladen</button>
+      </form>
+      <p class="notice" id="inviteMsg" hidden></p>
+      <div id="inviteQrWrap" hidden style="margin-top:16px;text-align:center;">
+        <p class="hint">QR-Code zur Anmeldeseite (f&uuml;hrt zum Login, nicht zur Einladung selbst — die kommt per E-Mail):</p>
+        <canvas id="inviteQr"></canvas>
+      </div>
+    </div>
+  `;
+
+  renderShell(profile, 'team', 'Team', content);
 
   document.getElementById('inviteForm').onsubmit = async (e) => {
     e.preventDefault();
@@ -319,7 +378,7 @@ async function renderTrainerDashboard(profile) {
 
     const qrWrap = document.getElementById('inviteQrWrap');
     qrWrap.hidden = false;
-    QRCode.toCanvas(document.getElementById('inviteQr'), location.origin + location.pathname, { width: 200 });
+    QRCode.toCanvas(document.getElementById('inviteQr'), location.origin + '/', { width: 200 });
   };
 }
 
@@ -348,38 +407,36 @@ async function renderAthleteDashboard(profile) {
   const srpeOptions = Array.from({ length: 10 }, (_, i) => i + 1)
     .map(n => `<option value="${n}">${n}</option>`).join('');
 
-  appEl.innerHTML = `
-    ${topbar(profile, true)}
-    <main class="wrap">
-      <section class="card">
-        <h2>Heutige Einheit eintragen</h2>
-        <form id="entryForm" class="inline-form">
-          <label>Datum<input type="date" id="entryDate" value="${today}" required></label>
-          <label>sRPE (1&ndash;10)
-            <select id="entrySrpe" required>
-              <option value="">w&auml;hlen&hellip;</option>
-              ${srpeOptions}
-            </select>
-          </label>
-          <label>Dauer (Minuten)<input type="number" id="entryDuration" min="1" max="300" required></label>
-          <label>Kommentar (optional)<input type="text" id="entryComment" maxlength="200"></label>
-          <button type="submit">Speichern</button>
-        </form>
-        <p class="notice" id="entryMsg" hidden></p>
-      </section>
+  const content = `
+    <div class="card">
+      <h2>Heutige Einheit eintragen</h2>
+      <form id="entryForm" class="inline-form">
+        <label>Datum<input type="date" id="entryDate" value="${today}" required></label>
+        <label>sRPE (1&ndash;10)
+          <select id="entrySrpe" required>
+            <option value="">w&auml;hlen&hellip;</option>
+            ${srpeOptions}
+          </select>
+        </label>
+        <label>Dauer (Minuten)<input type="number" id="entryDuration" min="1" max="300" required></label>
+        <label>Kommentar (optional)<input type="text" id="entryComment" maxlength="200"></label>
+        <button type="submit">Speichern</button>
+      </form>
+      <p class="notice" id="entryMsg" hidden></p>
+    </div>
 
-      <section class="card">
-        <h2>Meine letzten Eintr&auml;ge</h2>
-        <div class="tablewrap">
-          <table>
-            <thead><tr><th>Datum</th><th>sRPE</th><th>Dauer</th><th>Load</th><th>Kommentar</th></tr></thead>
-            <tbody>${historyRows}</tbody>
-          </table>
-        </div>
-      </section>
-    </main>
+    <div class="card">
+      <h2>Meine letzten Eintr&auml;ge</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Datum</th><th>sRPE</th><th>Dauer</th><th>Load</th><th>Kommentar</th></tr></thead>
+          <tbody>${historyRows}</tbody>
+        </table>
+      </div>
+    </div>
   `;
-  wireLogout(profile);
+
+  renderShell(profile, 'loadmanagement', 'Load Management', content);
 
   document.getElementById('entryForm').onsubmit = async (e) => {
     e.preventDefault();
