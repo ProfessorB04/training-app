@@ -4,7 +4,7 @@
 const SUPABASE_URL = "https://hbrtzjrhaluoabvfkbkb.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhicnR6anJoYWx1b2FidmZrYmtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDkxMTgsImV4cCI6MjEwNTcyNTExOH0.fSav78jlqCLFBhwObAe5CS3cTlccndJlyDaY640j0nI";
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const appEl = document.getElementById('app');
 
 function esc(s) {
@@ -49,7 +49,7 @@ function topbar(profile, showBack) {
 function wireLogout(profile) {
   document.getElementById('logoutBtn').onclick = async (e) => {
     e.preventDefault();
-    await supabase.auth.signOut();
+    await sb.auth.signOut();
   };
   const backBtn = document.getElementById('backBtn');
   if (backBtn) {
@@ -93,7 +93,7 @@ function renderAuth() {
     e.preventDefault();
     const email = document.getElementById('loginEmail').value.trim();
     const password = document.getElementById('loginPassword').value;
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await sb.auth.signInWithPassword({ email, password });
     document.getElementById('loginError').textContent = error ? 'E-Mail oder Passwort falsch.' : '';
   };
 
@@ -115,7 +115,7 @@ function renderAuth() {
     const okEl = document.getElementById('forgotOk');
     errEl.textContent = '';
     okEl.textContent = '';
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin + window.location.pathname,
     });
     if (error) {
@@ -153,14 +153,14 @@ function renderSetPassword() {
       errEl.textContent = 'Passwörter stimmen nicht überein.';
       return;
     }
-    const { error } = await supabase.auth.updateUser({ password: p1 });
+    const { error } = await sb.auth.updateUser({ password: p1 });
     if (error) {
       errEl.textContent = 'Fehler: ' + error.message;
       return;
     }
     history.replaceState(null, '', window.location.pathname);
     toast('Passwort gespeichert.');
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await sb.auth.getUser();
     if (user) renderDashboard(user);
   };
 }
@@ -174,7 +174,7 @@ function isRecoveryOrInviteLink() {
 async function renderDashboard(user) {
   appEl.innerHTML = `<main class="wrap"><p class="muted">Lade&hellip;</p></main>`;
 
-  const { data: profile, error } = await supabase
+  const { data: profile, error } = await sb
     .from('profiles')
     .select('*')
     .eq('id', user.id)
@@ -236,13 +236,13 @@ async function renderTrainerDashboard(profile) {
   const days = weekDates();
   const dayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
-  const { data: athletes } = await supabase
+  const { data: athletes } = await sb
     .from('profiles')
     .select('id, name')
     .eq('role', 'athlete')
     .order('name');
 
-  const { data: entries } = await supabase
+  const { data: entries } = await sb
     .from('load_entries')
     .select('user_id, entry_date, srpe, duration_min')
     .in('entry_date', days);
@@ -305,7 +305,7 @@ async function renderTrainerDashboard(profile) {
     msgEl.hidden = false;
     msgEl.textContent = 'Sende Einladung…';
 
-    const { data, error } = await supabase.functions.invoke('invite-athlete', {
+    const { data, error } = await sb.functions.invoke('invite-athlete', {
       body: { name, email },
     });
 
@@ -327,7 +327,7 @@ async function renderTrainerDashboard(profile) {
 async function renderAthleteDashboard(profile) {
   const today = new Date().toISOString().slice(0, 10);
 
-  const { data: rows } = await supabase
+  const { data: rows } = await sb
     .from('load_entries')
     .select('*')
     .order('entry_date', { ascending: false })
@@ -388,8 +388,8 @@ async function renderAthleteDashboard(profile) {
     const duration_min = parseInt(document.getElementById('entryDuration').value, 10);
     const comment = document.getElementById('entryComment').value.trim();
 
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase
+    const { data: { user } } = await sb.auth.getUser();
+    const { error } = await sb
       .from('load_entries')
       .upsert(
         { user_id: user.id, entry_date, srpe, duration_min, comment },
@@ -406,7 +406,7 @@ async function renderAthleteDashboard(profile) {
 }
 
 // ---------------- Start ----------------
-supabase.auth.onAuthStateChange((_event, session) => {
+sb.auth.onAuthStateChange((_event, session) => {
   if (session && isRecoveryOrInviteLink()) {
     renderSetPassword();
   } else if (session) {
