@@ -48,9 +48,9 @@ const NAV_ITEMS = [
   { key: 'menu', label: 'Dashboard', icon: '&#127968;' },
   { key: 'trainingsplan', label: 'Trainingsplanung', icon: '&#128203;' },
   { key: 'loadmanagement', label: 'Load Management', icon: '&#128200;' },
-  { key: 'team', label: 'Nutzerverwaltung', icon: '&#128101;', adminOnly: true },
   { key: 'testungen', label: 'Testungen & Assessments', icon: '&#129514;', staffOnly: true },
-  { key: 'warmup', label: 'Warm-up & Dynamics', icon: '&#128293;', staffOnly: true },
+  { key: 'warmup', label: 'Warm-up', icon: '&#128293;', staffOnly: true },
+  { key: 'team', label: 'Nutzerverwaltung', icon: '&#128101;', adminOnly: true },
 ];
 
 function renderShell(profile, activeKey, title, contentHtml) {
@@ -255,17 +255,17 @@ async function renderDashboard(user) {
 function renderTestingPage(profile) {
   const content = `
     <div class="menu-grid">
-      <a class="menu-card" href="test-performance.html" style="text-decoration:none;">
+      <a class="menu-card tint-test" href="test-performance.html" style="text-decoration:none;">
         <span class="mc-icon">&#127941;</span>
         <span class="mc-title">Performance-Test</span>
         <span class="mc-sub">Anthropometrie, Mobility, Sprint, Jump, Agility, 30-15 IFT &mdash; Excel/Word/PDF</span>
       </a>
-      <a class="menu-card" href="test-ift.html" style="text-decoration:none;">
+      <a class="menu-card tint-load" href="test-ift.html" style="text-decoration:none;">
         <span class="mc-icon">&#127939;</span>
         <span class="mc-title">30-15 IFT</span>
         <span class="mc-sub">Test mit Signalt&ouml;nen, VIFT/VO&#8322;max, Trainingszonen</span>
       </a>
-      <a class="menu-card" href="test-sprint.html" style="text-decoration:none;">
+      <a class="menu-card tint-plan" href="test-sprint.html" style="text-decoration:none;">
         <span class="mc-icon">&#9201;</span>
         <span class="mc-title">10m Sprint</span>
         <span class="mc-sub">Zeiten erfassen, Entwicklungskurven, Bestzeiten</span>
@@ -280,32 +280,32 @@ function renderTestingPage(profile) {
 function renderMenu(profile) {
   const content = `
     <div class="menu-grid">
-      <button class="menu-card" type="button" data-cat="trainingsplan">
+      <button class="menu-card tint-plan" type="button" data-cat="trainingsplan">
         <span class="mc-icon">&#128203;</span>
         <span class="mc-title">Trainingsplanung</span>
         <span class="mc-sub">&Uuml;bungen zusammenstellen, als Excel exportieren</span>
       </button>
-      <button class="menu-card" type="button" data-cat="loadmanagement">
+      <button class="menu-card tint-load" type="button" data-cat="loadmanagement">
         <span class="mc-icon">&#128200;</span>
         <span class="mc-title">Load Management</span>
         <span class="mc-sub">T&auml;gliche sRPE-Werte, Team-&Uuml;bersicht</span>
       </button>
-      ${isAdmin(profile) ? `
-      <button class="menu-card" type="button" data-cat="team">
-        <span class="mc-icon">&#128101;</span>
-        <span class="mc-title">Nutzerverwaltung</span>
-        <span class="mc-sub">Athlet:innen &amp; Trainer:innen einladen, Rollen verwalten</span>
-      </button>` : ''}
       ${isStaff(profile) ? `
-      <button class="menu-card" type="button" data-cat="testungen">
+      <button class="menu-card tint-test" type="button" data-cat="testungen">
         <span class="mc-icon">&#129514;</span>
         <span class="mc-title">Testungen &amp; Assessments</span>
         <span class="mc-sub">Performance-Test, 30-15 IFT, 10m Sprint</span>
       </button>
-      <button class="menu-card" type="button" data-cat="warmup">
+      <button class="menu-card tint-warm" type="button" data-cat="warmup">
         <span class="mc-icon">&#128293;</span>
-        <span class="mc-title">Warm-up &amp; Dynamics</span>
+        <span class="mc-title">Warm-up</span>
         <span class="mc-sub">Mobility-, Dynamic-, Runner&rsquo;s-ABC-Bibliothek, Warm-up-Sessions</span>
+      </button>` : ''}
+      ${isAdmin(profile) ? `
+      <button class="menu-card tint-team" type="button" data-cat="team">
+        <span class="mc-icon">&#128101;</span>
+        <span class="mc-title">Nutzerverwaltung</span>
+        <span class="mc-sub">Athlet:innen &amp; Trainer:innen einladen, Rollen verwalten</span>
       </button>` : ''}
     </div>
   `;
