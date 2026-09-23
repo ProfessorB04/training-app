@@ -34,20 +34,30 @@ function weekDates() {
   return days;
 }
 
-function topbar(profile) {
+function topbar(profile, showBack) {
   return `
     <header class="topbar">
       <div class="brand">Balance Movement <span>Training</span></div>
-      <div class="who">${esc(profile.name)} (${profile.role === 'trainer' ? 'Trainer' : 'Athlet:in'}) &middot; <a href="#" id="logoutBtn">Abmelden</a></div>
+      <div class="who">
+        ${showBack ? '<a href="#" id="backBtn">&larr; Men&uuml;</a> &middot; ' : ''}
+        ${esc(profile.name)} (${profile.role === 'trainer' ? 'Trainer' : 'Athlet:in'}) &middot; <a href="#" id="logoutBtn">Abmelden</a>
+      </div>
     </header>
   `;
 }
 
-function wireLogout() {
+function wireLogout(profile) {
   document.getElementById('logoutBtn').onclick = async (e) => {
     e.preventDefault();
     await supabase.auth.signOut();
   };
+  const backBtn = document.getElementById('backBtn');
+  if (backBtn) {
+    backBtn.onclick = (e) => {
+      e.preventDefault();
+      renderMenu(profile);
+    };
+  }
 }
 
 // ---------------- Login / Registrierung ----------------
@@ -133,11 +143,50 @@ async function renderDashboard(user) {
     return;
   }
 
-  if (profile.role === 'trainer') {
-    await renderTrainerDashboard(profile);
-  } else {
-    await renderAthleteDashboard(profile);
-  }
+  renderMenu(profile);
+}
+
+// ---------------- Kategorie-Menü ----------------
+function renderMenu(profile) {
+  appEl.innerHTML = `
+    ${topbar(profile, false)}
+    <main class="wrap">
+      <div class="menu-grid">
+        <button class="menu-card" type="button" data-cat="trainingsplan">
+          <span class="mc-title">Trainingsplan-Builder</span>
+          <span class="mc-sub">Übungen zusammenstellen, als Excel exportieren</span>
+        </button>
+        <button class="menu-card" type="button" data-cat="loadmanagement">
+          <span class="mc-title">Load Management</span>
+          <span class="mc-sub">Tägliche sRPE-Werte, Team-Übersicht</span>
+        </button>
+        <button class="menu-card soon" type="button" disabled>
+          <span class="mc-title">Testungen &amp; Assessments</span>
+          <span class="mc-sub">Bald verfügbar</span>
+        </button>
+        <button class="menu-card soon" type="button" disabled>
+          <span class="mc-title">Warm-up &amp; Dynamics</span>
+          <span class="mc-sub">Bald verfügbar</span>
+        </button>
+      </div>
+    </main>
+  `;
+  wireLogout(profile);
+
+  appEl.querySelectorAll('.menu-card[data-cat]').forEach(btn => {
+    btn.onclick = () => {
+      const cat = btn.dataset.cat;
+      if (cat === 'trainingsplan') {
+        window.location.href = 'trainingsplan.html';
+      } else if (cat === 'loadmanagement') {
+        if (profile.role === 'trainer') {
+          renderTrainerDashboard(profile);
+        } else {
+          renderAthleteDashboard(profile);
+        }
+      }
+    };
+  });
 }
 
 // ---------------- Trainer-Ansicht ----------------
@@ -175,7 +224,7 @@ async function renderTrainerDashboard(profile) {
     : `<tr><td colspan="8" class="muted">Noch keine Athletinnen/Athleten registriert.</td></tr>`;
 
   appEl.innerHTML = `
-    ${topbar(profile)}
+    ${topbar(profile, true)}
     <main class="wrap">
       <section class="card">
         <h2>Load Management — diese Woche</h2>
@@ -196,7 +245,7 @@ async function renderTrainerDashboard(profile) {
       </section>
     </main>
   `;
-  wireLogout();
+  wireLogout(profile);
 
   const link = location.origin + location.pathname;
   document.getElementById('signupLink').textContent = link;
@@ -234,7 +283,7 @@ async function renderAthleteDashboard(profile) {
     .map(n => `<option value="${n}">${n}</option>`).join('');
 
   appEl.innerHTML = `
-    ${topbar(profile)}
+    ${topbar(profile, true)}
     <main class="wrap">
       <section class="card">
         <h2>Heutige Einheit eintragen</h2>
@@ -264,7 +313,7 @@ async function renderAthleteDashboard(profile) {
       </section>
     </main>
   `;
-  wireLogout();
+  wireLogout(profile);
 
   document.getElementById('entryForm').onsubmit = async (e) => {
     e.preventDefault();
