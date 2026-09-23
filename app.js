@@ -60,43 +60,25 @@ function wireLogout(profile) {
   }
 }
 
-// ---------------- Login / Registrierung ----------------
+// ---------------- Login ----------------
+// Öffentliche Registrierung ist bewusst deaktiviert (höchster Zugriffsschutz) —
+// neue Zugänge legt ausschließlich der Trainer/Administrator an.
 function renderAuth() {
   appEl.innerHTML = `
     <main class="login-page">
       <div class="login-card">
         <h1>Balance Movement</h1>
         <p class="sub">Trainings-App</p>
-        <div class="tabs">
-          <button class="tab-btn active" type="button" data-tab="login">Anmelden</button>
-          <button class="tab-btn" type="button" data-tab="signup">Registrieren</button>
-        </div>
         <form id="loginForm" class="auth-form">
           <label>E-Mail<input type="email" id="loginEmail" required autocomplete="username"></label>
           <label>Passwort<input type="password" id="loginPassword" required autocomplete="current-password"></label>
           <button type="submit">Anmelden</button>
           <p class="error" id="loginError"></p>
         </form>
-        <form id="signupForm" class="auth-form" hidden>
-          <label>Dein Name<input type="text" id="signupName" required></label>
-          <label>E-Mail<input type="email" id="signupEmail" required autocomplete="username"></label>
-          <label>Passwort (min. 8 Zeichen)<input type="password" id="signupPassword" required minlength="8" autocomplete="new-password"></label>
-          <button type="submit">Konto erstellen</button>
-          <p class="error" id="signupError"></p>
-          <p class="ok" id="signupOk"></p>
-        </form>
+        <p class="hint" style="margin-top:16px;text-align:center;">Kein Zugang? Wende dich an deinen Trainer — Konten werden ausschließlich persönlich vergeben, es gibt keine Selbstregistrierung.</p>
       </div>
     </main>
   `;
-
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.onclick = () => {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById('loginForm').hidden = btn.dataset.tab !== 'login';
-      document.getElementById('signupForm').hidden = btn.dataset.tab !== 'signup';
-    };
-  });
 
   document.getElementById('loginForm').onsubmit = async (e) => {
     e.preventDefault();
@@ -104,27 +86,6 @@ function renderAuth() {
     const password = document.getElementById('loginPassword').value;
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     document.getElementById('loginError').textContent = error ? 'E-Mail oder Passwort falsch.' : '';
-  };
-
-  document.getElementById('signupForm').onsubmit = async (e) => {
-    e.preventDefault();
-    const name = document.getElementById('signupName').value.trim();
-    const email = document.getElementById('signupEmail').value.trim();
-    const password = document.getElementById('signupPassword').value;
-    const errEl = document.getElementById('signupError');
-    const okEl = document.getElementById('signupOk');
-    errEl.textContent = '';
-    okEl.textContent = '';
-    const { error } = await supabase.auth.signUp({
-      email, password,
-      options: { data: { name } }
-    });
-    if (error) {
-      errEl.textContent = 'Registrierung fehlgeschlagen: ' + error.message;
-    } else {
-      okEl.textContent = 'Konto erstellt! Du kannst dich jetzt anmelden.';
-      e.target.reset();
-    }
   };
 }
 
@@ -238,23 +199,12 @@ async function renderTrainerDashboard(profile) {
       </section>
 
       <section class="card">
-        <h2>Team einladen</h2>
-        <p class="hint">Neue Athletinnen/Athleten registrieren sich selbst über diesen Link mit eigener E-Mail und eigenem Passwort — sie bekommen automatisch die Rolle "Athlet:in".</p>
-        <p><code id="signupLink"></code></p>
-        <button id="copyLinkBtn" type="button">Link kopieren</button>
+        <h2>Neue Athletin / neuen Athleten aufnehmen</h2>
+        <p class="hint">Selbstregistrierung ist aus Sicherheitsgründen deaktiviert. Neue Zugänge werden ausschließlich persönlich vergeben — sag mir einfach Name + gewünschte E-Mail, ich lege das Konto direkt mit sicherem Passwort an, oder lege es selbst im Supabase-Dashboard unter „Authentication → Users" an.</p>
       </section>
     </main>
   `;
   wireLogout(profile);
-
-  const link = location.origin + location.pathname;
-  document.getElementById('signupLink').textContent = link;
-  document.getElementById('copyLinkBtn').onclick = () => {
-    navigator.clipboard.writeText(link).then(
-      () => toast('Link kopiert.'),
-      () => toast('Kopieren nicht möglich.')
-    );
-  };
 }
 
 // ---------------- Athlet:in-Ansicht ----------------
