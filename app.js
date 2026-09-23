@@ -35,19 +35,27 @@ function weekDates() {
   return days;
 }
 
+// ---------------- Rollen ----------------
+// admin   = volle Rechte inkl. Nutzerverwaltung (Einladen, Rollen ändern)
+// trainer = alle Inhalte (Team-Übersichten, Trainingsplanung …), aber keine Nutzerverwaltung
+// athlete = eigene Einträge
+const ROLE_LABELS = { admin: 'Admin', trainer: 'Trainer:in', athlete: 'Athlet:in' };
+const isAdmin = (profile) => profile.role === 'admin';
+const isStaff = (profile) => profile.role === 'admin' || profile.role === 'trainer';
+
 // ---------------- App-Shell (Sidebar + Kopfzeile) ----------------
 const NAV_ITEMS = [
   { key: 'menu', label: 'Dashboard', icon: '&#127968;' },
-  { key: 'trainingsplan', label: 'Trainingsplan-Builder', icon: '&#128203;' },
+  { key: 'trainingsplan', label: 'Trainingsplanung', icon: '&#128203;' },
   { key: 'loadmanagement', label: 'Load Management', icon: '&#128200;' },
-  { key: 'team', label: 'Team', icon: '&#128101;', trainerOnly: true },
+  { key: 'team', label: 'Nutzerverwaltung', icon: '&#128101;', adminOnly: true },
   { key: 'testungen', label: 'Testungen & Assessments', icon: '&#129514;', soon: true },
   { key: 'warmup', label: 'Warm-up & Dynamics', icon: '&#128293;', soon: true },
 ];
 
 function renderShell(profile, activeKey, title, contentHtml) {
   const navHtml = NAV_ITEMS
-    .filter(item => !item.trainerOnly || profile.role === 'trainer')
+    .filter(item => !item.adminOnly || isAdmin(profile))
     .map(item => {
       const isActive = item.key === activeKey;
       const cls = 'nav-item' + (isActive ? ' active' : '') + (item.soon ? ' disabled' : '');
@@ -67,7 +75,7 @@ function renderShell(profile, activeKey, title, contentHtml) {
         </div>
         <nav class="sidebar-nav">${navHtml}</nav>
         <div class="sidebar-footer">
-          <div class="sidebar-user"><b>${esc(profile.name)}</b>${profile.role === 'trainer' ? 'Trainer' : 'Athlet:in'}</div>
+          <div class="sidebar-user"><b>${esc(profile.name)}</b>${ROLE_LABELS[profile.role] || ''}</div>
           <button type="button" id="logoutBtn">Abmelden</button>
         </div>
       </aside>
@@ -92,8 +100,8 @@ function renderShell(profile, activeKey, title, contentHtml) {
       if (key === 'menu') renderMenu(profile);
       else if (key === 'trainingsplan') window.location.href = 'trainingsplan.html';
       else if (key === 'loadmanagement') {
-        profile.role === 'trainer' ? renderTrainerDashboard(profile) : renderAthleteDashboard(profile);
-      } else if (key === 'team') renderTeamPage(profile);
+        isStaff(profile) ? renderTrainerDashboard(profile) : renderAthleteDashboard(profile);
+      } else if (key === 'team' && isAdmin(profile)) renderTeamPage(profile);
     };
   });
 
@@ -242,7 +250,7 @@ function renderMenu(profile) {
     <div class="menu-grid">
       <button class="menu-card" type="button" data-cat="trainingsplan">
         <span class="mc-icon">&#128203;</span>
-        <span class="mc-title">Trainingsplan-Builder</span>
+        <span class="mc-title">Trainingsplanung</span>
         <span class="mc-sub">&Uuml;bungen zusammenstellen, als Excel exportieren</span>
       </button>
       <button class="menu-card" type="button" data-cat="loadmanagement">
@@ -250,11 +258,11 @@ function renderMenu(profile) {
         <span class="mc-title">Load Management</span>
         <span class="mc-sub">T&auml;gliche sRPE-Werte, Team-&Uuml;bersicht</span>
       </button>
-      ${profile.role === 'trainer' ? `
+      ${isAdmin(profile) ? `
       <button class="menu-card" type="button" data-cat="team">
         <span class="mc-icon">&#128101;</span>
-        <span class="mc-title">Team</span>
-        <span class="mc-sub">Athletinnen &amp; Athleten verwalten, neue einladen</span>
+        <span class="mc-title">Nutzerverwaltung</span>
+        <span class="mc-sub">Athlet:innen &amp; Trainer:innen einladen, Rollen verwalten</span>
       </button>` : ''}
       <button class="menu-card soon" type="button" disabled>
         <span class="mc-icon">&#129514;</span>
@@ -277,8 +285,8 @@ function renderMenu(profile) {
       if (cat === 'trainingsplan') {
         window.location.href = 'trainingsplan.html';
       } else if (cat === 'loadmanagement') {
-        profile.role === 'trainer' ? renderTrainerDashboard(profile) : renderAthleteDashboard(profile);
-      } else if (cat === 'team') {
+        isStaff(profile) ? renderTrainerDashboard(profile) : renderAthleteDashboard(profile);
+      } else if (cat === 'team' && isAdmin(profile)) {
         renderTeamPage(profile);
       }
     };
@@ -335,37 +343,92 @@ async function renderTrainerDashboard(profile) {
   renderShell(profile, 'loadmanagement', 'Load Management', content);
 }
 
-// ---------------- Trainer-Ansicht: Team ----------------
-function renderTeamPage(profile) {
+// ---------------- Admin-Ansicht: Nutzerverwaltung ----------------
+async function renderTeamPage(profile) {
+  if (!isAdmin(profile)) { renderMenu(profile); return; }
+
+  const { data: users } = await sb
+    .from('profiles')
+    .select('id, name, role, created_at')
+    .order('role')
+    .order('name');
+
+  const roleOrder = { admin: 0, trainer: 1, athlete: 2 };
+  const sorted = (users || []).slice().sort((a, b) =>
+    (roleOrder[a.role] - roleOrder[b.role]) || a.name.localeCompare(b.name, 'de'));
+
+  const userRows = sorted.length
+    ? sorted.map(u => {
+        const roleCell = u.role === 'admin'
+          ? `<span class="pill admin">Admin</span>`
+          : `<select class="role-select" data-user="${u.id}">
+               <option value="athlete" ${u.role === 'athlete' ? 'selected' : ''}>Athlet:in</option>
+               <option value="trainer" ${u.role === 'trainer' ? 'selected' : ''}>Trainer:in</option>
+             </select>`;
+        return `<tr><td>${esc(u.name)}</td><td>${roleCell}</td></tr>`;
+      }).join('')
+    : `<tr><td colspan="2" class="muted">Noch keine Nutzer:innen.</td></tr>`;
+
   const content = `
     <div class="card">
-      <h2>Neue Athletin / neuen Athleten aufnehmen</h2>
-      <p class="hint">Selbstregistrierung ist deaktiviert. Name + E-Mail eintragen — die Person bekommt einen sicheren Einladungslink per E-Mail und legt sich damit ihr eigenes Passwort an.</p>
+      <h2>Neue Person einladen</h2>
+      <p class="hint">Selbstregistrierung ist deaktiviert. Name, E-Mail und Rolle w&auml;hlen &mdash; die Person bekommt einen sicheren Einladungslink per E-Mail und legt sich damit ihr eigenes Passwort an.</p>
       <form id="inviteForm" class="inline-form">
         <label>Name<input type="text" id="inviteName" required></label>
         <label>E-Mail<input type="email" id="inviteEmail" required></label>
+        <label>Rolle
+          <select id="inviteRole">
+            <option value="athlete">Athlet:in</option>
+            <option value="trainer">Trainer:in</option>
+          </select>
+        </label>
         <button type="submit">Einladen</button>
       </form>
+      <p class="role-hint">Trainer:innen k&ouml;nnen alle Inhalte nutzen (Trainingsplanung, Load-Management-&Uuml;bersicht aller Athlet:innen), aber keine Nutzer einladen oder Rollen &auml;ndern.</p>
       <p class="notice" id="inviteMsg" hidden></p>
       <div id="inviteQrWrap" hidden style="margin-top:16px;text-align:center;">
-        <p class="hint">QR-Code zur Anmeldeseite (f&uuml;hrt zum Login, nicht zur Einladung selbst — die kommt per E-Mail):</p>
+        <p class="hint">QR-Code zur Anmeldeseite (f&uuml;hrt zum Login, nicht zur Einladung selbst &mdash; die kommt per E-Mail):</p>
         <canvas id="inviteQr"></canvas>
       </div>
     </div>
+
+    <div class="card">
+      <h2>Alle Nutzer:innen</h2>
+      <div class="tablewrap">
+        <table class="user-table">
+          <thead><tr><th>Name</th><th>Rolle</th></tr></thead>
+          <tbody>${userRows}</tbody>
+        </table>
+      </div>
+      <p class="hint">Rolle &auml;ndern: einfach im Auswahlfeld umstellen, wird sofort gespeichert. Die Admin-Rolle kann nur direkt in Supabase vergeben werden.</p>
+    </div>
   `;
 
-  renderShell(profile, 'team', 'Team', content);
+  renderShell(profile, 'team', 'Nutzerverwaltung', content);
+
+  appEl.querySelectorAll('.role-select').forEach(sel => {
+    sel.onchange = async () => {
+      const { error } = await sb.from('profiles').update({ role: sel.value }).eq('id', sel.dataset.user);
+      if (error) {
+        toast('Fehler: ' + error.message);
+        renderTeamPage(profile);
+      } else {
+        toast('Rolle gespeichert.');
+      }
+    };
+  });
 
   document.getElementById('inviteForm').onsubmit = async (e) => {
     e.preventDefault();
     const name = document.getElementById('inviteName').value.trim();
     const email = document.getElementById('inviteEmail').value.trim();
+    const role = document.getElementById('inviteRole').value;
     const msgEl = document.getElementById('inviteMsg');
     msgEl.hidden = false;
     msgEl.textContent = 'Sende Einladung…';
 
-    const { data, error } = await sb.functions.invoke('invite-athlete', {
-      body: { name, email },
+    const { data, error } = await sb.functions.invoke('invite-user', {
+      body: { name, email, role },
     });
 
     if (error || (data && data.error)) {
@@ -373,7 +436,7 @@ function renderTeamPage(profile) {
       return;
     }
 
-    msgEl.textContent = 'Einladung an ' + email + ' verschickt.';
+    msgEl.textContent = 'Einladung an ' + email + ' (' + ROLE_LABELS[role] + ') verschickt.';
     e.target.reset();
 
     const qrWrap = document.getElementById('inviteQrWrap');
