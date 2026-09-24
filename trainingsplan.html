@@ -192,7 +192,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 (function(){
   var SUPABASE_URL = "https://hbrtzjrhaluoabvfkbkb.supabase.co";
   var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhicnR6anJoYWx1b2FidmZrYmtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDkxMTgsImV4cCI6MjEwNTcyNTExOH0.fSav78jlqCLFBhwObAe5CS3cTlccndJlyDaY640j0nI";
-  var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { lock: function(n, t, fn){ return fn(); } } });
   window.appSb = sb;   // für die Anbindung an die Athletenverwaltung
   sb.auth.getSession().then(function(res){
     if(!res.data.session){ window.location.replace("index.html"); return; }

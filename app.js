@@ -4,7 +4,33 @@
 const SUPABASE_URL = "https://hbrtzjrhaluoabvfkbkb.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhicnR6anJoYWx1b2FidmZrYmtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDkxMTgsImV4cCI6MjEwNTcyNTExOH0.fSav78jlqCLFBhwObAe5CS3cTlccndJlyDaY640j0nI";
 
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Eigene (No-op-)Sperre statt Browser-LockManager: verhindert Hänger, wenn mehrere Tabs der App offen sind
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { lock: async (_name, _timeout, fn) => await fn() },
+});
+
+// Notfall-Anzeige, falls der Start trotzdem hängt
+function showStartProblem(reason) {
+  appEl.innerHTML = `
+    <main class="login-page"><div class="login-card">
+      <div class="login-logo"><img src="${LOGO_SRC}" alt="Balance Movement"></div>
+      <h1>Die App l&auml;dt gerade nicht</h1>
+      <p class="sub">${esc(reason)}</p>
+      <div class="auth-form">
+        <button type="button" id="probReload">Neu laden</button>
+        <button type="button" class="secondary" id="probReset">Anmeldung zur&uuml;cksetzen &amp; neu anmelden</button>
+      </div>
+      <p class="hint" style="text-align:center;">Tipp: Andere offene Tabs der App schlie&szlig;en.</p>
+    </div></main>`;
+  document.getElementById('probReload').onclick = () => location.reload();
+  document.getElementById('probReset').onclick = () => {
+    try { Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+    location.href = location.pathname;
+  };
+}
+setTimeout(() => {
+  if (!document.querySelector('.shell, .login-page')) showStartProblem('Der Start hat länger als 10 Sekunden gedauert (Anmeldung oder Verbindung hängt).');
+}, 10000);
 const appEl = document.getElementById('app');
 const LOGO_SRC = 'logo-balance-movement.png';
 
@@ -264,7 +290,7 @@ async function renderDashboard(user) {
     .single();
 
   if (error || !profile) {
-    appEl.innerHTML = `<main class="wrap"><p class="error">Profil konnte nicht geladen werden. Bitte Seite neu laden.</p></main>`;
+    showStartProblem('Profil konnte nicht geladen werden' + (error ? ': ' + error.message : '.'));
     return;
   }
 
