@@ -7,7 +7,7 @@
   var ITEMS = [
     { href: "index.html", icon: "&#127968;", label: "Dashboard", match: [] },
     { href: "trainingsplan.html", icon: "&#128203;", label: "Trainingsplanung", match: ["trainingsplan.html"] },
-    { href: "index.html#loadmanagement", icon: "&#128200;", label: "Load Management", match: [] },
+    { href: "index.html#loadmanagement", icon: "&#128200;", label: "Load Management", match: ["loadmanagement.html"] },
     { href: "index.html#testungen", icon: "&#129514;", label: "Testungen & Assessments", match: ["test-"], staff: true },
     { href: "warmup.html", icon: "&#128293;", label: "Warm-up", match: ["warmup.html"], staff: true },
     { href: "index.html#athleten", icon: "&#127939;", label: "Athletenverwaltung", match: [], staff: true },

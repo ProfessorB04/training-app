@@ -107,7 +107,7 @@ function renderShell(profile, activeKey, title, contentHtml) {
       if (key === 'menu') renderMenu(profile);
       else if (key === 'trainingsplan') window.location.href = 'trainingsplan.html';
       else if (key === 'loadmanagement') {
-        isStaff(profile) ? renderTrainerDashboard(profile) : renderAthleteDashboard(profile);
+        isStaff(profile) ? renderLoadHub(profile) : renderAthleteDashboard(profile);
       } else if (key === 'team' && isAdmin(profile)) renderTeamPage(profile);
       else if (key === 'testungen' && isStaff(profile)) renderTestingPage(profile);
       else if (key === 'warmup' && isStaff(profile)) window.location.href = 'warmup.html';
@@ -270,7 +270,7 @@ async function renderDashboard(user) {
 
   if (window.location.hash === '#loadmanagement') {
     history.replaceState(null, '', window.location.pathname);
-    isStaff(profile) ? renderTrainerDashboard(profile) : renderAthleteDashboard(profile);
+    isStaff(profile) ? renderLoadHub(profile) : renderAthleteDashboard(profile);
     return;
   }
   if (window.location.hash === '#team' && isAdmin(profile)) {
@@ -289,6 +289,27 @@ async function renderDashboard(user) {
     return;
   }
   renderMenu(profile);
+}
+
+// ---------------- Load Management: Übersicht (Admin + Trainer:innen) ----------------
+function renderLoadHub(profile) {
+  const content = `
+    <div class="menu-grid">
+      <a class="menu-card tint-load" href="loadmanagement.html" style="text-decoration:none;">
+        <span class="mc-icon">&#128200;</span>
+        <span class="mc-title">Load-Management-Tool</span>
+        <span class="mc-sub">Rohdaten-Import (Session-RPE &amp; Wellness), Ampel je Athlet:in, Wochensteuerung &amp; Trainingsempfehlung f&uuml;r Coaches, PDF/Word &mdash; mehrere Teams &amp; Layouts</span>
+      </a>
+      <button class="menu-card tint-plan" type="button" id="loadAppEntries">
+        <span class="mc-icon">&#128241;</span>
+        <span class="mc-title">sRPE-Eintr&auml;ge aus der App</span>
+        <span class="mc-sub">Was Athlet:innen mit eigenem Zugang in der App eintragen &mdash; Wochen&uuml;bersicht nach Gruppe</span>
+      </button>
+    </div>
+    <p class="hint">Die Daten im Load-Management-Tool werden im jeweiligen Browser gespeichert. Zum &Uuml;bertragen auf ein anderes Ger&auml;t im Tool &bdquo;Export (JSON)&ldquo; &rarr; &bdquo;Import&ldquo; nutzen.</p>
+  `;
+  renderShell(profile, 'loadmanagement', 'Load Management', content);
+  document.getElementById('loadAppEntries').onclick = () => renderTrainerDashboard(profile);
 }
 
 // ---------------- Testungen & Assessments (Admin + Trainer:innen) ----------------
@@ -363,7 +384,7 @@ function renderMenu(profile) {
       if (cat === 'trainingsplan') {
         window.location.href = 'trainingsplan.html';
       } else if (cat === 'loadmanagement') {
-        isStaff(profile) ? renderTrainerDashboard(profile) : renderAthleteDashboard(profile);
+        isStaff(profile) ? renderLoadHub(profile) : renderAthleteDashboard(profile);
       } else if (cat === 'team' && isAdmin(profile)) {
         renderTeamPage(profile);
       } else if (cat === 'testungen' && isStaff(profile)) {
