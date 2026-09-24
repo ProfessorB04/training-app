@@ -195,11 +195,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   window.appSb = sb;   // für die Anbindung an die Athletenverwaltung
   sb.auth.getSession().then(function(res){
-    if(!res.data.session){ window.location.replace("index.html"); }
+    if(!res.data.session){ window.location.replace("index.html"); return; }
+    sb.from("profiles").select("role").eq("id", res.data.session.user.id).single().then(function(r){
+      if(r.data){ window.appRole = r.data.role; if(window.appRailInit) window.appRailInit(r.data.role); }
+    });
   });
 })();
 </script>
-<div style="background:#a1d7ff;color:#00113d;font-family:-apple-system,sans-serif;font-size:13px;font-weight:600;padding:9px 16px;">
+<div class="app-backbar" style="background:#a1d7ff;color:#00113d;font-family:-apple-system,sans-serif;font-size:13px;font-weight:600;padding:9px 16px;">
   <a href="index.html" style="color:#00113d;text-decoration:none;">&larr; Zur&uuml;ck zum Men&uuml;</a>
 </div>
 <div class="wrap">
@@ -2135,7 +2138,8 @@ renderTabs();
 renderPanels();
 </script>
 
-<script src="athlete-picker.js?v=20260924c"></script>
+<script src="athlete-picker.js?v=20260924e"></script>
+<script src="app-rail.js?v=20260924e"></script>
 <script>
 /* Trainings-App: Anbindung Athletenverwaltung */
 (function(){

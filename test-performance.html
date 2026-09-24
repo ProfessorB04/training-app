@@ -13,6 +13,8 @@
     if(!s){ window.location.replace("index.html"); return; }
     sb.from("profiles").select("role").eq("id", s.user.id).single().then(function(r){
       if(r.data && (r.data.role === "admin" || r.data.role === "trainer")){
+        window.appRole = r.data.role;
+        if(window.appRailInit) window.appRailInit(r.data.role);
         document.documentElement.style.visibility = "";
       } else {
         window.location.replace("index.html");
@@ -22,7 +24,7 @@
 })();
 </script>
 
-<div style="background:#a1d7ff;color:#00113d;font-family:-apple-system,sans-serif;font-size:13px;font-weight:600;padding:9px 16px;">
+<div class="app-backbar" style="background:#a1d7ff;color:#00113d;font-family:-apple-system,sans-serif;font-size:13px;font-weight:600;padding:9px 16px;">
   <a href="index.html#testungen" style="color:#00113d;text-decoration:none;">&larr; Zur&uuml;ck zum Men&uuml;</a>
 </div>
 
@@ -1896,3 +1898,5 @@ syncMeta();
 renderGroupToggles();
 renderTable();
 </script>
+
+<script src="app-rail.js?v=20260924e"></script>

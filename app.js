@@ -268,6 +268,16 @@ async function renderDashboard(user) {
     return;
   }
 
+  if (window.location.hash === '#loadmanagement') {
+    history.replaceState(null, '', window.location.pathname);
+    isStaff(profile) ? renderTrainerDashboard(profile) : renderAthleteDashboard(profile);
+    return;
+  }
+  if (window.location.hash === '#team' && isAdmin(profile)) {
+    history.replaceState(null, '', window.location.pathname);
+    renderTeamPage(profile);
+    return;
+  }
   if (window.location.hash === '#athleten' && isStaff(profile)) {
     history.replaceState(null, '', window.location.pathname);
     renderAthletesPage(profile);
