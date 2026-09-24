@@ -267,3 +267,8 @@ tr.no-access a{ color:var(--brand-strong); }
 .well-mid{ color:#a3790f; font-weight:700; }
 .perm-table td{ text-align:left; vertical-align:middle; }
 .perm-opt{ display:inline-flex; align-items:center; gap:5px; margin-right:14px; font-size:.9rem; white-space:nowrap; }
+
+/* Gruppen-Auswahl im Athleten-Dialog: Häkchen nicht auf volle Breite ziehen */
+.modal-form .gcheck input{ width:auto; padding:0; margin:0; flex:0 0 auto; }
+.gcheck{ white-space:nowrap; }
+.gcheck:has(input:checked){ background:var(--brand-pale); border-color:var(--brand-strong); font-weight:600; }
