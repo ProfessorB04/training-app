@@ -239,7 +239,7 @@ function renderSetPassword() {
     history.replaceState(null, '', window.location.pathname);
     toast('Passwort gespeichert.');
     const { data: { user } } = await sb.auth.getUser();
-    if (user) renderDashboard(user);
+    if (user) { CURRENT_USER_ID = user.id; renderDashboard(user); }
   };
 
   document.getElementById('setPwLogout').onclick = async (e) => {
@@ -774,12 +774,21 @@ async function renderAthleteDashboard(profile) {
 }
 
 // ---------------- Start ----------------
-sb.auth.onAuthStateChange((_event, session) => {
-  if (session && (isRecoveryOrInviteLink() || mustChangePassword(session.user))) {
-    renderSetPassword();
-  } else if (session) {
-    renderDashboard(session.user);
-  } else {
-    renderAuth();
-  }
+// Wichtig: Im Callback selbst keine weiteren Supabase-Aufrufe starten (sonst Deadlock der Auth-Sperre,
+// z. B. beim harten Neuladen mit Token-Erneuerung) – deshalb per setTimeout entkoppeln.
+let CURRENT_USER_ID = null;
+sb.auth.onAuthStateChange((event, session) => {
+  setTimeout(() => {
+    if (session && (isRecoveryOrInviteLink() || mustChangePassword(session.user))) {
+      renderSetPassword();
+    } else if (session) {
+      // Token-Erneuerung / Profil-Update / erneutes SIGNED_IN desselben Kontos: aktuelle Ansicht behalten
+      if (CURRENT_USER_ID === session.user.id && event !== 'INITIAL_SESSION') return;
+      CURRENT_USER_ID = session.user.id;
+      renderDashboard(session.user);
+    } else {
+      CURRENT_USER_ID = null;
+      renderAuth();
+    }
+  }, 0);
 });

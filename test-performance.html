@@ -8,10 +8,13 @@
   document.documentElement.style.visibility = "hidden";
   var sb = window.supabase.createClient("https://hbrtzjrhaluoabvfkbkb.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhicnR6anJoYWx1b2FidmZrYmtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDkxMTgsImV4cCI6MjEwNTcyNTExOH0.fSav78jlqCLFBhwObAe5CS3cTlccndJlyDaY640j0nI");
   window.appSb = sb;   // für Tools, die auf die Athletenverwaltung zugreifen
+  // Notfall: nach 8 s nicht unsichtbar bleiben, sondern zur Startseite
+  var guard = setTimeout(function(){ window.location.replace("index.html"); }, 8000);
   sb.auth.getSession().then(function(res){
     var s = res.data.session;
     if(!s){ window.location.replace("index.html"); return; }
     sb.from("profiles").select("role").eq("id", s.user.id).single().then(function(r){
+      clearTimeout(guard);
       if(r.data && (r.data.role === "admin" || r.data.role === "trainer")){
         window.appRole = r.data.role;
         if(window.appRailInit) window.appRailInit(r.data.role);
