@@ -288,6 +288,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     table.perf input, table.perf select{ border:none !important; background:transparent !important; }
   }
 
+  .pt-refs{ margin-top:10px; }
+  .pt-refs > summary{ cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border:1px solid var(--line); border-radius:9px; background:#fff; font-weight:700; color:var(--ink-soft); font-size:.85rem; }
+  .pt-refs > summary::-webkit-details-marker{ display:none; }
+  .pt-refs > summary span{ font-weight:400; color:var(--ink-faint); font-size:.78rem; }
+  .pt-refs[open] > summary{ margin-bottom:10px; }
+  @media print{ .pt-refs > summary{ display:none; } }
+
   /* --- App-Fassung: Dialoge --- */
   .pt-scrim{ position:fixed; inset:0; background:rgba(10,14,30,.45); z-index:80; display:flex; align-items:flex-start; justify-content:center; padding:36px 14px; overflow-y:auto; }
   .pt-modal{ background:#fff; border-radius:14px; padding:22px; width:100%; max-width:760px; box-shadow:0 20px 50px rgba(0,17,61,.25); }
@@ -396,6 +403,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <span><b>Best</b> = besserer der zwei Versuche (automatisch)</span>
       <span><b>Mobility-Ampel</b> (BWS-Rotation, Overhead Squat, Toe-Touch): G = unauffällig · Y = leichte Einschränkung · R = deutliche Einschränkung/Schmerz</span>
     </div>
+    <details class="pt-refs"><summary>&#128218; Ampel-Legenden, Referenzen &amp; Quellen <span>(zum Lesen aufklappen)</span></summary>
     <div class="ffmi-legend">
       <b style="color:var(--ink);">FFMI (Frauen)</b>
       <span class="ffmi-chip"><span class="ffmi-dot ffmi-1"></span>&lt; 15 unterdurchschnittlich</span>
@@ -442,6 +450,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <span class="ffmi-chip"><span class="ffmi-dot" style="background:#a63a2c;"></span>&lt; 42 · unter Wettkampfniveau</span>
       <span style="width:100%;font-size:.65rem;color:var(--ink-faint);">Maximale Sauerstoffaufnahme. Elite-/Profi-Basketballerinnen ≈ 44–54 ml/kg/min, Guards höher als Centerinnen; empfohlener Richtwert für Court-Sport-Frauen ≈ 44–48 (Ziv &amp; Lidor 2009, Sports Med; Gatorade SSI). Hier per 30-15 IFT nach Buchheit geschätzt — Einzelwerte mit Vorsicht interpretieren, für Gruppen-Monitoring gut geeignet.</span>
     </div>
+    </details>
   </div>
   </div>
 
@@ -1752,6 +1761,10 @@ function renderCompareView(){
   renderCompareTable();
 }
 document.getElementById("compareAthlete").addEventListener("change", renderCompareTable);
+
+// Legenden beim Drucken/PDF automatisch aufklappen, danach wieder einklappen
+window.addEventListener("beforeprint", function(){ document.querySelectorAll(".pt-refs").forEach(function(d){ d.dataset.wasOpen = d.open ? "1" : ""; d.open = true; }); });
+window.addEventListener("afterprint", function(){ document.querySelectorAll(".pt-refs").forEach(function(d){ d.open = d.dataset.wasOpen === "1"; }); });
 
 // ================= App-Fassung: Athletenverwaltung anbinden =================
 function appClient(){ return window.appSb || null; }

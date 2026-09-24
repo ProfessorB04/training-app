@@ -335,6 +335,11 @@
   .lm-apppick-list label{ display:flex; align-items:center; gap:6px; font-size:.86rem; padding:2px 0; break-inside:avoid; cursor:pointer; }
   .lm-apppick-g{ color:var(--ink-faint); font-size:.72rem; }
   @media (max-width:700px){ .lm-apppick-list{ columns:1; } }
+  .lm-refs{ margin:10px 0 30px; }
+  .lm-refs > summary{ cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:8px; padding:9px 14px; border:1px solid var(--line); border-radius:9px; background:var(--card); font-weight:700; color:var(--ink-soft); font-size:.9rem; }
+  .lm-refs > summary::-webkit-details-marker{ display:none; }
+  .lm-refs > summary span{ font-weight:400; color:var(--ink-faint); font-size:.8rem; }
+  .lm-refs[open] > summary{ margin-bottom:12px; }
 </style>
 
 <div class="topbar">
@@ -553,7 +558,7 @@
   </section>
 
   <section id="methodology">
-    <div class="section-head"><h2>Methodik &amp; Quellen</h2></div>
+    <details class="lm-refs"><summary>&#128218; Methodik &amp; Quellen <span>(zum Lesen aufklappen)</span></summary>
     <div class="card method">
       <h3>Berechnung</h3>
       <dl>
@@ -616,6 +621,7 @@
       </ul>
       <p style="font-size:.78rem; color:var(--ink-faint);">Hinweis zur Quellenpr&uuml;fung: Formeln und Kernaussagen wurden gegen mehrere unabh&auml;ngige Sekund&auml;rquellen abgeglichen; der exakte Zahlenwert f&uuml;r einen universellen Strain-Cutoff bei Foster (1998) sowie der genaue Wortlaut der Bourdon-Konsensusempfehlungen konnten nicht am Originaltext (paywalled) verifiziert werden &mdash; Strain wird daher hier bewusst nicht mit einem festen Grenzwert versehen, sondern als Trendkennzahl gezeigt.</p>
     </div>
+    </details>
   </section>
 
   <div class="actions">
