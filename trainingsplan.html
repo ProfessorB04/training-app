@@ -208,7 +208,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 })();
 </script>
 <div class="app-backbar" style="background:#a1d7ff;color:#00113d;font-family:-apple-system,sans-serif;font-size:13px;font-weight:600;padding:9px 16px;">
-  <a href="index.html" style="color:#00113d;text-decoration:none;">&larr; Zur&uuml;ck: Dashboard</a>
+  <a href="index.html#trainingsplan" style="color:#00113d;text-decoration:none;">&larr; Zur&uuml;ck: Trainingsplanung</a>
 </div>
 <div class="wrap">
   <header class="top">
@@ -2241,6 +2241,154 @@ function openSeriesDialog(){
   });
   selectGroup();
 }
+/* ---------------------------------------------------------------------
+   TRAININGSPLAN-APP: Plan in der App veröffentlichen (Athlet:innen sehen ihn unter „Mein Trainingsplan“)
+   Neuer Plan · Änderung ab Woche X für alle · Variante ab Woche X nur für Ausgewählte
+--------------------------------------------------------------------- */
+async function openPublishDialog(){
+  const sb = window.appSb;
+  if(!sb){ alert('Keine Verbindung zur App – bitte die Trainingsplanung über die Trainings-App öffnen.'); return; }
+  const host = document.createElement('div');
+  host.innerHTML = `<div id="pubScrim" style="position:fixed;inset:0;background:rgba(10,14,30,.45);z-index:9998;display:flex;align-items:flex-start;justify-content:center;padding:30px 14px;overflow-y:auto;">
+    <div style="background:#fff;border-radius:14px;padding:20px 22px;width:100%;max-width:720px;box-shadow:0 20px 50px rgba(0,17,61,.25);" id="pubBox"><p>Lade …</p></div></div>`;
+  document.body.appendChild(host);
+  const box = host.querySelector('#pubBox');
+  const close = () => host.remove();
+  host.querySelector('#pubScrim').addEventListener('click', e => { if(e.target.id === 'pubScrim') close(); });
+
+  const [pr, at, gr, mem, pl, asg] = await Promise.all([
+    sb.from('profiles').select('id,name,role,permissions').eq('role','athlete').order('name'),
+    sb.from('athletes').select('id,first_name,last_name,profile_id'),
+    sb.from('athlete_groups').select('id,name').order('name'),
+    sb.from('athlete_group_members').select('athlete_id,group_id'),
+    sb.from('tp_plans').select('id,title,team,weeks,days,start_date,created_at').eq('archived', false).order('created_at', {ascending:false}),
+    sb.from('tp_assignments').select('plan_id,user_id,active'),
+  ]);
+  const err = [pr,at,gr,mem,pl,asg].map(r=>r.error).filter(Boolean)[0];
+  if(err){ box.innerHTML = '<p style="color:#b0281c">Fehler: ' + escapeHtmlSeries(err.message) + '</p><button type="button" id="pubX">Schließen</button>'; box.querySelector('#pubX').onclick = close; return; }
+  const users = pr.data || [], plans = pl.data || [];
+  const planTitle = Object.fromEntries(plans.map(p=>[p.id, p.title || 'Ohne Titel']));
+  const activePlan = {}; (asg.data||[]).forEach(a=>{ if(a.active) activePlan[a.user_id] = a.plan_id; });
+  const athByProfile = {}; (at.data||[]).forEach(a=>{ if(a.profile_id) athByProfile[a.profile_id] = a; });
+  const gByAth = {}; (mem.data||[]).forEach(m=>{ (gByAth[m.athlete_id] = gByAth[m.athlete_id] || []).push(m.group_id); });
+  const gName = Object.fromEntries((gr.data||[]).map(g=>[g.id, g.name]));
+  const userGroups = uid => { const a = athByProfile[uid]; return a ? (gByAth[a.id] || []) : []; };
+  const groupsUsed = (gr.data||[]).filter(g => users.some(u => userGroups(u.id).includes(g.id)));
+  const picked = {};
+  const teamGroup = groupsUsed.find(g => g.name.toLowerCase() === (state.team||'').toLowerCase());
+  if(teamGroup) users.forEach(u => { if(userGroups(u.id).includes(teamGroup.id)) picked[u.id] = true; });
+  let planSel = (state.publishedPlanId && plans.some(p=>p.id===state.publishedPlanId)) ? state.publishedPlanId : '__new';
+  let mode = 'all';
+
+  function render(){
+    const p = plans.find(x=>x.id===planSel);
+    const weeksN = p ? p.weeks : state.weeks;
+    box.innerHTML = `
+      <h2 style="margin:0 0 4px;font-size:18px;">&#128242; In App ver&ouml;ffentlichen</h2>
+      <p style="margin:0 0 14px;color:#52514e;font-size:13px;">Die ausgew&auml;hlten Athlet:innen sehen den Plan unter <b>&bdquo;Mein Trainingsplan&ldquo;</b> und tragen dort S&auml;tze, Wiederholungen und Gewicht ein.</p>
+      <label style="font-size:12px;font-weight:600;color:#898781;">PLAN</label>
+      <select id="pubPlan" style="margin:4px 0 12px;">
+        <option value="__new" ${planSel==='__new'?'selected':''}>&#10133; Als neuen Plan ver&ouml;ffentlichen: &bdquo;${escapeHtmlSeries(state.title || 'ohne Titel')}&ldquo; (${state.weeks} Wochen &middot; ${state.days} Tage)</option>
+        ${plans.map(x=>`<option value="${x.id}" ${planSel===x.id?'selected':''}>&#9998; Bestehenden Plan &auml;ndern: ${escapeHtmlSeries(x.title||'Ohne Titel')}${x.team?' · '+escapeHtmlSeries(x.team):''} (${new Date(x.created_at).toLocaleDateString('de-DE')})</option>`).join('')}
+      </select>
+      ${p ? `
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:12px;font-size:13px;">
+        <label>Gilt ab Woche <select id="pubWeek" style="width:auto;">${Array.from({length:weeksN},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select></label>
+        <label><input type="radio" name="pubMode" value="all" ${mode==='all'?'checked':''}> f&uuml;r alle im Plan</label>
+        <label><input type="radio" name="pubMode" value="variant" ${mode==='variant'?'checked':''}> nur f&uuml;r die Ausgew&auml;hlten (Variante)</label>
+      </div>
+      <p style="margin:-4px 0 12px;color:#898781;font-size:12px;">Fr&uuml;here Wochen und bereits Eingetragenes bleiben unver&auml;ndert. Ausgew&auml;hlte, die noch nicht im Plan sind, werden hinzugef&uuml;gt.</p>` : ''}
+      <label style="font-size:12px;font-weight:600;color:#898781;">ATHLET:INNEN (mit App-Zugang)</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px;">
+        ${groupsUsed.map(g=>`<button type="button" class="small" data-g="${g.id}">${escapeHtmlSeries(g.name)}</button>`).join('')}
+        <button type="button" class="small" id="pubAll">Alle</button><button type="button" class="small" id="pubNone">Keine</button>
+      </div>
+      <div style="max-height:260px;overflow:auto;border:1px solid #e1e0d9;border-radius:10px;padding:6px 10px;columns:2;column-gap:18px;">
+        ${users.map(u=>{
+          const noPerm = !u.permissions || !u.permissions.meinplan || u.permissions.meinplan === 'none';
+          const gl = userGroups(u.id).map(id=>gName[id]).filter(Boolean).join(', ');
+          return `<label style="display:flex;align-items:flex-start;gap:6px;font-size:13px;padding:3px 0;break-inside:avoid;cursor:pointer;">
+            <input type="checkbox" data-u="${u.id}" ${picked[u.id]?'checked':''} style="margin-top:3px;"> <span>${escapeHtmlSeries(u.name)}
+            <span style="display:block;color:#898781;font-size:11px;">${gl ? escapeHtmlSeries(gl) : 'keine Gruppe'}${activePlan[u.id] ? ' · aktuell: ' + escapeHtmlSeries(planTitle[activePlan[u.id]] || '') : ''}${noPerm ? ' · <b style="color:#b0281c">Recht fehlt</b>' : ''}</span></span></label>`;
+        }).join('') || '<span style="color:#898781;font-size:13px;">Noch keine Athlet:innen mit App-Zugang.</span>'}
+      </div>
+      <p id="pubWarn" style="font-size:12px;color:#b0281c;margin:8px 0 0;"></p>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:14px;">
+        <span id="pubCount" style="flex:1;font-size:13px;color:#52514e;"></span>
+        <button type="button" id="pubCancel">Abbrechen</button>
+        <button type="button" class="primary" id="pubGo">Ver&ouml;ffentlichen</button>
+      </div>`;
+    const q = sel => box.querySelector(sel);
+    const upd = () => {
+      const n = Object.keys(picked).length;
+      q('#pubCount').textContent = n + ' ausgewählt';
+      const miss = users.filter(u=>picked[u.id] && (!u.permissions || !u.permissions.meinplan || u.permissions.meinplan==='none')).length;
+      q('#pubWarn').textContent = miss ? miss + ' Person(en) fehlt das Recht „Mein Trainingsplan“ – in der Nutzerverwaltung unter „Rechte“ auf „eintragen“ stellen, sonst sehen sie den Plan nicht.' : '';
+    };
+    q('#pubPlan').addEventListener('change', e => { planSel = e.target.value; render(); });
+    box.querySelectorAll('input[name=pubMode]').forEach(r => r.addEventListener('change', () => { mode = r.value; }));
+    box.querySelectorAll('[data-g]').forEach(b => b.addEventListener('click', () => {
+      Object.keys(picked).forEach(k=>delete picked[k]);
+      users.forEach(u => { if(userGroups(u.id).includes(b.dataset.g)) picked[u.id] = true; });
+      render();
+    }));
+    q('#pubAll').addEventListener('click', () => { users.forEach(u=>picked[u.id]=true); render(); });
+    q('#pubNone').addEventListener('click', () => { Object.keys(picked).forEach(k=>delete picked[k]); render(); });
+    box.querySelectorAll('input[data-u]').forEach(cb => cb.addEventListener('change', () => { if(cb.checked) picked[cb.dataset.u]=true; else delete picked[cb.dataset.u]; upd(); }));
+    q('#pubCancel').addEventListener('click', close);
+    q('#pubGo').addEventListener('click', () => publish(p));
+    upd();
+  }
+
+  async function publish(p){
+    const ids = Object.keys(picked);
+    if(!p && !ids.length){ alert('Bitte mindestens eine Athletin / einen Athleten auswählen.'); return; }
+    if(p && mode === 'variant' && !ids.length){ alert('Für eine Variante bitte die betroffenen Athlet:innen auswählen.'); return; }
+    const content = JSON.parse(JSON.stringify({ plan: state.plan, prescription: state.prescription, cooldown: state.cooldown,
+      prepNote: state.prepNote, lang: state.lang, days: state.days, weeks: state.weeks, title: state.title, team: state.team }));
+    const btn = box.querySelector('#pubGo'); btn.disabled = true; btn.textContent = 'Veröffentliche …';
+    try{
+      const { data: { user } } = await sb.auth.getUser();
+      let planId, fromWeek = 1, userIds = null;
+      if(!p){
+        const r = await sb.from('tp_plans').insert({ title: state.title || '', team: state.team || null, start_date: state.start || null,
+          weeks: state.weeks, days: state.days, created_by: user.id }).select('id').single();
+        if(r.error) throw r.error;
+        planId = r.data.id;
+      } else {
+        planId = p.id;
+        fromWeek = parseInt(box.querySelector('#pubWeek').value, 10) || 1;
+        if(mode === 'variant') userIds = ids;
+        if(state.days > p.days || state.weeks > p.weeks){
+          const r = await sb.from('tp_plans').update({ days: Math.max(p.days, state.days), weeks: Math.max(p.weeks, state.weeks) }).eq('id', planId);
+          if(r.error) throw r.error;
+        }
+      }
+      const v = await sb.from('tp_plan_versions').insert({ plan_id: planId, from_week: fromWeek, content, user_ids: userIds });
+      if(v.error) throw v.error;
+      for(const uid of ids){
+        await sb.from('tp_assignments').update({ active: false }).eq('user_id', uid).neq('plan_id', planId);
+        const a = await sb.from('tp_assignments').upsert({ plan_id: planId, user_id: uid, active: true }, { onConflict: 'plan_id,user_id' });
+        if(a.error) throw a.error;
+      }
+      state.publishedPlanId = planId; saveState(true);
+      close();
+      toast(!p ? 'Plan veröffentlicht für ' + ids.length + ' Athlet:innen' : (userIds ? 'Variante ab Woche ' + fromWeek + ' für ' + ids.length + ' Athlet:innen' : 'Änderung ab Woche ' + fromWeek + ' veröffentlicht'));
+    } catch(e){
+      alert('Veröffentlichen fehlgeschlagen: ' + e.message);
+      btn.disabled = false; btn.textContent = 'Veröffentlichen';
+    }
+  }
+  render();
+}
+(function(){
+  const b = document.createElement('button');
+  b.id = 'btnPublishApp'; b.type = 'button'; b.className = 'primary';
+  b.textContent = '📲 In App veröffentlichen';
+  b.addEventListener('click', openPublishDialog);
+  const anchor = document.getElementById('btnSeriesExport') || document.getElementById('btnExport');
+  anchor.insertAdjacentElement('afterend', b);
+})();
 function escapeHtmlSeries(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 (function(){
   const b = document.createElement('button');

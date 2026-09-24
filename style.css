@@ -277,3 +277,64 @@ tr.no-access a{ color:var(--brand-strong); }
 .topbar-title{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; min-width:0; }
 .back-btn{ background:var(--paper); border:1px solid var(--line); color:var(--brand-dark); padding:7px 12px; font-size:.85rem; border-radius:9px; }
 .back-btn:hover{ background:var(--brand-pale); }
+
+/* ---------------- Mein Trainingsplan (Athlet:innen) ---------------- */
+.mp-next{ display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; border:2px solid var(--brand); }
+.mp-kicker{ font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); font-weight:700; }
+.mp-big{ font-size:1.35rem; font-weight:800; margin:2px 0; }
+.mp-next button{ font-size:1.05rem; padding:14px 22px; }
+.mp-grid{ display:flex; flex-direction:column; gap:8px; }
+.mp-week{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.mp-wlabel{ width:78px; font-weight:700; font-size:.85rem; color:var(--ink-soft); }
+.mp-cell{ background:var(--paper); border:1px solid var(--line); color:var(--ink); min-width:76px; padding:10px 8px; font-size:.85rem; display:flex; gap:6px; justify-content:center; }
+.mp-cell.done{ background:#dcf5e7; border-color:#9fdcbb; color:#1c6b47; }
+.mp-cell.part{ background:#fdf1d6; border-color:#f0d58a; }
+.mp-cell.next{ outline:3px solid var(--brand-strong); outline-offset:1px; }
+.mp-sesshead{ border:2px solid var(--brand); }
+.mp-info{ background:var(--brand-pale); border-color:var(--brand); font-size:.9rem; }
+.mp-ex.skipped{ opacity:.55; }
+.mp-ex.extra{ border-left:4px solid var(--ok); }
+.mp-exhead{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; flex-wrap:wrap; }
+.mp-cat{ font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); font-weight:700; }
+.mp-exname{ font-size:1.1rem; font-weight:800; }
+.mp-was{ font-size:.78rem; font-weight:400; color:var(--ink-soft); }
+.mp-exmenu{ display:flex; gap:6px; }
+.mp-presc{ font-size:.85rem; color:var(--brand-mid); margin-top:6px; font-weight:600; }
+.mp-note{ font-size:.85rem; margin-top:4px; }
+.mp-last{ font-size:.8rem; color:var(--ink-soft); margin-top:4px; }
+.mp-sets{ margin-top:10px; display:flex; flex-direction:column; gap:6px; }
+.mp-sethead, .mp-set{ display:grid; grid-template-columns:74px 1fr 1fr 52px; gap:8px; align-items:center; }
+.mp-sethead span{ font-size:.72rem; color:var(--ink-soft); text-transform:uppercase; font-weight:700; text-align:center; }
+.mp-set{ background:var(--paper); border-radius:12px; padding:6px 8px; }
+.mp-set.done{ background:#dcf5e7; }
+.mp-set.opt .mp-sn{ color:var(--ink-soft); }
+.mp-sn{ font-weight:700; font-size:.85rem; display:flex; flex-direction:column; }
+.mp-sn small{ font-weight:400; font-size:.68rem; }
+.mp-num{ display:flex; align-items:center; gap:4px; }
+.mp-num button{ width:40px; height:44px; padding:0; font-size:1.3rem; background:#fff; border:1px solid var(--line); color:var(--brand-dark); flex:0 0 auto; }
+.mp-num input{ width:100%; min-width:0; height:44px; text-align:center; font-size:1.15rem; font-weight:700; border:1px solid var(--line); border-radius:9px; background:#fff; }
+.mp-tick{ height:44px; font-size:1.3rem; padding:0; background:#fff; border:2px solid var(--line); color:var(--ok); }
+.mp-set.done .mp-tick{ background:var(--ok); color:#fff; border-color:var(--ok); }
+.mp-exbtns{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+.mp-check{ display:flex; align-items:center; gap:10px; font-size:1rem; font-weight:600; margin-top:10px; }
+.mp-check input{ width:26px; height:26px; }
+.mp-anote{ width:100%; margin-top:10px; padding:9px 10px; border:1px solid var(--line); border-radius:9px; font-size:.9rem; }
+.mp-finish{ width:100%; font-size:1.1rem; padding:16px; margin-bottom:30px; }
+.mp-rpe{ display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; }
+.mp-rpe button{ height:48px; font-size:1.1rem; font-weight:800; }
+.mp-rpe button.on{ background:var(--brand-strong); color:#fff; border-color:var(--brand-strong); }
+@media (max-width:520px){
+  .mp-sethead, .mp-set{ grid-template-columns:56px 1fr 1fr 44px; gap:5px; }
+  .mp-num button{ width:32px; }
+}
+/* ---------------- Auswertung Trainingspläne ---------------- */
+.tp-table td, .tp-table th{ text-align:center; vertical-align:top; }
+.tp-table td:first-child, .tp-table th:first-child{ text-align:left; }
+.tp-row{ cursor:pointer; }
+.tp-row:hover td{ background:var(--brand-pale); }
+.tp-wl{ font-size:.75rem; color:var(--ink-soft); white-space:nowrap; }
+.tp-tr{ font-size:.8rem; font-weight:800; }
+.tp-tr.up{ color:var(--ok); }
+.tp-tr.same{ color:#a3790f; }
+.tp-tr.down{ color:var(--warn); }
+.tp-ul{ margin:0; padding-left:16px; text-align:left; font-size:.82rem; }
