@@ -240,3 +240,12 @@ tr.no-access a{ color:var(--brand-strong); }
   .shell.collapsed .nav-item{ justify-content:flex-start; padding:10px 12px; }
 }
 .shell.collapsed .wrap{ max-width:1400px; }
+
+/* ---------------- Anmeldestatus (Nutzerverwaltung) ---------------- */
+.status-pill{ display:inline-block; font-size:.72rem; font-weight:700; padding:3px 9px; border-radius:99px; white-space:nowrap; }
+.status-pill.ok{ background:#dcf5e7; color:#1c6b47; }
+.status-pill.open{ background:#fde9d9; color:#9a4a0b; }
+.status-pill.half{ background:#fdf1d6; color:#8a6a08; }
+.status-when{ font-size:.75rem; color:var(--ink-soft); white-space:nowrap; }
+.status-mail{ font-size:.75rem; color:var(--ink-soft); margin-top:3px; }
+.user-table th, .user-table td{ text-align:left; }

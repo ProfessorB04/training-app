@@ -507,6 +507,19 @@ let INVITE_PRESELECT = null;   // Athlet:in-ID, wenn aus dem Load Management „
 async function renderTeamPage(profile) {
   if (!isAdmin(profile)) { renderMenu(profile); return; }
   const mgmt = await loadAthleteData().catch(() => null);
+  // Anmeldestatus (nur Admin, via Datenbankfunktion admin_user_status)
+  const statusRes = await sb.rpc('admin_user_status');
+  const statusById = {};
+  (statusRes.data || []).forEach(x => { statusById[x.id] = x; });
+  const fmtDT = (iso) => { const d = new Date(iso); return d.toLocaleDateString('de-DE') + ' ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }); };
+  const statusCell = (u) => {
+    const st = statusById[u.id];
+    if (!st) return '<span class="muted">–</span>';
+    const mail = `<div class="status-mail">${esc(st.email || '')}</div>`;
+    if (!st.last_sign_in_at) return `<span class="status-pill open">Erste Anmeldung ausstehend</span>${mail}`;
+    if (st.must_change) return `<span class="status-pill half" title="Mit Einmalpasswort angemeldet, eigenes Passwort noch nicht festgelegt">Eigenes Passwort fehlt</span>${mail}`;
+    return `<span class="status-pill ok">Aktiv</span> <span class="status-when">zuletzt ${fmtDT(st.last_sign_in_at)}</span>${mail}`;
+  };
   const mAthletes = mgmt ? mgmt.athletes.slice().sort((x, y) => x.last_name.localeCompare(y.last_name, 'de') || x.first_name.localeCompare(y.first_name, 'de')) : [];
   const linkedBy = {};   // profile_id -> athlete
   mAthletes.forEach(a => { if (a.profile_id) linkedBy[a.profile_id] = a; });
@@ -540,9 +553,9 @@ async function renderTeamPage(profile) {
              ${mAthletes.filter(a => !a.profile_id || a.profile_id === u.id).map(a =>
                `<option value="${a.id}" ${linked && linked.id === a.id ? 'selected' : ''}>${esc(a.last_name)}, ${esc(a.first_name)}</option>`).join('')}
            </select>`;
-        return `<tr><td>${esc(u.name)}</td><td>${roleCell}</td><td>${linkCell}</td><td>${resetCell}</td></tr>`;
+        return `<tr><td>${esc(u.name)}</td><td>${statusCell(u)}</td><td>${roleCell}</td><td>${linkCell}</td><td>${resetCell}</td></tr>`;
       }).join('')
-    : `<tr><td colspan="4" class="muted">Noch keine Nutzer:innen.</td></tr>`;
+    : `<tr><td colspan="5" class="muted">Noch keine Nutzer:innen.</td></tr>`;
 
   const content = `
     <div class="card">
@@ -575,7 +588,7 @@ async function renderTeamPage(profile) {
       <h2>Alle Nutzer:innen</h2>
       <div class="tablewrap">
         <table class="user-table">
-          <thead><tr><th>Name</th><th>Rolle</th><th>Athletenverwaltung</th><th>Zugang</th></tr></thead>
+          <thead><tr><th>Name</th><th>Anmeldestatus</th><th>Rolle</th><th>Athletenverwaltung</th><th>Zugang</th></tr></thead>
           <tbody>${userRows}</tbody>
         </table>
       </div>
