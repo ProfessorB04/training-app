@@ -103,6 +103,7 @@ function navigate(profile, key) {
 }
 
 function renderShell(profile, activeKey, title, contentHtml, back) {
+  if (!back && activeKey !== 'menu') back = { label: 'Dashboard', go: () => renderMenu(profile) };
   const navHtml = NAV_ITEMS
     .filter(item => item.show(profile))
     .map(item => {
@@ -330,10 +331,15 @@ async function renderDashboard(user) {
 function renderLoadHub(profile) {
   const content = `
     <div class="menu-grid">
-      <a class="menu-card tint-load" href="loadmanagement.html" style="text-decoration:none;">
-        <span class="mc-icon">&#128200;</span>
-        <span class="mc-title">Load-Management-Tool</span>
-        <span class="mc-sub">Rohdaten-Import (Session-RPE &amp; Wellness), Ampel je Athlet:in, Wochensteuerung &amp; Trainingsempfehlung f&uuml;r Coaches, PDF/Word &mdash; mehrere Teams &amp; Layouts</span>
+      <a class="menu-card tint-load" href="loadmanagement.html#daten" style="text-decoration:none;">
+        <span class="mc-icon">&#128202;</span>
+        <span class="mc-title">Load Management: Daten &amp; Ampel</span>
+        <span class="mc-sub">Kader, Rohdaten-Import (Session-RPE &amp; Wellness, auch aus der App), Ampel je Athlet:in, Team-&Uuml;bersicht &mdash; mehrere Teams &amp; Layouts</span>
+      </a>
+      <a class="menu-card tint-warm" href="loadmanagement.html#steuerung" style="text-decoration:none;">
+        <span class="mc-icon">&#129517;</span>
+        <span class="mc-title">Wochensteuerung &amp; Trainingsempfehlung</span>
+        <span class="mc-sub">Aus den Load-Werten: Team-Wochenplan (Volumen/Intensit&auml;t), Analyse, Empfehlung je Athlet:in, Coach-Notiz &mdash; PDF/Word f&uuml;r den Headcoach</span>
       </a>
       <button class="menu-card tint-plan" type="button" id="loadAppEntries">
         <span class="mc-icon">&#128241;</span>

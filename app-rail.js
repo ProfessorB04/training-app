@@ -30,8 +30,7 @@
     "font-size:.78rem;font-weight:600;white-space:nowrap;padding:5px 10px;border-radius:7px;pointer-events:none;}" +
     ".app-rail a.rail-item:hover .tip{display:block;}" +
     "body.has-rail{padding-left:68px !important;}" +
-    "body.has-rail .app-backbar{display:none !important;}" +
-    "@media (max-width:860px){.app-rail{display:none;} body.has-rail{padding-left:0 !important;} body.has-rail .app-backbar{display:block !important;}}";
+    "@media (max-width:860px){.app-rail{display:none;} body.has-rail{padding-left:0 !important;}}";
 
   function init(role, perms) {
     if (document.querySelector(".app-rail")) return;

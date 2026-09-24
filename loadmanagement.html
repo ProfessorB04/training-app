@@ -32,7 +32,7 @@
 </script>
 
 <div class="app-backbar" style="background:#a1d7ff;color:#00113d;font-family:-apple-system,sans-serif;font-size:13px;font-weight:600;padding:9px 16px;">
-  <a href="index.html#loadmanagement" style="color:#00113d;text-decoration:none;">&larr; Zur&uuml;ck zum Men&uuml;</a>
+  <a href="index.html#loadmanagement" style="color:#00113d;text-decoration:none;">&larr; Zur&uuml;ck: Load Management</a>
 </div>
 
 <meta name="description" content="Session-RPE Load-Management: woechentliche Ampel je Spielerin auf Basis von Monotony, Strain und ACWR">
@@ -319,6 +319,12 @@
   .lm-dsbar-inner{ max-width:1180px; margin:0 auto; padding:10px 18px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:.85rem; color:var(--ink-soft); }
   .lm-dsbar label{ display:flex; align-items:center; gap:6px; }
   .lm-dsbar select{ padding:7px 9px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); font-size:.88rem; }
+  .lm-viewtabs{ padding-top:0; gap:6px; }
+  .lm-tab{ border:1px solid var(--line); background:var(--bg); color:var(--ink-soft); border-radius:9px 9px 0 0; padding:9px 14px; font-weight:700; font-size:.88rem; cursor:pointer; font-family:inherit; border-bottom:none; }
+  .lm-tab.on{ background:var(--blue); color:#fff; border-color:var(--blue); }
+  body.lm-view-daten #weekSteering{ display:none !important; }
+  body.lm-view-steuerung .wrap > section:not(#weekSteering){ display:none !important; }
+  body.lm-view-steuerung .weekbar{ display:none !important; }
   .lm-apppick{ border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:12px; background:var(--bg); }
   .lm-apppick-head{ font-size:.86rem; color:var(--ink-soft); margin-bottom:8px; }
   .lm-apppick-count{ font-weight:700; color:var(--ink); }
@@ -348,6 +354,10 @@
     <button class="btn" id="lmNewDs" type="button">+ Neues Team</button>
     <button class="btn" id="lmRenameDs" type="button">Umbenennen</button>
     <button class="btn" id="lmDeleteDs" type="button" style="color:var(--zone-r);">Team löschen</button>
+  </div>
+  <div class="lm-dsbar-inner lm-viewtabs">
+    <button type="button" class="lm-tab" data-view="daten">&#128202; Daten &amp; Ampel</button>
+    <button type="button" class="lm-tab" data-view="steuerung">&#129517; Wochensteuerung &amp; Trainingsempfehlung</button>
   </div>
 </div>
 
@@ -2313,6 +2323,22 @@
     }
   };
 
+  // ---- App-Fassung: Ansichten „Daten & Ampel“ / „Wochensteuerung & Trainingsempfehlung“ ----
+  function lmSetView(v, scroll){
+    v = (v === "steuerung") ? "steuerung" : "daten";
+    document.body.classList.toggle("lm-view-steuerung", v === "steuerung");
+    document.body.classList.toggle("lm-view-daten", v === "daten");
+    [].forEach.call(document.querySelectorAll(".lm-tab"), function(b){ b.classList.toggle("on", b.getAttribute("data-view") === v); });
+    var h1 = document.querySelector(".topbar h1");
+    if (h1) h1.innerHTML = v === "steuerung" ? "Wochensteuerung &amp; Trainingsempfehlung" : "Load Management &middot; Session-RPE";
+    try { history.replaceState(null, "", "#" + v); } catch(e){}
+    if (scroll) window.scrollTo(0, 0);
+  }
+  [].forEach.call(document.querySelectorAll(".lm-tab"), function(b){
+    b.addEventListener("click", function(){ lmSetView(b.getAttribute("data-view"), true); renderAll(); });
+  });
+  lmSetView((location.hash || "").indexOf("steuerung") !== -1 ? "steuerung" : "daten");
+
   lmRenderDsBar();
   lmApplyLayout();
   renderAll();
@@ -2321,9 +2347,9 @@
 })();
 </script>
 
-<script src="app-rail.js?v=20260924k"></script>
+<script src="app-rail.js?v=20260924n"></script>
 
-<script src="athlete-picker.js?v=20260924k"></script>
+<script src="athlete-picker.js?v=20260924n"></script>
 <script>
 /* Trainings-App: Anbindung Athletenverwaltung */
 AthletePicker.attach({
