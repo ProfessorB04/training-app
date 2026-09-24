@@ -61,23 +61,29 @@ function renderShell(profile, activeKey, title, contentHtml) {
       const isActive = item.key === activeKey;
       const cls = 'nav-item' + (isActive ? ' active' : '') + (item.soon ? ' disabled' : '');
       const soonTag = item.soon ? '<span class="soon-tag">bald</span>' : '';
-      return `<button type="button" class="${cls}" data-nav="${item.key}" ${item.soon ? 'disabled' : ''}>
-        <span class="ic">${item.icon}</span>${esc(item.label)}${soonTag}
+      return `<button type="button" class="${cls}" data-nav="${item.key}" title="${esc(item.label)}" ${item.soon ? 'disabled' : ''}>
+        <span class="ic">${item.icon}</span><span class="lbl">${esc(item.label)}</span>${soonTag}
       </button>`;
     }).join('');
 
+  let collapsed = false;
+  try { collapsed = localStorage.getItem('bm_sidebar_collapsed') === '1'; } catch (e) {}
+
   appEl.innerHTML = `
-    <div class="shell">
+    <div class="shell${collapsed ? ' collapsed' : ''}" id="shell">
       <div class="sidebar-scrim" id="sidebarScrim"></div>
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
           <img src="${LOGO_SRC}" alt="Balance Movement">
           <div class="org-sub">Trainings-App</div>
         </div>
+        <button type="button" class="collapse-btn" id="collapseBtn" title="Menü ein-/ausklappen" aria-label="Menü ein- oder ausklappen">
+          <span class="ic">&#171;</span><span class="lbl">Menü einklappen</span>
+        </button>
         <nav class="sidebar-nav">${navHtml}</nav>
         <div class="sidebar-footer">
           <div class="sidebar-user"><b>${esc(profile.name)}</b>${ROLE_LABELS[profile.role] || ''}</div>
-          <button type="button" id="logoutBtn">Abmelden</button>
+          <button type="button" id="logoutBtn" title="Abmelden"><span class="lbl">Abmelden</span><span class="ic-only">&#10162;</span></button>
         </div>
       </aside>
       <div class="main-area">
@@ -116,6 +122,13 @@ function renderShell(profile, activeKey, title, contentHtml) {
     toggle.onclick = () => { sidebar.classList.add('open'); scrim.classList.add('show'); };
     scrim.onclick = () => { sidebar.classList.remove('open'); scrim.classList.remove('show'); };
   }
+  // Seitenleiste am Desktop einklappen (nur Symbole) – Zustand bleibt gespeichert
+  document.getElementById('collapseBtn').onclick = () => {
+    const shell = document.getElementById('shell');
+    const now = !shell.classList.contains('collapsed');
+    shell.classList.toggle('collapsed', now);
+    try { localStorage.setItem('bm_sidebar_collapsed', now ? '1' : '0'); } catch (e) {}
+  };
 }
 
 // ---------------- Login ----------------

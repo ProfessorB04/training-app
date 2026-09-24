@@ -96,7 +96,7 @@ async function renderAthletesPage(profile, reuse) {
         <td>${athDate(a.birthdate)}</td>
         <td>${athAge(a.birthdate)}</td>
         <td>${esc(GENDER_LABEL[a.gender] || '')}</td>
-        <td class="chips">${a.groupIds.map(id => groupsById[id] ? `<span class="chip">${esc(groupsById[id].name)}</span>` : '').join('')}</td>
+        <td><div class="chips">${a.groupIds.map(id => groupsById[id] ? `<span class="chip">${esc(groupsById[id].name)}</span>` : '').join('')}</div></td>
         <td>${a.profile_id ? '<span class="chip app-chip" title="hat einen App-Zugang (Load Management)">App ✓</span>' : ''}</td>
         <td class="nowrap"><button type="button" class="secondary small-btn" data-edit="${a.id}">Bearbeiten</button></td>
       </tr>`).join('')
