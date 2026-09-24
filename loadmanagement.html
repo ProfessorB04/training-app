@@ -632,6 +632,30 @@
   if (!state.steeringWeek) state.steeringWeek = addDays(state.currentWeek, 7);
   if (!state.steeringLegend) state.steeringLegend = { vol:["<75 min","60-90 min",">90 min"], int:["<5","6-7","8-9"] };
 
+  // ---- App-Fassung: einmaliger Abgleich mit den Forms-Antworten (sRPE, Astroladies, Stand 21.09.2026) ----
+  // Füllt nur leere Tageswerte und ergänzt fehlende Namen im Kader; bereits eingetragene Werte bleiben unverändert.
+  var LM_SEED_ID = "forms_srpe_2026-09-21";
+  if (LM_ACTIVE === "astroladies" && !(state.seeds && state.seeds[LM_SEED_ID])){
+    var SEED_ROSTER = ["Marija Ilic", "Hanna Oender", "Ramona Tews", "Julia Martin", "Laura Knaup", "Lotta Morsbach", "Laura Barroso Perez", "Lotta Brüggemann", "Lisa Kullik", "Kaja Scheller", "Melina Reich", "Emma Morsbach", "Amelie Friedrich", "Delia Moore", "Cheyenne Rowe", "Lena Bjeltschik", "Henriette Ehling"];
+    var SEED_WEEKS = {"2026-08-17": {"Laura Knaup": [null, null, null, 640, null, null, null], "Lisa Kullik": [null, null, null, 960, null, null, null], "Melina Reich": [null, null, 500, 700, null, null, null], "Julia Martin": [null, null, 720, 490, null, null, null], "Laura Barroso Perez": [null, null, null, 240, null, null, null], "Henriette Ehling": [null, null, null, 585, null, null, null], "Amelie Friedrich": [null, null, null, 400, null, null, null], "Ramona Tews": [null, null, null, null, 480, null, null], "Marija Ilic": [null, 540, null, null, null, null, null], "Hanna Oender": [null, 560, 180, null, null, null, null], "Lotta Morsbach": [null, null, 960, null, null, null, null]}, "2026-08-24": {"Lena Bjeltschik": [1080, null, null, null, 480, null, null], "Melina Reich": [600, 1125, 960, 1350, 1800, null, null], "Kaja Scheller": [1260, 720, 1620, 1120, 1280, null, null], "Lisa Kullik": [900, 240, 360, 2320, 320, 540, null], "Amelie Friedrich": [1260, 600, 1335, 825, 1080, 900, 1200], "Lotta Morsbach": [null, 1530, 1560, 1515, null, 840, 450], "Henriette Ehling": [null, 240, 1290, 960, 240, 2400, null], "Laura Barroso Perez": [null, 360, null, 1920, 1800, null, null], "Cecilia Collins": [null, 300, null, 325, 350, 480, null], "Julia Martin": [null, 480, 480, 840, null, null, null], "Laura Knaup": [null, 840, null, null, 640, null, null], "Hanna Oender": [null, 840, null, 1320, 1080, 900, 2240], "Ramona Tews": [null, 960, null, null, 1340, null, null], "Emma Morsbach": [null, null, null, null, 960, null, null], "Lotta Brüggemann": [null, null, null, null, null, 1050, 2010]}, "2026-08-31": {"Lotta Brüggemann": [1140, null, null, 2240, 1080, null, null], "Amelie Friedrich": [840, null, null, null, 720, null, null], "Kaja Scheller": [1195, 1170, 720, null, 900, null, 800], "Laura Barroso Perez": [1200, null, null, 270, 480, 540, 450], "Marija Ilic": [1080, null, null, null, null, 1440, null], "Lisa Kullik": [980, 540, 360, 440, 600, 720, 840], "Melina Reich": [1750, 1365, 720, 1230, 720, 180, null], "Henriette Ehling": [1260, 600, null, null, null, null, null], "Lotta Morsbach": [null, 1050, null, null, 1560, null, null], "Ramona Tews": [null, 960, null, null, 1530, null, null], "Laura Knaup": [null, 720, null, null, null, null, null], "Emma Morsbach": [null, 540, null, null, null, null, 640], "Lena Bjeltschik": [null, null, 960, null, null, null, null], "Hanna Oender": [null, null, null, 1280, 540, null, null]}, "2026-09-07": {"Melina Reich": [475, 990, null, 1155, 720, null, null], "Laura Barroso Perez": [null, 540, null, null, null, null, 240], "Lotta Morsbach": [null, 840, null, 600, 240, null, 1200], "Kaja Scheller": [null, 1050, null, null, null, null, 1200], "Cheyenne Rowe": [null, 270, null, null, null, null, null], "Lisa Kullik": [null, null, null, 825, null, 160, null], "Lena Bjeltschik": [null, null, null, 960, null, null, 1400], "Amelie Friedrich": [null, null, null, null, 1470, 1260, 1080], "Emma Morsbach": [null, null, null, null, 840, 900, 540], "Julia Martin": [null, null, null, null, 240, null, null], "Lotta Brüggemann": [null, null, null, null, 960, null, null], "Hanna Oender": [null, null, null, null, 840, null, null], "Marija Ilic": [null, null, null, null, 1155, null, null], "Ramona Tews": [null, null, null, null, 135, null, null]}, "2026-09-14": {"Melina Reich": [270, 660, 450, null, 1080, 224, null], "Lisa Kullik": [480, 240, 180, 540, 360, null, 180], "Ramona Tews": [960, null, 960, null, 180, null, null], "Julia Martin": [300, null, 600, 600, 180, null, null], "Lena Bjeltschik": [120, null, null, null, 480, null, null], "Lotta Morsbach": [null, null, 870, 900, 360, null, null], "Lotta Brüggemann": [null, null, 810, null, 480, 480, null], "Cheyenne Rowe": [null, null, null, null, 585, null, null], "Amelie Friedrich": [null, null, null, null, 450, null, null], "Laura Barroso Perez": [null, null, null, null, 180, null, null], "Hanna Oender": [null, null, null, null, null, 480, null]}, "2026-09-21": {"Lotta Morsbach": [300, null, null, null, null, null, null]}};
+    var seedFilled = 0;
+    SEED_ROSTER.forEach(function(n){ if (state.players.indexOf(n) === -1) state.players.push(n); });
+    Object.keys(SEED_WEEKS).forEach(function(iso){
+      if (!state.weeks[iso]) state.weeks[iso] = {};
+      Object.keys(SEED_WEEKS[iso]).forEach(function(name){
+        if (state.players.indexOf(name) === -1) state.players.push(name);
+        var row = state.weeks[iso][name] || (state.weeks[iso][name] = [null,null,null,null,null,null,null]);
+        SEED_WEEKS[iso][name].forEach(function(v, i){
+          if (v !== null && (row[i] === null || row[i] === undefined || row[i] === "")){ row[i] = v; seedFilled++; }
+        });
+      });
+    });
+    state.seeds = state.seeds || {};
+    state.seeds[LM_SEED_ID] = new Date().toISOString();
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch(e){}
+    window.__lmSeedInfo = seedFilled;
+  }
+
   function load(){
     try { var raw = localStorage.getItem(STORE_KEY); return raw ? JSON.parse(raw) : null; }
     catch(e){ return null; }
@@ -2126,6 +2150,7 @@
   lmRenderDsBar();
   lmApplyLayout();
   renderAll();
+  if (window.__lmSeedInfo) toast(window.__lmSeedInfo + " Tageswerte aus den Forms-Antworten (KW 34–39) ergänzt.");
 })();
 </script>
 
