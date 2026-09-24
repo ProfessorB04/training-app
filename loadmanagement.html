@@ -319,6 +319,16 @@
   .lm-dsbar-inner{ max-width:1180px; margin:0 auto; padding:10px 18px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:.85rem; color:var(--ink-soft); }
   .lm-dsbar label{ display:flex; align-items:center; gap:6px; }
   .lm-dsbar select{ padding:7px 9px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); font-size:.88rem; }
+  .lm-apppick{ border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:12px; background:var(--bg); }
+  .lm-apppick-head{ font-size:.86rem; color:var(--ink-soft); margin-bottom:8px; }
+  .lm-apppick-count{ font-weight:700; color:var(--ink); }
+  .lm-apppick-groups{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+  .lm-chip{ border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:99px; padding:5px 12px; font-size:.8rem; cursor:pointer; font-family:inherit; }
+  .lm-chip.on{ background:var(--blue); color:#fff; border-color:var(--blue); }
+  .lm-apppick-list{ columns:3; column-gap:18px; max-height:220px; overflow:auto; }
+  .lm-apppick-list label{ display:flex; align-items:center; gap:6px; font-size:.86rem; padding:2px 0; break-inside:avoid; cursor:pointer; }
+  .lm-apppick-g{ color:var(--ink-faint); font-size:.72rem; }
+  @media (max-width:700px){ .lm-apppick-list{ columns:1; } }
 </style>
 
 <div class="topbar">
@@ -1911,6 +1921,75 @@
     pastedRows = parsePastedText(this.value);
     renderPastePreview();
   });
+  // ---- App-Fassung: Auswahl der Athlet:innen beim Übernehmen aus der App (Gruppen + Häkchen) ----
+  function lmUserGroups(athletes, members){
+    var byAthlete = {}, out = {};
+    members.forEach(function(m){ (byAthlete[m.athlete_id] = byAthlete[m.athlete_id] || []).push(m.group_id); });
+    athletes.forEach(function(a){ if (a.profile_id) out[a.profile_id] = byAthlete[a.id] || []; });
+    return out;
+  }
+  function lmShowAppPick(kind, rows, groups, userGroups){
+    var panel = document.getElementById(kind === "srpe" ? "pastePanel" : "wellnessPastePanel");
+    var area = document.getElementById(kind === "srpe" ? "pasteArea" : "wellnessPasteArea");
+    var box = document.getElementById("appPick_" + kind);
+    if (!box){
+      box = document.createElement("div");
+      box.id = "appPick_" + kind; box.className = "lm-apppick";
+      panel.insertBefore(box, panel.firstChild);
+      // Beim Übernehmen/Abbrechen/Excel-Einfügen die App-Auswahl wieder entfernen
+      [kind === "srpe" ? "pasteApplyBtn" : "wellnessPasteApplyBtn", kind === "srpe" ? "pasteCancelBtn" : "wellnessPasteCancelBtn",
+       kind === "srpe" ? "pasteToggleBtn" : "wellnessPasteToggleBtn"].forEach(function(id){
+        document.getElementById(id).addEventListener("click", function(){ var b = document.getElementById("appPick_" + kind); if (b) b.remove(); });
+      });
+    }
+    panel.style.display = "block";
+    var gUsed = groups.filter(function(g){ return rows.some(function(r){ return (userGroups[r.uid] || []).indexOf(g.id) !== -1; }); });
+    var team = lmCur().name.toLowerCase().trim();
+    var g0 = gUsed.filter(function(g){ return g.name.toLowerCase().trim() === team; })[0];
+    var active = g0 ? g0.id : "";
+    var sel = {};
+    rows.forEach(function(r){ sel[r.uid] = active ? (userGroups[r.uid] || []).indexOf(active) !== -1 : true; });
+    var gName = {}; groups.forEach(function(g){ gName[g.id] = g.name; });
+
+    function applySel(){
+      var chosen = rows.filter(function(r){ return sel[r.uid]; });
+      area.value = chosen.map(function(x){ return [x.name].concat(x.values.map(function(v){ return v === null ? "" : v; })).join("\t"); }).join("\n");
+      if (kind === "srpe"){ pastedRows = chosen; renderPastePreview(); } else { pastedWellnessRows = chosen; renderWellnessPastePreview(); }
+      var c = box.querySelector(".lm-apppick-count"); if (c) c.textContent = chosen.length + " von " + rows.length + " ausgewählt";
+    }
+    function render(){
+      box.innerHTML =
+        "<div class='lm-apppick-head'><b>&#128241; Aus der App (" + weekKeyLabel(state.currentWeek) + ")</b> &ndash; Athlet:innen auswählen, deren Werte übernommen werden sollen: <span class='lm-apppick-count'></span></div>" +
+        "<div class='lm-apppick-groups'>" +
+          gUsed.map(function(g){
+            var n = rows.filter(function(r){ return (userGroups[r.uid] || []).indexOf(g.id) !== -1; }).length;
+            return "<button type='button' class='lm-chip" + (active === g.id ? " on" : "") + "' data-g='" + g.id + "'>" + esc(g.name) + " (" + n + ")</button>";
+          }).join("") +
+          "<button type='button' class='lm-chip' data-all='1'>Alle</button><button type='button' class='lm-chip' data-none='1'>Keine</button>" +
+        "</div>" +
+        "<div class='lm-apppick-list'>" + rows.map(function(r){
+          var gl = (userGroups[r.uid] || []).map(function(id){ return gName[id]; }).filter(Boolean).join(", ");
+          return "<label><input type='checkbox' data-u='" + r.uid + "'" + (sel[r.uid] ? " checked" : "") + "> " + esc(r.name) +
+                 (gl ? " <span class='lm-apppick-g'>" + esc(gl) + "</span>" : " <span class='lm-apppick-g'>keine Gruppe</span>") + "</label>";
+        }).join("") + "</div>";
+      box.querySelectorAll("[data-g]").forEach(function(b){
+        b.addEventListener("click", function(){
+          active = b.getAttribute("data-g");
+          rows.forEach(function(r){ sel[r.uid] = (userGroups[r.uid] || []).indexOf(active) !== -1; });
+          render();
+        });
+      });
+      box.querySelector("[data-all]").addEventListener("click", function(){ active = ""; rows.forEach(function(r){ sel[r.uid] = true; }); render(); });
+      box.querySelector("[data-none]").addEventListener("click", function(){ active = ""; rows.forEach(function(r){ sel[r.uid] = false; }); render(); });
+      box.querySelectorAll("input[data-u]").forEach(function(cb){
+        cb.addEventListener("change", function(){ sel[cb.getAttribute("data-u")] = cb.checked; applySel(); });
+      });
+      applySel();
+    }
+    render();
+    toast(rows.length + " Athlet:innen mit App-Einträgen – Auswahl prüfen und „Übernehmen“.");
+  }
+
   // ---- App-Fassung: sRPE-Einträge aus der Trainings-App als Rohdaten laden ----
   document.getElementById("appImportBtn").addEventListener("click", function(){
     var sb = window.appSb;
@@ -1920,10 +1999,12 @@
     Promise.all([
       sb.from("load_entries").select("user_id,entry_date,srpe,duration_min").gte("entry_date", from).lte("entry_date", to),
       sb.from("profiles").select("id,name"),
-      sb.from("athletes").select("first_name,last_name,profile_id").not("profile_id", "is", null)
+      sb.from("athletes").select("id,first_name,last_name,profile_id").not("profile_id", "is", null),
+      sb.from("athlete_groups").select("id,name").order("name"),
+      sb.from("athlete_group_members").select("athlete_id,group_id")
     ]).then(function(r){
       btn.disabled = false;
-      var err = r[0].error || r[1].error || r[2].error;
+      var err = r[0].error || r[1].error || r[2].error || r[3].error || r[4].error;
       if (err){ toast("Fehler beim Laden: " + err.message); return; }
       var nameOf = {};
       r[1].data.forEach(function(p){ nameOf[p.id] = p.name; });
@@ -1941,16 +2022,10 @@
       var rows = Object.keys(byUser).map(function(uid){
         var nm = (nameOf[uid] || "Unbekannt").replace(/\s+/g, " ").trim();
         nm = roster[nm.toLowerCase()] || nm;          // Schreibweise aus dem Kader übernehmen
-        return { name: nm, values: byUser[uid] };
+        return { uid: uid, name: nm, values: byUser[uid] };
       }).sort(function(a, b){ return a.name.localeCompare(b.name, "de"); });
       if (!rows.length){ toast("Keine App-Einträge für " + weekKeyLabel(from) + "."); return; }
-      document.getElementById("pastePanel").style.display = "block";
-      document.getElementById("pasteArea").value = rows.map(function(x){
-        return [x.name].concat(x.values.map(function(v){ return v === null ? "" : v; })).join("\t");
-      }).join("\n");
-      pastedRows = rows;
-      renderPastePreview();
-      toast(rows.length + " Athlet:innen mit App-Einträgen geladen – bitte prüfen und „Übernehmen“.");
+      lmShowAppPick("srpe", rows, r[3].data, lmUserGroups(r[2].data, r[4].data));
     }, function(e){ btn.disabled = false; toast("Fehler beim Laden: " + e.message); });
   });
 
@@ -1992,10 +2067,12 @@
     Promise.all([
       sb.from("wellness_entries").select("user_id,entry_date,sleep,fatigue,pain,energy").gte("entry_date", from).lte("entry_date", to),
       sb.from("profiles").select("id,name"),
-      sb.from("athletes").select("first_name,last_name,profile_id").not("profile_id", "is", null)
+      sb.from("athletes").select("id,first_name,last_name,profile_id").not("profile_id", "is", null),
+      sb.from("athlete_groups").select("id,name").order("name"),
+      sb.from("athlete_group_members").select("athlete_id,group_id")
     ]).then(function(r){
       btn.disabled = false;
-      var err = r[0].error || r[1].error || r[2].error;
+      var err = r[0].error || r[1].error || r[2].error || r[3].error || r[4].error;
       if (err){ toast("Fehler beim Laden: " + err.message); return; }
       var nameOf = {};
       r[1].data.forEach(function(p){ nameOf[p.id] = p.name; });
@@ -2012,16 +2089,10 @@
       });
       var rows = Object.keys(byUser).map(function(uid){
         var nm = (nameOf[uid] || "Unbekannt").replace(/\s+/g, " ").trim();
-        return { name: roster[nm.toLowerCase()] || nm, values: byUser[uid] };
+        return { uid: uid, name: roster[nm.toLowerCase()] || nm, values: byUser[uid] };
       }).sort(function(a, b){ return a.name.localeCompare(b.name, "de"); });
       if (!rows.length){ toast("Keine Wellness-Einträge aus der App für " + weekKeyLabel(from) + "."); return; }
-      document.getElementById("wellnessPastePanel").style.display = "block";
-      document.getElementById("wellnessPasteArea").value = rows.map(function(x){
-        return [x.name].concat(x.values.map(function(v){ return v === null ? "" : v; })).join("\t");
-      }).join("\n");
-      pastedWellnessRows = rows;
-      renderWellnessPastePreview();
-      toast(rows.length + " Athlet:innen mit Wellness-Checks geladen – bitte prüfen und „Übernehmen“.");
+      lmShowAppPick("wellness", rows, r[3].data, lmUserGroups(r[2].data, r[4].data));
     }, function(e){ btn.disabled = false; toast("Fehler beim Laden: " + e.message); });
   });
 
