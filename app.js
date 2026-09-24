@@ -708,7 +708,9 @@ function showCredentials(d) {
     </div>
     <form id="sendForm" class="inline-form" style="margin-top:14px;">
       <label>Senden an (beliebige Adresse)<input type="email" id="sendTo" value="${esc(d.email)}" required></label>
-      <button type="submit">E-Mail &ouml;ffnen</button>
+      <button type="submit" title="&Ouml;ffnet Gmail im Browser mit fertiger Nachricht">&#9993; Mit Gmail senden</button>
+      <button type="button" class="secondary" id="sendWhatsApp">WhatsApp</button>
+      <button type="button" class="secondary" id="sendMailApp" title="&Ouml;ffnet das E-Mail-Programm dieses Ger&auml;ts">E-Mail-Programm</button>
       <button type="button" class="secondary" id="copyCred">Kopieren</button>
     </form>
     <div style="margin-top:16px;text-align:center;">
@@ -717,12 +719,22 @@ function showCredentials(d) {
     </div>
     <p class="hint">Das Einmalpasswort wird nur jetzt angezeigt. Angemeldet wird sich immer mit der Login-E-Mail &mdash; die Nachricht selbst kannst du an jede Adresse schicken.</p>
   `;
+  const subject = 'Dein Zugang zur Balance Movement Trainings-App';
+  // Gmail im Browser (kostenlos, ohne mailto-Link – kein Zusatzprogramm nötig)
   document.getElementById('sendForm').onsubmit = (e) => {
     e.preventDefault();
     const to = document.getElementById('sendTo').value.trim();
+    const url = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(to) +
+      '&su=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(text);
+    window.open(url, '_blank', 'noopener');
+  };
+  document.getElementById('sendWhatsApp').onclick = () => {
+    window.open('https://wa.me/?text=' + encodeURIComponent(subject + '\n\n' + text), '_blank', 'noopener');
+  };
+  document.getElementById('sendMailApp').onclick = () => {
+    const to = document.getElementById('sendTo').value.trim();
     window.location.href = 'mailto:' + encodeURIComponent(to) +
-      '?subject=' + encodeURIComponent('Dein Zugang zur Balance Movement Trainings-App') +
-      '&body=' + encodeURIComponent(text);
+      '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(text);
   };
   document.getElementById('copyCred').onclick = async () => {
     try { await navigator.clipboard.writeText(text); toast('Zugangsdaten kopiert.'); }
