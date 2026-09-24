@@ -50,6 +50,7 @@ const NAV_ITEMS = [
   { key: 'loadmanagement', label: 'Load Management', icon: '&#128200;' },
   { key: 'testungen', label: 'Testungen & Assessments', icon: '&#129514;', staffOnly: true },
   { key: 'warmup', label: 'Warm-up', icon: '&#128293;', staffOnly: true },
+  { key: 'athleten', label: 'Athletenverwaltung', icon: '&#127939;', staffOnly: true },
   { key: 'team', label: 'Nutzerverwaltung', icon: '&#128101;', adminOnly: true },
 ];
 
@@ -104,6 +105,7 @@ function renderShell(profile, activeKey, title, contentHtml) {
       } else if (key === 'team' && isAdmin(profile)) renderTeamPage(profile);
       else if (key === 'testungen' && isStaff(profile)) renderTestingPage(profile);
       else if (key === 'warmup' && isStaff(profile)) window.location.href = 'warmup.html';
+      else if (key === 'athleten' && isStaff(profile)) renderAthletesPage(profile);
     };
   });
 
@@ -253,6 +255,11 @@ async function renderDashboard(user) {
     return;
   }
 
+  if (window.location.hash === '#athleten' && isStaff(profile)) {
+    history.replaceState(null, '', window.location.pathname);
+    renderAthletesPage(profile);
+    return;
+  }
   if (window.location.hash === '#testungen' && isStaff(profile)) {
     history.replaceState(null, '', window.location.pathname);
     renderTestingPage(profile);
@@ -281,7 +288,7 @@ function renderTestingPage(profile) {
         <span class="mc-sub">Zeiten erfassen, Entwicklungskurven, Bestzeiten</span>
       </a>
     </div>
-    <p class="hint">Die Testdaten werden im jeweiligen Browser gespeichert. Zum &Uuml;bertragen von einem anderen Ger&auml;t im Tool &bdquo;Sicherung speichern&ldquo; &rarr; &bdquo;Sicherung laden&ldquo; nutzen (30-15 IFT, 10m Sprint; Performance-Test hat diese Funktion noch nicht).</p>
+    <p class="hint">Die Testdaten werden im jeweiligen Browser gespeichert. Zum &Uuml;bertragen von einem anderen Ger&auml;t im Tool &bdquo;Sicherung speichern&ldquo; &rarr; &bdquo;Sicherung laden&ldquo; nutzen. Beim Performance-Test kommen die Athlet:innen beim Anlegen eines Tests aus der Athletenverwaltung.</p>
   `;
   renderShell(profile, 'testungen', 'Testungen & Assessments', content);
 }
@@ -310,6 +317,11 @@ function renderMenu(profile) {
         <span class="mc-icon">&#128293;</span>
         <span class="mc-title">Warm-up</span>
         <span class="mc-sub">Mobility-, Dynamic-, Runner&rsquo;s-ABC-Bibliothek, Warm-up-Sessions</span>
+      </button>
+      <button class="menu-card tint-ath" type="button" data-cat="athleten">
+        <span class="mc-icon">&#127939;</span>
+        <span class="mc-title">Athletenverwaltung</span>
+        <span class="mc-sub">Athlet:innen &amp; Gruppen zentral verwalten, Import aus der Trainingsplanung</span>
       </button>` : ''}
       ${isAdmin(profile) ? `
       <button class="menu-card tint-team" type="button" data-cat="team">
@@ -335,6 +347,8 @@ function renderMenu(profile) {
         renderTestingPage(profile);
       } else if (cat === 'warmup' && isStaff(profile)) {
         window.location.href = 'warmup.html';
+      } else if (cat === 'athleten' && isStaff(profile)) {
+        renderAthletesPage(profile);
       }
     };
   });

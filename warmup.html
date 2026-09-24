@@ -10,6 +10,7 @@
 (function(){
   document.documentElement.style.visibility = "hidden";
   var sb = window.supabase.createClient("https://hbrtzjrhaluoabvfkbkb.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhicnR6anJoYWx1b2FidmZrYmtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDkxMTgsImV4cCI6MjEwNTcyNTExOH0.fSav78jlqCLFBhwObAe5CS3cTlccndJlyDaY640j0nI");
+  window.appSb = sb;   // für Tools, die auf die Athletenverwaltung zugreifen
   sb.auth.getSession().then(function(res){
     var s = res.data.session;
     if(!s){ window.location.replace("index.html"); return; }
