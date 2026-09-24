@@ -1,6 +1,30 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Performance-Test — Balance Movement</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* Trainings-App: Login-Schutz (nur Admin + Trainer:innen) */
+(function(){
+  document.documentElement.style.visibility = "hidden";
+  var sb = window.supabase.createClient("https://hbrtzjrhaluoabvfkbkb.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhicnR6anJoYWx1b2FidmZrYmtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDkxMTgsImV4cCI6MjEwNTcyNTExOH0.fSav78jlqCLFBhwObAe5CS3cTlccndJlyDaY640j0nI");
+  sb.auth.getSession().then(function(res){
+    var s = res.data.session;
+    if(!s){ window.location.replace("index.html"); return; }
+    sb.from("profiles").select("role").eq("id", s.user.id).single().then(function(r){
+      if(r.data && (r.data.role === "admin" || r.data.role === "trainer")){
+        document.documentElement.style.visibility = "";
+      } else {
+        window.location.replace("index.html");
+      }
+    });
+  });
+})();
+</script>
+
+<div style="background:#a1d7ff;color:#00113d;font-family:-apple-system,sans-serif;font-size:13px;font-weight:600;padding:9px 16px;">
+  <a href="index.html#testungen" style="color:#00113d;text-decoration:none;">&larr; Zur&uuml;ck zum Men&uuml;</a>
+</div>
+
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>/*! ExcelJS 19-10-2023 */
 
@@ -1459,30 +1483,7 @@ function exportWord(){
   var html = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>";
   html += "<head><meta charset='utf-8'><title>Performance-Test</title>";
   html += "<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:PageSetup><w:PageSize w:Orient='Landscape'/></w:PageSetup></w:WordDocument></xml><![endif]-->";
-  html += "<style>body{font-family:Calibri,Arial,sans-serif;font-size:9pt;color:#1a1a1a;} table{border-collapse:collapse;} td,th{border:1px solid #ccc;padding:3px 5px;}</style><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-/* Trainings-App: Login-Schutz (nur Admin + Trainer:innen) */
-(function(){
-  document.documentElement.style.visibility = "hidden";
-  var sb = window.supabase.createClient("https://hbrtzjrhaluoabvfkbkb.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhicnR6anJoYWx1b2FidmZrYmtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDkxMTgsImV4cCI6MjEwNTcyNTExOH0.fSav78jlqCLFBhwObAe5CS3cTlccndJlyDaY640j0nI");
-  sb.auth.getSession().then(function(res){
-    var s = res.data.session;
-    if(!s){ window.location.replace("index.html"); return; }
-    sb.from("profiles").select("role").eq("id", s.user.id).single().then(function(r){
-      if(r.data && (r.data.role === "admin" || r.data.role === "trainer")){
-        document.documentElement.style.visibility = "";
-      } else {
-        window.location.replace("index.html");
-      }
-    });
-  });
-})();
-</script>
-</head><body>
-<div style="background:#a1d7ff;color:#00113d;font-family:-apple-system,sans-serif;font-size:13px;font-weight:600;padding:9px 16px;">
-  <a href="index.html#testungen" style="color:#00113d;text-decoration:none;">&larr; Zur&uuml;ck zum Men&uuml;</a>
-</div>
-";
+  html += "<style>body{font-family:Calibri,Arial,sans-serif;font-size:9pt;color:#1a1a1a;} table{border-collapse:collapse;} td,th{border:1px solid #ccc;padding:3px 5px;}</style></head><body>";
 
   html += "<table style='width:100%;border:none;margin-bottom:8px;'><tr>" +
     "<td style='background:#ee7105;padding:10px 14px;width:70px;border:none;'><img src='data:image/png;base64," + CLUB_LOGO_B64 + "' style='height:42px;background:#fff;padding:3px;border-radius:4px;'></td>" +
