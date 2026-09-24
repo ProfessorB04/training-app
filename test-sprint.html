@@ -48,6 +48,26 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <head>
 <meta charset="UTF-8">
 <title>10m Sprint — Balance Movement</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* Trainings-App: Login-Schutz (nur Admin + Trainer:innen) */
+(function(){
+  document.documentElement.style.visibility = "hidden";
+  var sb = window.supabase.createClient("https://hbrtzjrhaluoabvfkbkb.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhicnR6anJoYWx1b2FidmZrYmtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDkxMTgsImV4cCI6MjEwNTcyNTExOH0.fSav78jlqCLFBhwObAe5CS3cTlccndJlyDaY640j0nI");
+  sb.auth.getSession().then(function(res){
+    var s = res.data.session;
+    if(!s){ window.location.replace("index.html"); return; }
+    sb.from("profiles").select("role").eq("id", s.user.id).single().then(function(r){
+      if(r.data && (r.data.role === "admin" || r.data.role === "trainer")){
+        document.documentElement.style.visibility = "";
+      } else {
+        window.location.replace("index.html");
+      }
+    });
+  });
+})();
+</script>
+
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root{
@@ -146,25 +166,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:9px 18px; border-radius:20px; font-size:.82rem; opacity:0; pointer-events:none; transition:opacity .25s;}
   .toast.show{opacity:.95;}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-/* Trainings-App: Login-Schutz (nur Admin + Trainer:innen) */
-(function(){
-  document.documentElement.style.visibility = "hidden";
-  var sb = window.supabase.createClient("https://hbrtzjrhaluoabvfkbkb.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhicnR6anJoYWx1b2FidmZrYmtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDkxMTgsImV4cCI6MjEwNTcyNTExOH0.fSav78jlqCLFBhwObAe5CS3cTlccndJlyDaY640j0nI");
-  sb.auth.getSession().then(function(res){
-    var s = res.data.session;
-    if(!s){ window.location.replace("index.html"); return; }
-    sb.from("profiles").select("role").eq("id", s.user.id).single().then(function(r){
-      if(r.data && (r.data.role === "admin" || r.data.role === "trainer")){
-        document.documentElement.style.visibility = "";
-      } else {
-        window.location.replace("index.html");
-      }
-    });
-  });
-})();
-</script>
 </head>
 <body>
 <div style="background:#a1d7ff;color:#00113d;font-family:-apple-system,sans-serif;font-size:13px;font-weight:600;padding:9px 16px;">
