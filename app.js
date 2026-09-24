@@ -242,7 +242,11 @@ function mustChangePassword(user) {
   return !!(user && user.user_metadata && user.user_metadata.must_change_password);
 }
 
-function renderSetPassword() {
+async function renderSetPassword() {
+  // E-Mail des Kontos mit anzeigen: sonst speichert der Passwort-Manager des Browsers das neue Passwort
+  // beim falschen Konto (z. B. beim Admin-Zugang, wenn mehrere Personen dasselbe Gerät nutzen).
+  let email = '';
+  try { const { data: { user } } = await sb.auth.getUser(); email = (user && user.email) || ''; } catch (e) {}
   appEl.innerHTML = `
     <main class="login-page">
       <div class="login-card">
@@ -250,6 +254,7 @@ function renderSetPassword() {
         <h1>Willkommen</h1>
         <p class="sub">Bitte lege jetzt dein eigenes Passwort fest (mind. 10 Zeichen). Das Einmalpasswort ist danach ung&uuml;ltig.</p>
         <form id="setPwForm" class="auth-form">
+          <label>Konto<input type="email" id="setPwUser" name="username" autocomplete="username" value="${esc(email)}" readonly></label>
           <label>Neues Passwort<input type="password" id="newPassword" required minlength="10" autocomplete="new-password"></label>
           <label>Passwort wiederholen<input type="password" id="newPassword2" required minlength="10" autocomplete="new-password"></label>
           <button type="submit">Passwort speichern</button>
