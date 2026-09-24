@@ -272,3 +272,8 @@ tr.no-access a{ color:var(--brand-strong); }
 .modal-form .gcheck input{ width:auto; padding:0; margin:0; flex:0 0 auto; }
 .gcheck{ white-space:nowrap; }
 .gcheck:has(input:checked){ background:var(--brand-pale); border-color:var(--brand-strong); font-weight:600; }
+
+/* Zurück-Button in der Kopfzeile von Unterseiten */
+.topbar-title{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; min-width:0; }
+.back-btn{ background:var(--paper); border:1px solid var(--line); color:var(--brand-dark); padding:7px 12px; font-size:.85rem; border-radius:9px; }
+.back-btn:hover{ background:var(--brand-pale); }

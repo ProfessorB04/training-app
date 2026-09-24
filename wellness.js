@@ -62,7 +62,8 @@ async function renderWellnessPage(profile, preview) {
       </table></div>
     </div>`}
   `;
-  renderShell(profile, preview ? 'loadmanagement' : 'wellness', preview ? 'Wellness-Fragebogen (Vorschau)' : 'Wellness-Check', content);
+  renderShell(profile, preview ? 'loadmanagement' : 'wellness', preview ? 'Wellness-Fragebogen (Vorschau)' : 'Wellness-Check', content,
+    preview ? { label: 'Load Management', go: () => renderLoadHub(profile) } : null);
 
   const form = document.getElementById('wellForm');
   if (!form) return;
@@ -133,7 +134,8 @@ async function renderWellnessOverview(profile) {
       <p class="hint">Wert = Durchschnitt aus Schlaf, Erm&uuml;dung, Schmerzen, Energie (1&ndash;5, 5 = sehr gut). Rot &lt; 2,5 &middot; Gelb 2,5&ndash;3,4 &middot; Gr&uuml;n &ge; 3,5. Maus &uuml;ber den Wert zeigt die Einzelantworten, 💬 = Kommentar.
       Ins Load-Management-Tool: dort bei Wellness &bdquo;📱 Aus App &uuml;bernehmen&ldquo;.</p>
     </div>`;
-  renderShell(profile, 'loadmanagement', 'Wellness aus der App', content);
+  renderShell(profile, 'loadmanagement', 'Wellness aus der App', content,
+    { label: 'Load Management', go: () => renderLoadHub(profile) });
   document.getElementById('wellGroup').onchange = (e) => { WELL_GROUP = e.target.value; renderWellnessOverview(profile); };
 }
 

@@ -102,7 +102,7 @@ function navigate(profile, key) {
   else if (key === 'team') renderTeamPage(profile);
 }
 
-function renderShell(profile, activeKey, title, contentHtml) {
+function renderShell(profile, activeKey, title, contentHtml, back) {
   const navHtml = NAV_ITEMS
     .filter(item => item.show(profile))
     .map(item => {
@@ -137,13 +137,18 @@ function renderShell(profile, activeKey, title, contentHtml) {
       <div class="main-area">
         <header class="topbar">
           <button class="menu-toggle" id="menuToggle" type="button" aria-label="Men&uuml;">&#9776;</button>
-          <h1>${esc(title)}</h1>
+          <div class="topbar-title">
+            ${back ? `<button type="button" class="back-btn" id="backBtn">&larr; ${esc(back.label || 'Zurück')}</button>` : ''}
+            <h1>${esc(title)}</h1>
+          </div>
           <span></span>
         </header>
         <main class="wrap">${contentHtml}</main>
       </div>
     </div>
   `;
+
+  if (back) document.getElementById('backBtn').onclick = back.go;
 
   document.getElementById('logoutBtn').onclick = async () => {
     await sb.auth.signOut();
@@ -479,7 +484,8 @@ async function renderTrainerDashboard(profile) {
     </div>
   `;
 
-  renderShell(profile, 'loadmanagement', 'Load Management', content);
+  renderShell(profile, 'loadmanagement', 'sRPE-Einträge aus der App', content,
+    { label: 'Load Management', go: () => renderLoadHub(profile) });
   document.getElementById('loadGroup').onchange = (e) => { LOAD_GROUP = e.target.value; renderTrainerDashboard(profile); };
   appEl.querySelectorAll('[data-grant]').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); INVITE_PRESELECT = a.dataset.grant; renderTeamPage(profile); };
