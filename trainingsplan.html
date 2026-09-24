@@ -1781,16 +1781,18 @@ function buildPrescriptionHeaderText(label, presc, L){
   return parts.length ? `${label} ${parts.join(' ')}` : label;
 }
 
-async function exportExcel(){
+async function exportExcel(opts){
+  // opts (Serien-Export): { wb, athlete, sheetName } -> Blatt in vorhandene Arbeitsmappe, kein Download
+  opts = opts || {};
   if(typeof ExcelJS === 'undefined'){ alert('Excel-Bibliothek konnte nicht geladen werden.'); return; }
   const layout = LAYOUTS.find(l=>l.key===state.layout) || LAYOUTS[0];
   const BLUE = layout.blue, PALE = layout.pale;
   const L = I18N[state.lang] || I18N.de;
-  const athlete = state.athleteIdx ? (ATHLETES.find(a=>a.id===state.athleteIdx) || null) : null;
+  const athlete = ('athlete' in opts) ? opts.athlete : (state.athleteIdx ? (ATHLETES.find(a=>a.id===state.athleteIdx) || null) : null);
   const athleteName = athlete ? athleteDisplayName(athlete, true) : "";
   const startDE = formatDateDE(state.start);
 
-  const wb = new ExcelJS.Workbook();
+  const wb = opts.wb || new ExcelJS.Workbook();
   wb.creator = layout.org; wb.created = new Date();
 
   const days = state.days, weeks = state.weeks;
@@ -1800,7 +1802,7 @@ async function exportExcel(){
   function dayStartCol(d){ return 1 + (d-1)*blockWidth; }
 
   const rawName = [state.title, state.team].filter(Boolean).join(' - ') || L.trainingsplan;
-  const sheetName = rawName.replace(/[\\\/\?\*\[\]:]/g,'-').slice(0,31);
+  const sheetName = opts.sheetName || rawName.replace(/[\\\/\?\*\[\]:]/g,'-').slice(0,31);
   const ws = wb.addWorksheet(sheetName);
 
   const cols = [];
@@ -2088,6 +2090,8 @@ async function exportExcel(){
   ws.pageSetup = {orientation: totalCols>16 ? 'landscape':'portrait', fitToPage:true, fitToWidth:1, fitToHeight:1, paperSize:9,
     margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}};
 
+  if(opts.wb) return;   // Serien-Export: Blatt ist fertig, Datei wird gesammelt erzeugt
+
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const a = document.createElement('a');
@@ -2107,6 +2111,105 @@ async function exportExcel(){
 }
 
 document.getElementById('btnExport').addEventListener('click', ()=>{ exportExcel(); });
+
+/* ---------------------------------------------------------------------
+   SERIEN-EXPORT: gleicher Plan für mehrere Athlet:innen – eine Excel-Datei,
+   ein Blatt je Person (Name im Kopf), jedes Blatt auf eine Druckseite angepasst
+--------------------------------------------------------------------- */
+async function exportSeries(ids){
+  if(typeof ExcelJS === 'undefined'){ alert('Excel-Bibliothek konnte nicht geladen werden.'); return; }
+  const list = ids.map(id => ATHLETES.find(a => a.id === id)).filter(Boolean);
+  if(!list.length){ alert('Bitte mindestens eine Athletin / einen Athleten auswählen.'); return; }
+  const wb = new ExcelJS.Workbook();
+  const used = {};
+  for(const a of list){
+    let nm = [(a.last || '').trim(), (a.first || '').trim()].filter(Boolean).join(', ') || 'Athlet';
+    nm = nm.replace(/[\\\/\?\*\[\]:]/g, '-').slice(0, 28);
+    let sheet = nm, k = 2;
+    while(used[sheet.toLowerCase()]) sheet = nm + ' ' + (k++);
+    used[sheet.toLowerCase()] = true;
+    await exportExcel({ wb: wb, athlete: a, sheetName: sheet });
+  }
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const cleanPart = s => (s || '').trim().replace(/[^a-zA-Z0-9äöüÄÖÜß_-]+/g, '_').replace(/^_+|_+$/g, '');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = ['Trainingsplan', cleanPart(state.title), cleanPart(state.team), 'Serie', list.length + '_Personen'].filter(Boolean).join('_') + '.xlsx';
+  a.click();
+  // Plan in der Plan-Historie jeder Person ablegen (wie beim Einzel-Export)
+  const keep = state.athleteIdx;
+  list.forEach(x => { state.athleteIdx = x.id; snapshotAthletePlan(); });
+  state.athleteIdx = keep;
+  saveState(true);
+  snapshotCurrentPlan();
+  toast('Serien-Export: ' + list.length + ' Pläne in einer Excel-Datei');
+}
+
+function openSeriesDialog(){
+  const host = document.createElement('div');
+  const groupOpts = ['<option value="__all">Alle Gruppen</option>']
+    .concat(GROUPS.map(g => `<option value="${escapeHtmlSeries(g)}" ${g === state.team ? 'selected' : ''}>${escapeHtmlSeries(g)}</option>`)).join('');
+  host.innerHTML = `
+    <div style="position:fixed;inset:0;background:rgba(10,14,30,.45);z-index:9998;display:flex;align-items:flex-start;justify-content:center;padding:36px 14px;overflow-y:auto;" id="serScrim">
+      <div style="background:#fff;border-radius:14px;padding:20px 22px;width:100%;max-width:640px;box-shadow:0 20px 50px rgba(0,17,61,.25);">
+        <h2 style="margin:0 0 4px;font-size:18px;">Serien-Export</h2>
+        <p style="margin:0 0 14px;color:#52514e;font-size:13px;">Der aktuelle Plan (&bdquo;${escapeHtmlSeries(state.title || 'ohne Titel')}&ldquo;) wird f&uuml;r jede ausgew&auml;hlte Person mit ihrem Namen erstellt &ndash; <b>eine Excel-Datei, ein Blatt je Person</b>, jedes Blatt auf eine Seite angepasst.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+          <select id="serGroup" style="flex:1;min-width:200px;">${groupOpts}</select>
+          <button type="button" class="small" id="serAll">Alle</button>
+          <button type="button" class="small" id="serNone">Keine</button>
+        </div>
+        <div id="serList" style="max-height:320px;overflow:auto;border:1px solid #e1e0d9;border-radius:10px;padding:6px 10px;columns:2;column-gap:18px;"></div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:16px;">
+          <span id="serCount" style="flex:1;font-size:13px;color:#52514e;"></span>
+          <button type="button" id="serCancel">Abbrechen</button>
+          <button type="button" class="primary" id="serGo">&#128196; Excel erstellen</button>
+        </div>
+        <p style="margin:12px 0 0;color:#898781;font-size:12px;">Drucken: Datei in Excel &ouml;ffnen &rarr; Datei &rarr; Drucken &rarr; <b>&bdquo;Gesamte Arbeitsmappe drucken&ldquo;</b> (bzw. als PDF sichern) &ndash; dann kommt jede Person auf ein eigenes Blatt.</p>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+  const $ = id => host.querySelector('#' + id);
+  const picked = {};
+  function members(){
+    const g = $('serGroup').value;
+    return ATHLETES.filter(a => g === '__all' || (a.group || '') === g);
+  }
+  function render(){
+    const list = members();
+    $('serList').innerHTML = list.map(a => `<label style="display:flex;align-items:center;gap:6px;font-size:13px;padding:3px 0;break-inside:avoid;cursor:pointer;">
+      <input type="checkbox" data-id="${a.id}" ${picked[a.id] ? 'checked' : ''}> ${escapeHtmlSeries(athleteDisplayName(a, true))}</label>`).join('')
+      || '<span style="color:#898781;font-size:13px;">Keine Athlet:innen in dieser Gruppe.</span>';
+    $('serList').querySelectorAll('input[data-id]').forEach(cb => {
+      cb.addEventListener('change', () => { if(cb.checked) picked[cb.dataset.id] = true; else delete picked[cb.dataset.id]; count(); });
+    });
+    count();
+  }
+  function count(){ $('serCount').textContent = Object.keys(picked).length + ' ausgewählt'; }
+  function selectGroup(){ Object.keys(picked).forEach(k => delete picked[k]); members().forEach(a => picked[a.id] = true); render(); }
+  $('serGroup').addEventListener('change', selectGroup);
+  $('serAll').addEventListener('click', () => { members().forEach(a => picked[a.id] = true); render(); });
+  $('serNone').addEventListener('click', () => { members().forEach(a => delete picked[a.id]); render(); });
+  $('serCancel').addEventListener('click', () => host.remove());
+  $('serScrim').addEventListener('click', e => { if(e.target.id === 'serScrim') host.remove(); });
+  $('serGo').addEventListener('click', async () => {
+    const ids = ATHLETES.filter(a => picked[a.id]).map(a => a.id);   // Reihenfolge wie in der Athletenliste
+    if(!ids.length){ alert('Bitte mindestens eine Person auswählen.'); return; }
+    $('serGo').disabled = true; $('serGo').textContent = 'Erstelle …';
+    try { await exportSeries(ids); host.remove(); }
+    catch(err){ alert('Serien-Export fehlgeschlagen: ' + err.message); $('serGo').disabled = false; $('serGo').textContent = 'Excel erstellen'; }
+  });
+  selectGroup();
+}
+function escapeHtmlSeries(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+(function(){
+  const b = document.createElement('button');
+  b.id = 'btnSeriesExport'; b.type = 'button';
+  b.textContent = '🖨️ Serien-Export (mehrere Athlet:innen)';
+  b.addEventListener('click', openSeriesDialog);
+  document.getElementById('btnExport').insertAdjacentElement('afterend', b);
+})();
 
 /* ---------------------------------------------------------------------
    INIT
