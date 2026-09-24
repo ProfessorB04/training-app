@@ -184,20 +184,25 @@ function renderAuth() {
   };
 }
 
-// ---------------- Neues Passwort setzen (nach Einladung oder "Passwort vergessen") ----------------
+// ---------------- Neues Passwort setzen (Einmalpasswort, Einladung oder "Passwort vergessen") ----------------
+function mustChangePassword(user) {
+  return !!(user && user.user_metadata && user.user_metadata.must_change_password);
+}
+
 function renderSetPassword() {
   appEl.innerHTML = `
     <main class="login-page">
       <div class="login-card">
         <div class="login-logo"><img src="${LOGO_SRC}" alt="Balance Movement"></div>
         <h1>Willkommen</h1>
-        <p class="sub">Bitte lege dein eigenes Passwort fest (mind. 10 Zeichen).</p>
+        <p class="sub">Bitte lege jetzt dein eigenes Passwort fest (mind. 10 Zeichen). Das Einmalpasswort ist danach ung&uuml;ltig.</p>
         <form id="setPwForm" class="auth-form">
           <label>Neues Passwort<input type="password" id="newPassword" required minlength="10" autocomplete="new-password"></label>
           <label>Passwort wiederholen<input type="password" id="newPassword2" required minlength="10" autocomplete="new-password"></label>
           <button type="submit">Passwort speichern</button>
           <p class="error" id="setPwError"></p>
         </form>
+        <p class="hint" style="text-align:center;margin-top:14px;"><a href="#" id="setPwLogout">Abmelden</a></p>
       </div>
     </main>
   `;
@@ -211,7 +216,7 @@ function renderSetPassword() {
       errEl.textContent = 'Passwörter stimmen nicht überein.';
       return;
     }
-    const { error } = await sb.auth.updateUser({ password: p1 });
+    const { error } = await sb.auth.updateUser({ password: p1, data: { must_change_password: false } });
     if (error) {
       errEl.textContent = 'Fehler: ' + error.message;
       return;
@@ -220,6 +225,11 @@ function renderSetPassword() {
     toast('Passwort gespeichert.');
     const { data: { user } } = await sb.auth.getUser();
     if (user) renderDashboard(user);
+  };
+
+  document.getElementById('setPwLogout').onclick = async (e) => {
+    e.preventDefault();
+    await sb.auth.signOut();
   };
 }
 
@@ -402,42 +412,43 @@ async function renderTeamPage(profile) {
                <option value="athlete" ${u.role === 'athlete' ? 'selected' : ''}>Athlet:in</option>
                <option value="trainer" ${u.role === 'trainer' ? 'selected' : ''}>Trainer:in</option>
              </select>`;
-        return `<tr><td>${esc(u.name)}</td><td>${roleCell}</td></tr>`;
+        const resetCell = u.role === 'admin' ? ''
+          : `<button type="button" class="secondary small-btn" data-reset="${u.id}">Einmalpasswort</button>
+             <button type="button" class="danger small-btn" data-delete="${u.id}">L&ouml;schen</button>`;
+        return `<tr><td>${esc(u.name)}</td><td>${roleCell}</td><td>${resetCell}</td></tr>`;
       }).join('')
-    : `<tr><td colspan="2" class="muted">Noch keine Nutzer:innen.</td></tr>`;
+    : `<tr><td colspan="3" class="muted">Noch keine Nutzer:innen.</td></tr>`;
 
   const content = `
     <div class="card">
       <h2>Neue Person einladen</h2>
-      <p class="hint">Selbstregistrierung ist deaktiviert. Name, E-Mail und Rolle w&auml;hlen &mdash; die Person bekommt einen sicheren Einladungslink per E-Mail und legt sich damit ihr eigenes Passwort an.</p>
+      <p class="hint">Selbstregistrierung ist deaktiviert. Name, Login-E-Mail und Rolle w&auml;hlen &mdash; die App erzeugt ein <b>Einmalpasswort</b>. Du schickst die Zugangsdaten an eine beliebige Adresse (oder per WhatsApp). Bei der ersten Anmeldung legt die Person ihr eigenes Passwort fest.</p>
       <form id="inviteForm" class="inline-form">
         <label>Name<input type="text" id="inviteName" required></label>
-        <label>E-Mail<input type="email" id="inviteEmail" required></label>
+        <label>Login-E-Mail<input type="email" id="inviteEmail" required></label>
         <label>Rolle
           <select id="inviteRole">
             <option value="athlete">Athlet:in</option>
             <option value="trainer">Trainer:in</option>
           </select>
         </label>
-        <button type="submit">Einladen</button>
+        <button type="submit">Zugang anlegen</button>
       </form>
       <p class="role-hint">Trainer:innen k&ouml;nnen alle Inhalte nutzen (Trainingsplanung, Load-Management-&Uuml;bersicht aller Athlet:innen), aber keine Nutzer einladen oder Rollen &auml;ndern.</p>
       <p class="notice" id="inviteMsg" hidden></p>
-      <div id="inviteQrWrap" hidden style="margin-top:16px;text-align:center;">
-        <p class="hint">QR-Code zur Anmeldeseite (f&uuml;hrt zum Login, nicht zur Einladung selbst &mdash; die kommt per E-Mail):</p>
-        <canvas id="inviteQr"></canvas>
-      </div>
     </div>
+
+    <div class="card cred-card" id="credCard" hidden></div>
 
     <div class="card">
       <h2>Alle Nutzer:innen</h2>
       <div class="tablewrap">
         <table class="user-table">
-          <thead><tr><th>Name</th><th>Rolle</th></tr></thead>
+          <thead><tr><th>Name</th><th>Rolle</th><th>Zugang</th></tr></thead>
           <tbody>${userRows}</tbody>
         </table>
       </div>
-      <p class="hint">Rolle &auml;ndern: einfach im Auswahlfeld umstellen, wird sofort gespeichert. Die Admin-Rolle kann nur direkt in Supabase vergeben werden.</p>
+      <p class="hint">Rolle &auml;ndern: einfach im Auswahlfeld umstellen, wird sofort gespeichert. &bdquo;Einmalpasswort&ldquo; erzeugt neue Zugangsdaten (z.&nbsp;B. wenn jemand nicht reinkommt) &mdash; das alte Passwort gilt dann nicht mehr. &bdquo;L&ouml;schen&ldquo; entfernt den Zugang inkl. aller Load-Eintr&auml;ge dauerhaft. Die Admin-Rolle kann nur direkt in Supabase vergeben werden.</p>
     </div>
   `;
 
@@ -455,6 +466,37 @@ async function renderTeamPage(profile) {
     };
   });
 
+  appEl.querySelectorAll('[data-delete]').forEach(btn => {
+    btn.onclick = async () => {
+      const name = btn.closest('tr').firstElementChild.textContent;
+      if (!confirm(name + ' wirklich löschen?\n\nDer Zugang und alle Load-Management-Einträge dieser Person werden dauerhaft entfernt.')) return;
+      btn.disabled = true;
+      const { data, error } = await sb.functions.invoke('invite-user', { body: { action: 'delete', userId: btn.dataset.delete } });
+      if (error || (data && data.error)) {
+        btn.disabled = false;
+        toast('Fehler: ' + (data && data.error ? data.error : error.message));
+        return;
+      }
+      toast(name + ' gelöscht.');
+      renderTeamPage(profile);
+    };
+  });
+
+  appEl.querySelectorAll('[data-reset]').forEach(btn => {
+    btn.onclick = async () => {
+      const name = btn.closest('tr').firstElementChild.textContent;
+      if (!confirm('Neues Einmalpasswort für ' + name + ' erzeugen? Das bisherige Passwort gilt dann nicht mehr.')) return;
+      btn.disabled = true;
+      const { data, error } = await sb.functions.invoke('invite-user', { body: { action: 'reset', userId: btn.dataset.reset } });
+      btn.disabled = false;
+      if (error || (data && data.error)) {
+        toast('Fehler: ' + (data && data.error ? data.error : error.message));
+        return;
+      }
+      showCredentials(data);
+    };
+  });
+
   document.getElementById('inviteForm').onsubmit = async (e) => {
     e.preventDefault();
     const name = document.getElementById('inviteName').value.trim();
@@ -462,7 +504,7 @@ async function renderTeamPage(profile) {
     const role = document.getElementById('inviteRole').value;
     const msgEl = document.getElementById('inviteMsg');
     msgEl.hidden = false;
-    msgEl.textContent = 'Sende Einladung…';
+    msgEl.textContent = 'Lege Zugang an…';
 
     const { data, error } = await sb.functions.invoke('invite-user', {
       body: { name, email, role },
@@ -473,13 +515,56 @@ async function renderTeamPage(profile) {
       return;
     }
 
-    msgEl.textContent = 'Einladung an ' + email + ' (' + ROLE_LABELS[role] + ') verschickt.';
-    e.target.reset();
-
-    const qrWrap = document.getElementById('inviteQrWrap');
-    qrWrap.hidden = false;
-    QRCode.toCanvas(document.getElementById('inviteQr'), location.origin + '/', { width: 200 });
+    toast('Zugang für ' + name + ' (' + ROLE_LABELS[role] + ') angelegt.');
+    await renderTeamPage(profile);
+    showCredentials(data);
   };
+}
+
+// Zugangsdaten nach Anlegen / Zurücksetzen anzeigen (nur einmalig sichtbar)
+function showCredentials(d) {
+  const card = document.getElementById('credCard');
+  const appUrl = location.origin + '/';
+  const text =
+    'Hallo ' + d.name + ',\n\n' +
+    'hier sind deine Zugangsdaten für die Balance Movement Trainings-App:\n\n' +
+    'Adresse: ' + appUrl + '\n' +
+    'Login-E-Mail: ' + d.email + '\n' +
+    'Einmalpasswort: ' + d.password + '\n\n' +
+    'Bei der ersten Anmeldung legst du dein eigenes Passwort fest.\n\n' +
+    'Viele Grüße\nMaik';
+  card.hidden = false;
+  card.innerHTML = `
+    <h2>Zugangsdaten f&uuml;r ${esc(d.name)}</h2>
+    <div class="cred-grid">
+      <span>Adresse</span><b>${esc(appUrl)}</b>
+      <span>Login-E-Mail</span><b>${esc(d.email)}</b>
+      <span>Einmalpasswort</span><b class="cred-pw">${esc(d.password)}</b>
+    </div>
+    <form id="sendForm" class="inline-form" style="margin-top:14px;">
+      <label>Senden an (beliebige Adresse)<input type="email" id="sendTo" value="${esc(d.email)}" required></label>
+      <button type="submit">E-Mail &ouml;ffnen</button>
+      <button type="button" class="secondary" id="copyCred">Kopieren</button>
+    </form>
+    <div style="margin-top:16px;text-align:center;">
+      <p class="hint">QR-Code zur Anmeldeseite:</p>
+      <canvas id="credQr"></canvas>
+    </div>
+    <p class="hint">Das Einmalpasswort wird nur jetzt angezeigt. Angemeldet wird sich immer mit der Login-E-Mail &mdash; die Nachricht selbst kannst du an jede Adresse schicken.</p>
+  `;
+  document.getElementById('sendForm').onsubmit = (e) => {
+    e.preventDefault();
+    const to = document.getElementById('sendTo').value.trim();
+    window.location.href = 'mailto:' + encodeURIComponent(to) +
+      '?subject=' + encodeURIComponent('Dein Zugang zur Balance Movement Trainings-App') +
+      '&body=' + encodeURIComponent(text);
+  };
+  document.getElementById('copyCred').onclick = async () => {
+    try { await navigator.clipboard.writeText(text); toast('Zugangsdaten kopiert.'); }
+    catch (_) { toast('Kopieren nicht möglich – bitte markieren und kopieren.'); }
+  };
+  QRCode.toCanvas(document.getElementById('credQr'), appUrl, { width: 180 });
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ---------------- Athlet:in-Ansicht ----------------
@@ -564,7 +649,7 @@ async function renderAthleteDashboard(profile) {
 
 // ---------------- Start ----------------
 sb.auth.onAuthStateChange((_event, session) => {
-  if (session && isRecoveryOrInviteLink()) {
+  if (session && (isRecoveryOrInviteLink() || mustChangePassword(session.user))) {
     renderSetPassword();
   } else if (session) {
     renderDashboard(session.user);
