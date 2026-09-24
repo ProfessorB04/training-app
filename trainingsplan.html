@@ -196,8 +196,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   window.appSb = sb;   // für die Anbindung an die Athletenverwaltung
   sb.auth.getSession().then(function(res){
     if(!res.data.session){ window.location.replace("index.html"); return; }
-    sb.from("profiles").select("role").eq("id", res.data.session.user.id).single().then(function(r){
-      if(r.data){ window.appRole = r.data.role; if(window.appRailInit) window.appRailInit(r.data.role); }
+    sb.from("profiles").select("role,permissions").eq("id", res.data.session.user.id).single().then(function(r){
+      if(!r.data){ window.location.replace("index.html"); return; }
+      var staff = r.data.role === "admin" || r.data.role === "trainer";
+      var p = (r.data.permissions || {}).trainingsplan;
+      if(!staff && (!p || p === "none")){ window.location.replace("index.html"); return; }
+      window.appRole = r.data.role; window.appPerms = r.data.permissions || {};
+      if(window.appRailInit) window.appRailInit(r.data.role, window.appPerms);
     });
   });
 })();
@@ -2139,7 +2144,7 @@ renderPanels();
 </script>
 
 <script src="athlete-picker.js?v=20260924f"></script>
-<script src="app-rail.js?v=20260924f"></script>
+<script src="app-rail.js?v=20260924k"></script>
 <script>
 /* Trainings-App: Anbindung Athletenverwaltung */
 (function(){

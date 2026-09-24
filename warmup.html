@@ -16,11 +16,15 @@
   sb.auth.getSession().then(function(res){
     var s = res.data.session;
     if(!s){ window.location.replace("index.html"); return; }
-    sb.from("profiles").select("role").eq("id", s.user.id).single().then(function(r){
+    sb.from("profiles").select("role,permissions").eq("id", s.user.id).single().then(function(r){
       clearTimeout(guard);
-      if(r.data && (r.data.role === "admin" || r.data.role === "trainer")){
+      var staff = r.data && (r.data.role === "admin" || r.data.role === "trainer");
+      var permKey = "warmup";
+      var allowed = staff || (r.data && permKey && r.data.permissions && r.data.permissions[permKey] && r.data.permissions[permKey] !== "none");
+      if(allowed){
         window.appRole = r.data.role;
-        if(window.appRailInit) window.appRailInit(r.data.role);
+        window.appPerms = r.data.permissions || {};
+        if(window.appRailInit) window.appRailInit(r.data.role, window.appPerms);
         document.documentElement.style.visibility = "";
       } else {
         window.location.replace("index.html");
@@ -960,4 +964,4 @@ renderSession();
 </body>
 </html>
 
-<script src="app-rail.js?v=20260924f"></script>
+<script src="app-rail.js?v=20260924k"></script>

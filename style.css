@@ -249,3 +249,21 @@ tr.no-access a{ color:var(--brand-strong); }
 .status-when{ font-size:.75rem; color:var(--ink-soft); white-space:nowrap; }
 .status-mail{ font-size:.75rem; color:var(--ink-soft); margin-top:3px; }
 .user-table th, .user-table td{ text-align:left; }
+
+/* ---------------- Wellness-Check & Rechte ---------------- */
+.wq{ border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin:0 0 12px; }
+.wq legend{ padding:0 6px; font-size:.95rem; }
+.muted-inline{ color:var(--ink-soft); font-weight:400; font-size:.85rem; }
+.wq-opts{ display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin-top:6px; }
+.wq-opt{ display:flex; flex-direction:column; align-items:center; gap:4px; text-align:center; border:1px solid var(--line); border-radius:10px; padding:10px 6px; cursor:pointer; font-size:.8rem; background:#fff; }
+.wq-opt input{ margin:0; }
+.wq-opt:has(input:checked){ border-color:var(--brand-strong); background:var(--brand-pale); }
+.wq-num{ font-weight:800; font-size:1.05rem; color:var(--brand-dark); }
+.wq-txt{ color:var(--ink-soft); line-height:1.2; }
+.wq-date, .wq-comment{ display:flex; flex-direction:column; gap:4px; font-size:.85rem; color:var(--ink-soft); margin-bottom:12px; }
+.wq-date input, .wq-comment input{ padding:9px 10px; border:1px solid var(--line); border-radius:8px; font-size:.95rem; max-width:420px; }
+#wellForm button[type=submit]{ margin-top:4px; }
+@media (max-width:640px){ .wq-opts{ grid-template-columns:1fr; } .wq-opt{ flex-direction:row; text-align:left; } }
+.well-mid{ color:#a3790f; font-weight:700; }
+.perm-table td{ text-align:left; vertical-align:middle; }
+.perm-opt{ display:inline-flex; align-items:center; gap:5px; margin-right:14px; font-size:.9rem; white-space:nowrap; }

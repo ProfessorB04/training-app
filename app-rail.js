@@ -5,13 +5,15 @@
 // ============================================================
 (function () {
   var ITEMS = [
-    { href: "index.html", icon: "&#127968;", label: "Dashboard", match: [] },
-    { href: "trainingsplan.html", icon: "&#128203;", label: "Trainingsplanung", match: ["trainingsplan.html"] },
-    { href: "index.html#loadmanagement", icon: "&#128200;", label: "Load Management", match: ["loadmanagement.html"] },
-    { href: "index.html#testungen", icon: "&#129514;", label: "Testungen & Assessments", match: ["test-"], staff: true },
-    { href: "warmup.html", icon: "&#128293;", label: "Warm-up", match: ["warmup.html"], staff: true },
-    { href: "index.html#athleten", icon: "&#127939;", label: "Athletenverwaltung", match: [], staff: true },
-    { href: "index.html#team", icon: "&#128101;", label: "Nutzerverwaltung", match: [], admin: true }
+    { href: "index.html", icon: "&#127968;", label: "Dashboard", match: [], show: "all" },
+    { href: "trainingsplan.html", icon: "&#128203;", label: "Trainingsplanung", match: ["trainingsplan.html"], perm: "trainingsplan" },
+    { href: "index.html#loadmanagement", icon: "&#128200;", label: "Load Management", match: ["loadmanagement.html"], show: "staff" },
+    { href: "index.html#srpe", icon: "&#128200;", label: "Session-RPE", match: [], perm: "srpe", athleteOnly: true },
+    { href: "index.html#wellness", icon: "&#128154;", label: "Wellness-Check", match: [], perm: "wellness", athleteOnly: true },
+    { href: "index.html#testungen", icon: "&#129514;", label: "Testungen & Assessments", match: ["test-"], show: "staff" },
+    { href: "warmup.html", icon: "&#128293;", label: "Warm-up", match: ["warmup.html"], perm: "warmup" },
+    { href: "index.html#athleten", icon: "&#127939;", label: "Athletenverwaltung", match: [], show: "staff" },
+    { href: "index.html#team", icon: "&#128101;", label: "Nutzerverwaltung", match: [], show: "admin" }
   ];
 
   var CSS = "" +
@@ -31,9 +33,10 @@
     "body.has-rail .app-backbar{display:none !important;}" +
     "@media (max-width:860px){.app-rail{display:none;} body.has-rail{padding-left:0 !important;} body.has-rail .app-backbar{display:block !important;}}";
 
-  function init(role) {
+  function init(role, perms) {
     if (document.querySelector(".app-rail")) return;
     var staff = role === "admin" || role === "trainer";
+    perms = perms || window.appPerms || {};
     var path = (location.pathname.split("/").pop() || "index.html");
     var st = document.createElement("style"); st.textContent = CSS; document.head.appendChild(st);
     var rail = document.createElement("nav");
@@ -41,8 +44,10 @@
     rail.setAttribute("aria-label", "Menü");
     var h = "<a class='rail-logo' href='index.html' title='Dashboard'><img src='logo-balance-movement.png' alt='Balance Movement'></a>";
     ITEMS.forEach(function (it) {
-      if (it.staff && !staff) return;
-      if (it.admin && role !== "admin") return;
+      if (it.show === "staff" && !staff) return;
+      if (it.show === "admin" && role !== "admin") return;
+      if (it.perm && !staff && (!perms[it.perm] || perms[it.perm] === "none")) return;
+      if (it.athleteOnly && staff) return;
       var active = it.match.some(function (m) { return path.indexOf(m) === 0 || path === m; });
       h += "<a class='rail-item" + (active ? " active" : "") + "' href='" + it.href + "' aria-label='" + it.label + "'>" + it.icon +
         "<span class='tip'>" + it.label + "</span></a>";
@@ -53,5 +58,5 @@
   }
 
   window.appRailInit = init;
-  if (window.appRole) init(window.appRole);
+  if (window.appRole) init(window.appRole, window.appPerms);
 })();

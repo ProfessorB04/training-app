@@ -13,11 +13,15 @@
   sb.auth.getSession().then(function(res){
     var s = res.data.session;
     if(!s){ window.location.replace("index.html"); return; }
-    sb.from("profiles").select("role").eq("id", s.user.id).single().then(function(r){
+    sb.from("profiles").select("role,permissions").eq("id", s.user.id).single().then(function(r){
       clearTimeout(guard);
-      if(r.data && (r.data.role === "admin" || r.data.role === "trainer")){
+      var staff = r.data && (r.data.role === "admin" || r.data.role === "trainer");
+      var permKey = "";
+      var allowed = staff || (r.data && permKey && r.data.permissions && r.data.permissions[permKey] && r.data.permissions[permKey] !== "none");
+      if(allowed){
         window.appRole = r.data.role;
-        if(window.appRailInit) window.appRailInit(r.data.role);
+        window.appPerms = r.data.permissions || {};
+        if(window.appRailInit) window.appRailInit(r.data.role, window.appPerms);
         document.documentElement.style.visibility = "";
       } else {
         window.location.replace("index.html");
@@ -392,6 +396,7 @@
 
   <section id="wellnessEntry">
     <div class="section-head"><h2>Wochen-Erfassung &middot; Wellness (1&ndash;5)</h2>
+      <button class="btn" id="appWellnessImportBtn" title="Wellness-Checks aus der Trainings-App für diese Woche laden">&#128241; Aus App übernehmen</button>
       <button class="btn" id="wellnessPasteToggleBtn" style="margin-left:auto;">Aus Excel einf&uuml;gen</button>
       <button class="btn" id="clearWellnessWeekBtn" style="color:var(--zone-r);">Woche leeren</button>
     </div>
@@ -1978,6 +1983,48 @@
     pastedWellnessRows = parsePastedWellnessText(this.value);
     renderWellnessPastePreview();
   });
+  // ---- App-Fassung: Wellness-Checks aus der Trainings-App (Tageswert = Ø der 4 Fragen, 1–5) ----
+  document.getElementById("appWellnessImportBtn").addEventListener("click", function(){
+    var sb = window.appSb;
+    if (!sb){ toast("Keine Verbindung zur Trainings-App."); return; }
+    var from = state.currentWeek, to = addDays(state.currentWeek, 6);
+    var btn = this; btn.disabled = true;
+    Promise.all([
+      sb.from("wellness_entries").select("user_id,entry_date,sleep,fatigue,pain,energy").gte("entry_date", from).lte("entry_date", to),
+      sb.from("profiles").select("id,name"),
+      sb.from("athletes").select("first_name,last_name,profile_id").not("profile_id", "is", null)
+    ]).then(function(r){
+      btn.disabled = false;
+      var err = r[0].error || r[1].error || r[2].error;
+      if (err){ toast("Fehler beim Laden: " + err.message); return; }
+      var nameOf = {};
+      r[1].data.forEach(function(p){ nameOf[p.id] = p.name; });
+      r[2].data.forEach(function(a){ nameOf[a.profile_id] = ((a.first_name || "") + " " + (a.last_name || "")).trim(); });
+      var roster = {};
+      state.players.forEach(function(p){ roster[p.toLowerCase().replace(/\s+/g, " ").trim()] = p; });
+      var base = new Date(from + "T00:00:00").getTime();
+      var byUser = {};
+      r[0].data.forEach(function(e){
+        var idx = Math.round((new Date(e.entry_date + "T00:00:00").getTime() - base) / 86400000);
+        if (idx < 0 || idx > 6) return;
+        var row = byUser[e.user_id] || (byUser[e.user_id] = [null,null,null,null,null,null,null]);
+        row[idx] = Math.round(((e.sleep + e.fatigue + e.pain + e.energy) / 4) * 100) / 100;
+      });
+      var rows = Object.keys(byUser).map(function(uid){
+        var nm = (nameOf[uid] || "Unbekannt").replace(/\s+/g, " ").trim();
+        return { name: roster[nm.toLowerCase()] || nm, values: byUser[uid] };
+      }).sort(function(a, b){ return a.name.localeCompare(b.name, "de"); });
+      if (!rows.length){ toast("Keine Wellness-Einträge aus der App für " + weekKeyLabel(from) + "."); return; }
+      document.getElementById("wellnessPastePanel").style.display = "block";
+      document.getElementById("wellnessPasteArea").value = rows.map(function(x){
+        return [x.name].concat(x.values.map(function(v){ return v === null ? "" : v; })).join("\t");
+      }).join("\n");
+      pastedWellnessRows = rows;
+      renderWellnessPastePreview();
+      toast(rows.length + " Athlet:innen mit Wellness-Checks geladen – bitte prüfen und „Übernehmen“.");
+    }, function(e){ btn.disabled = false; toast("Fehler beim Laden: " + e.message); });
+  });
+
   document.getElementById("wellnessPasteApplyBtn").addEventListener("click", function(){
     if (!pastedWellnessRows.length) return;
     applyPastedWellnessRows();
@@ -2157,9 +2204,9 @@
 })();
 </script>
 
-<script src="app-rail.js?v=20260924f"></script>
+<script src="app-rail.js?v=20260924k"></script>
 
-<script src="athlete-picker.js?v=20260924f"></script>
+<script src="athlete-picker.js?v=20260924k"></script>
 <script>
 /* Trainings-App: Anbindung Athletenverwaltung */
 AthletePicker.attach({

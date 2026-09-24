@@ -70,19 +70,41 @@ const isAdmin = (profile) => profile.role === 'admin';
 const isStaff = (profile) => profile.role === 'admin' || profile.role === 'trainer';
 
 // ---------------- App-Shell (Sidebar + Kopfzeile) ----------------
+// Tool-Rechte je Athlet:in (profiles.permissions); Admin + Trainer:innen haben immer vollen Zugriff
+const PERM_DEFAULT = { srpe: 'edit', wellness: 'none', trainingsplan: 'none', warmup: 'none' };
+const perm = (profile, tool) => isStaff(profile) ? 'edit' : ((profile.permissions || PERM_DEFAULT)[tool] || 'none');
+const can = (profile, tool) => perm(profile, tool) !== 'none';
+
 const NAV_ITEMS = [
-  { key: 'menu', label: 'Dashboard', icon: '&#127968;' },
-  { key: 'trainingsplan', label: 'Trainingsplanung', icon: '&#128203;' },
-  { key: 'loadmanagement', label: 'Load Management', icon: '&#128200;' },
-  { key: 'testungen', label: 'Testungen & Assessments', icon: '&#129514;', staffOnly: true },
-  { key: 'warmup', label: 'Warm-up', icon: '&#128293;', staffOnly: true },
-  { key: 'athleten', label: 'Athletenverwaltung', icon: '&#127939;', staffOnly: true },
-  { key: 'team', label: 'Nutzerverwaltung', icon: '&#128101;', adminOnly: true },
+  { key: 'menu', label: 'Dashboard', icon: '&#127968;', show: () => true },
+  { key: 'trainingsplan', label: 'Trainingsplanung', icon: '&#128203;', show: p => can(p, 'trainingsplan') },
+  { key: 'loadmanagement', label: 'Load Management', icon: '&#128200;', show: p => isStaff(p) },
+  { key: 'srpe', label: 'Session-RPE', icon: '&#128200;', show: p => !isStaff(p) && can(p, 'srpe') },
+  { key: 'wellness', label: 'Wellness-Check', icon: '&#128154;', show: p => !isStaff(p) && can(p, 'wellness') },
+  { key: 'testungen', label: 'Testungen & Assessments', icon: '&#129514;', show: p => isStaff(p) },
+  { key: 'warmup', label: 'Warm-up', icon: '&#128293;', show: p => can(p, 'warmup') },
+  { key: 'athleten', label: 'Athletenverwaltung', icon: '&#127939;', show: p => isStaff(p) },
+  { key: 'team', label: 'Nutzerverwaltung', icon: '&#128101;', show: p => isAdmin(p) },
 ];
+
+// Zentrale Navigation (Seitenleiste, Kacheln, Sprungziele #…)
+function navigate(profile, key) {
+  const item = NAV_ITEMS.find(x => x.key === key);
+  if (!item || !item.show(profile)) { renderMenu(profile); return; }
+  if (key === 'menu') renderMenu(profile);
+  else if (key === 'trainingsplan') window.location.href = 'trainingsplan.html';
+  else if (key === 'warmup') window.location.href = 'warmup.html';
+  else if (key === 'loadmanagement') renderLoadHub(profile);
+  else if (key === 'srpe') renderAthleteDashboard(profile);
+  else if (key === 'wellness') renderWellnessPage(profile);
+  else if (key === 'testungen') renderTestingPage(profile);
+  else if (key === 'athleten') renderAthletesPage(profile);
+  else if (key === 'team') renderTeamPage(profile);
+}
 
 function renderShell(profile, activeKey, title, contentHtml) {
   const navHtml = NAV_ITEMS
-    .filter(item => (!item.adminOnly || isAdmin(profile)) && (!item.staffOnly || isStaff(profile)))
+    .filter(item => item.show(profile))
     .map(item => {
       const isActive = item.key === activeKey;
       const cls = 'nav-item' + (isActive ? ' active' : '') + (item.soon ? ' disabled' : '');
@@ -128,17 +150,7 @@ function renderShell(profile, activeKey, title, contentHtml) {
   };
 
   appEl.querySelectorAll('.nav-item[data-nav]').forEach(btn => {
-    btn.onclick = () => {
-      const key = btn.dataset.nav;
-      if (key === 'menu') renderMenu(profile);
-      else if (key === 'trainingsplan') window.location.href = 'trainingsplan.html';
-      else if (key === 'loadmanagement') {
-        isStaff(profile) ? renderLoadHub(profile) : renderAthleteDashboard(profile);
-      } else if (key === 'team' && isAdmin(profile)) renderTeamPage(profile);
-      else if (key === 'testungen' && isStaff(profile)) renderTestingPage(profile);
-      else if (key === 'warmup' && isStaff(profile)) window.location.href = 'warmup.html';
-      else if (key === 'athleten' && isStaff(profile)) renderAthletesPage(profile);
-    };
+    btn.onclick = () => navigate(profile, btn.dataset.nav);
   });
 
   const sidebar = document.getElementById('sidebar');
@@ -294,24 +306,11 @@ async function renderDashboard(user) {
     return;
   }
 
-  if (window.location.hash === '#loadmanagement') {
+  const hashKey = (window.location.hash || '').slice(1);
+  if (hashKey) {
     history.replaceState(null, '', window.location.pathname);
-    isStaff(profile) ? renderLoadHub(profile) : renderAthleteDashboard(profile);
-    return;
-  }
-  if (window.location.hash === '#team' && isAdmin(profile)) {
-    history.replaceState(null, '', window.location.pathname);
-    renderTeamPage(profile);
-    return;
-  }
-  if (window.location.hash === '#athleten' && isStaff(profile)) {
-    history.replaceState(null, '', window.location.pathname);
-    renderAthletesPage(profile);
-    return;
-  }
-  if (window.location.hash === '#testungen' && isStaff(profile)) {
-    history.replaceState(null, '', window.location.pathname);
-    renderTestingPage(profile);
+    // Athlet:innen: altes Sprungziel „Load Management“ = Session-RPE
+    navigate(profile, hashKey === 'loadmanagement' && !isStaff(profile) ? 'srpe' : hashKey);
     return;
   }
   renderMenu(profile);
@@ -331,11 +330,23 @@ function renderLoadHub(profile) {
         <span class="mc-title">sRPE-Eintr&auml;ge aus der App</span>
         <span class="mc-sub">Was Athlet:innen mit eigenem Zugang in der App eintragen &mdash; Wochen&uuml;bersicht nach Gruppe</span>
       </button>
+      <button class="menu-card tint-ath" type="button" id="loadWellness">
+        <span class="mc-icon">&#128154;</span>
+        <span class="mc-title">Wellness aus der App</span>
+        <span class="mc-sub">Wellness-Check der Athlet:innen (Schlaf, Erm&uuml;dung, Schmerzen, Energie) &mdash; Wochen&uuml;bersicht</span>
+      </button>
+      <button class="menu-card tint-team" type="button" id="loadWellnessPreview">
+        <span class="mc-icon">&#128065;</span>
+        <span class="mc-title">Wellness-Fragebogen (Vorschau)</span>
+        <span class="mc-sub">So sieht der Fragebogen f&uuml;r Athlet:innen aus &mdash; Freischaltung je Person in der Nutzerverwaltung</span>
+      </button>
     </div>
     <p class="hint">Die Daten im Load-Management-Tool werden im jeweiligen Browser gespeichert. Zum &Uuml;bertragen auf ein anderes Ger&auml;t im Tool &bdquo;Export (JSON)&ldquo; &rarr; &bdquo;Import&ldquo; nutzen.</p>
   `;
   renderShell(profile, 'loadmanagement', 'Load Management', content);
   document.getElementById('loadAppEntries').onclick = () => renderTrainerDashboard(profile);
+  document.getElementById('loadWellness').onclick = () => renderWellnessOverview(profile);
+  document.getElementById('loadWellnessPreview').onclick = () => renderWellnessPage(profile, true);
 }
 
 // ---------------- Testungen & Assessments (Admin + Trainer:innen) ----------------
@@ -364,63 +375,32 @@ function renderTestingPage(profile) {
 }
 
 // ---------------- Kategorie-Menü ----------------
+const MENU_TILES = [
+  { key: 'trainingsplan', tint: 'tint-plan', icon: '&#128203;', title: 'Trainingsplanung', sub: '&Uuml;bungen zusammenstellen, als Excel exportieren' },
+  { key: 'loadmanagement', tint: 'tint-load', icon: '&#128200;', title: 'Load Management', sub: 'Rohdaten-Import, Ampel, Wochensteuerung, sRPE &amp; Wellness aus der App' },
+  { key: 'srpe', tint: 'tint-load', icon: '&#128200;', title: 'Session-RPE', sub: 'Einheit eintragen: Anstrengung (1&ndash;10) und Dauer' },
+  { key: 'wellness', tint: 'tint-ath', icon: '&#128154;', title: 'Wellness-Check', sub: 'Morgens vor dem Training &ndash; 4 kurze Fragen' },
+  { key: 'testungen', tint: 'tint-test', icon: '&#129514;', title: 'Testungen &amp; Assessments', sub: 'Performance-Test, 30-15 IFT, 10m Sprint' },
+  { key: 'warmup', tint: 'tint-warm', icon: '&#128293;', title: 'Warm-up', sub: 'Mobility-, Dynamic-, Runner&rsquo;s-ABC-Bibliothek, Warm-up-Sessions' },
+  { key: 'athleten', tint: 'tint-ath', icon: '&#127939;', title: 'Athletenverwaltung', sub: 'Athlet:innen &amp; Gruppen zentral verwalten, Import aus der Trainingsplanung' },
+  { key: 'team', tint: 'tint-team', icon: '&#128101;', title: 'Nutzerverwaltung', sub: 'Zug&auml;nge anlegen, Rollen &amp; Tool-Rechte verwalten' },
+];
+
 function renderMenu(profile) {
-  const content = `
+  const tiles = MENU_TILES.filter(t => NAV_ITEMS.find(n => n.key === t.key).show(profile));
+  const content = tiles.length ? `
     <div class="menu-grid">
-      <button class="menu-card tint-plan" type="button" data-cat="trainingsplan">
-        <span class="mc-icon">&#128203;</span>
-        <span class="mc-title">Trainingsplanung</span>
-        <span class="mc-sub">&Uuml;bungen zusammenstellen, als Excel exportieren</span>
-      </button>
-      <button class="menu-card tint-load" type="button" data-cat="loadmanagement">
-        <span class="mc-icon">&#128200;</span>
-        <span class="mc-title">Load Management</span>
-        <span class="mc-sub">T&auml;gliche sRPE-Werte, Team-&Uuml;bersicht</span>
-      </button>
-      ${isStaff(profile) ? `
-      <button class="menu-card tint-test" type="button" data-cat="testungen">
-        <span class="mc-icon">&#129514;</span>
-        <span class="mc-title">Testungen &amp; Assessments</span>
-        <span class="mc-sub">Performance-Test, 30-15 IFT, 10m Sprint</span>
-      </button>
-      <button class="menu-card tint-warm" type="button" data-cat="warmup">
-        <span class="mc-icon">&#128293;</span>
-        <span class="mc-title">Warm-up</span>
-        <span class="mc-sub">Mobility-, Dynamic-, Runner&rsquo;s-ABC-Bibliothek, Warm-up-Sessions</span>
-      </button>
-      <button class="menu-card tint-ath" type="button" data-cat="athleten">
-        <span class="mc-icon">&#127939;</span>
-        <span class="mc-title">Athletenverwaltung</span>
-        <span class="mc-sub">Athlet:innen &amp; Gruppen zentral verwalten, Import aus der Trainingsplanung</span>
-      </button>` : ''}
-      ${isAdmin(profile) ? `
-      <button class="menu-card tint-team" type="button" data-cat="team">
-        <span class="mc-icon">&#128101;</span>
-        <span class="mc-title">Nutzerverwaltung</span>
-        <span class="mc-sub">Athlet:innen &amp; Trainer:innen einladen, Rollen verwalten</span>
-      </button>` : ''}
-    </div>
-  `;
+      ${tiles.map(t => `
+      <button class="menu-card ${t.tint}" type="button" data-cat="${t.key}">
+        <span class="mc-icon">${t.icon}</span>
+        <span class="mc-title">${t.title}</span>
+        <span class="mc-sub">${t.sub}</span>
+      </button>`).join('')}
+    </div>` : `<div class="card"><p class="muted">F&uuml;r deinen Zugang sind noch keine Bereiche freigeschaltet. Bitte wende dich an deinen Trainer.</p></div>`;
 
   renderShell(profile, 'menu', 'Dashboard', content);
-
   appEl.querySelectorAll('.menu-card[data-cat]').forEach(btn => {
-    btn.onclick = () => {
-      const cat = btn.dataset.cat;
-      if (cat === 'trainingsplan') {
-        window.location.href = 'trainingsplan.html';
-      } else if (cat === 'loadmanagement') {
-        isStaff(profile) ? renderLoadHub(profile) : renderAthleteDashboard(profile);
-      } else if (cat === 'team' && isAdmin(profile)) {
-        renderTeamPage(profile);
-      } else if (cat === 'testungen' && isStaff(profile)) {
-        renderTestingPage(profile);
-      } else if (cat === 'warmup' && isStaff(profile)) {
-        window.location.href = 'warmup.html';
-      } else if (cat === 'athleten' && isStaff(profile)) {
-        renderAthletesPage(profile);
-      }
-    };
+    btn.onclick = () => navigate(profile, btn.dataset.cat);
   });
 }
 
@@ -527,7 +507,7 @@ async function renderTeamPage(profile) {
 
   const { data: users } = await sb
     .from('profiles')
-    .select('id, name, role, created_at')
+    .select('id, name, role, created_at, permissions')
     .order('role')
     .order('name');
 
@@ -553,9 +533,11 @@ async function renderTeamPage(profile) {
              ${mAthletes.filter(a => !a.profile_id || a.profile_id === u.id).map(a =>
                `<option value="${a.id}" ${linked && linked.id === a.id ? 'selected' : ''}>${esc(a.last_name)}, ${esc(a.first_name)}</option>`).join('')}
            </select>`;
-        return `<tr><td>${esc(u.name)}</td><td>${statusCell(u)}</td><td>${roleCell}</td><td>${linkCell}</td><td>${resetCell}</td></tr>`;
+        const permCell = u.role !== 'athlete' ? '<span class="muted">alle Tools</span>' :
+          `<div class="chips">${permSummary(u.permissions)}</div><button type="button" class="secondary small-btn" data-perm="${u.id}" style="margin-top:4px;">Rechte</button>`;
+        return `<tr><td>${esc(u.name)}</td><td>${statusCell(u)}</td><td>${roleCell}</td><td>${permCell}</td><td>${linkCell}</td><td>${resetCell}</td></tr>`;
       }).join('')
-    : `<tr><td colspan="5" class="muted">Noch keine Nutzer:innen.</td></tr>`;
+    : `<tr><td colspan="6" class="muted">Noch keine Nutzer:innen.</td></tr>`;
 
   const content = `
     <div class="card">
@@ -588,7 +570,7 @@ async function renderTeamPage(profile) {
       <h2>Alle Nutzer:innen</h2>
       <div class="tablewrap">
         <table class="user-table">
-          <thead><tr><th>Name</th><th>Anmeldestatus</th><th>Rolle</th><th>Athletenverwaltung</th><th>Zugang</th></tr></thead>
+          <thead><tr><th>Name</th><th>Anmeldestatus</th><th>Rolle</th><th>Tool-Rechte</th><th>Athletenverwaltung</th><th>Zugang</th></tr></thead>
           <tbody>${userRows}</tbody>
         </table>
       </div>
@@ -618,6 +600,11 @@ async function renderTeamPage(profile) {
   };
   invAth.onchange = fillFromAthlete;
   if (preselect) { fillFromAthlete(); document.getElementById('inviteEmail').focus(); }
+
+  // Tool-Rechte je Athlet:in
+  appEl.querySelectorAll('[data-perm]').forEach(btn => {
+    btn.onclick = () => openPermissionsDialog(sorted.find(u => u.id === btn.dataset.perm), () => renderTeamPage(profile));
+  });
 
   // Bestehenden Zugang mit Athlet:in verknüpfen
   appEl.querySelectorAll('.link-select').forEach(sel => {
@@ -747,6 +734,7 @@ function showCredentials(d) {
 // ---------------- Athlet:in-Ansicht ----------------
 async function renderAthleteDashboard(profile) {
   const today = new Date().toISOString().slice(0, 10);
+  const canEdit = perm(profile, 'srpe') === 'edit';
 
   const { data: rows } = await sb
     .from('load_entries')
@@ -770,7 +758,7 @@ async function renderAthleteDashboard(profile) {
     .map(n => `<option value="${n}">${n}</option>`).join('');
 
   const content = `
-    <div class="card">
+    <div class="card" ${canEdit ? '' : 'hidden'}>
       <h2>Heutige Einheit eintragen</h2>
       <form id="entryForm" class="inline-form">
         <label>Datum<input type="date" id="entryDate" value="${today}" required></label>
@@ -798,7 +786,7 @@ async function renderAthleteDashboard(profile) {
     </div>
   `;
 
-  renderShell(profile, 'loadmanagement', 'Load Management', content);
+  renderShell(profile, 'srpe', 'Session-RPE', content);
 
   document.getElementById('entryForm').onsubmit = async (e) => {
     e.preventDefault();
