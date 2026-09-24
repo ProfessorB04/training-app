@@ -207,3 +207,7 @@ button.danger:hover{ background:#fdecea; }
 .grp-table{ margin-top:14px; }
 .grp-table td{ text-align:left; }
 @media (max-width:560px){ .modal-form{ grid-template-columns:1fr; } }
+.app-chip{ background:#dcf5e7; color:#1c6b47; }
+tr.no-access td{ color:var(--ink-soft); }
+tr.no-access a{ color:var(--brand-strong); }
+.link-select{ max-width:220px; }

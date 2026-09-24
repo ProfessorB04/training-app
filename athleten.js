@@ -97,9 +97,10 @@ async function renderAthletesPage(profile, reuse) {
         <td>${athAge(a.birthdate)}</td>
         <td>${esc(GENDER_LABEL[a.gender] || '')}</td>
         <td class="chips">${a.groupIds.map(id => groupsById[id] ? `<span class="chip">${esc(groupsById[id].name)}</span>` : '').join('')}</td>
+        <td>${a.profile_id ? '<span class="chip app-chip" title="hat einen App-Zugang (Load Management)">App ✓</span>' : ''}</td>
         <td class="nowrap"><button type="button" class="secondary small-btn" data-edit="${a.id}">Bearbeiten</button></td>
       </tr>`).join('')
-    : `<tr><td colspan="8" class="muted">Keine Athlet:innen gefunden.</td></tr>`;
+    : `<tr><td colspan="9" class="muted">Keine Athlet:innen gefunden.</td></tr>`;
 
   const content = `
     <div class="card">
@@ -130,7 +131,7 @@ async function renderAthletesPage(profile, reuse) {
         <table class="ath-table">
           <thead><tr>
             <th><input type="checkbox" id="athSelAll" ${list.length && list.every(a => st.selected.has(a.id)) ? 'checked' : ''}></th>
-            ${th('last_name', 'Nachname')}${th('first_name', 'Vorname')}${th('birthdate', 'Geburtsdatum')}${th('age', 'Alter')}${th('gender', 'Geschlecht')}${th('groups', 'Gruppen')}
+            ${th('last_name', 'Nachname')}${th('first_name', 'Vorname')}${th('birthdate', 'Geburtsdatum')}${th('age', 'Alter')}${th('gender', 'Geschlecht')}${th('groups', 'Gruppen')}${th('profile_id', 'App-Zugang')}
             <th></th>
           </tr></thead>
           <tbody>${rows}</tbody>

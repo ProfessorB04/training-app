@@ -1160,3 +1160,27 @@ init();
 </script>
 </body>
 </html>
+
+<script src="athlete-picker.js?v=20260924c"></script>
+<script>
+/* Trainings-App: Anbindung Athletenverwaltung */
+AthletePicker.attach({
+  after: "btnAddAthlete",
+  subtitle: "Neue Athlet:innen werden mit Geschlecht und Jahrgang übernommen. Bereits vorhandene Namen werden übersprungen.",
+  existingKeys: function(){ var o = {}; state.athletes.forEach(function(a){ o[((a.vorname||"") + "|" + (a.name||"")).toLowerCase().replace(/\s+/g," ").trim()] = true; }); return o; },
+  onAdd: function(list){
+    var ex = {}; state.athletes.forEach(function(a){ ex[((a.name||"") + "|" + (a.vorname||"")).toLowerCase()] = true; });
+    var n = 0;
+    list.forEach(function(x){
+      var k = ((x.last_name||"") + "|" + (x.first_name||"")).toLowerCase();
+      if(ex[k]) return;
+      var sessions = {}; YEARS.forEach(function(y){ sessions[y] = []; });
+      state.athletes.push({ name:x.last_name, vorname:x.first_name, geschlecht:(x.gender === "m" ? "m" : "w"),
+        jahrgang:(x.birthdate ? parseInt(x.birthdate.slice(0,4), 10) : null), sessions:sessions, klasseAnchor:null, sportart:null });
+      ex[k] = true; n++;
+    });
+    save(); populateFilterOptions(); renderRoster();
+    return n;
+  }
+});
+</script>

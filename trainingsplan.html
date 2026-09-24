@@ -193,6 +193,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   var SUPABASE_URL = "https://hbrtzjrhaluoabvfkbkb.supabase.co";
   var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhicnR6anJoYWx1b2FidmZrYmtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDkxMTgsImV4cCI6MjEwNTcyNTExOH0.fSav78jlqCLFBhwObAe5CS3cTlccndJlyDaY640j0nI";
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  window.appSb = sb;   // für die Anbindung an die Athletenverwaltung
   sb.auth.getSession().then(function(res){
     if(!res.data.session){ window.location.replace("index.html"); }
   });
@@ -2132,6 +2133,34 @@ syncConfigInputs();
 renderPrescriptionTable();
 renderTabs();
 renderPanels();
+</script>
+
+<script src="athlete-picker.js?v=20260924c"></script>
+<script>
+/* Trainings-App: Anbindung Athletenverwaltung */
+(function(){
+  function key(f, l){ return ((f||"") + "|" + (l||"")).toLowerCase().replace(/\s+/g, " ").trim(); }
+  var opts = {
+    subtitle: "Die Gruppe wird mit übernommen (bei mehreren Gruppen: die angeklickte bzw. die erste). Bereits vorhandene Namen werden übersprungen.",
+    existingKeys: function(){ var o = {}; ATHLETES.forEach(function(a){ o[key(a.first, a.last)] = true; }); return o; },
+    onAdd: function(list, ctx){
+      var have = {}; ATHLETES.forEach(function(a){ have[key(a.first, a.last)] = true; });
+      var n = 0, newGroups = false;
+      list.forEach(function(x){
+        if(have[key(x.first_name, x.last_name)]) return;
+        var g = ctx.groupNames.filter(function(gn){ return x.groups.indexOf(gn) !== -1; })[0] || x.groups[0] || "";
+        if(g && GROUPS.indexOf(g) === -1){ GROUPS.push(g); newGroups = true; }
+        ATHLETES.push({ id:newAthleteId(), first:x.first_name, last:x.last_name, group:g });
+        have[key(x.first_name, x.last_name)] = true; n++;
+      });
+      if(newGroups){ sortGroups(); saveGroups(); renderGroupOptions(); refreshAthleteModalGroupControls(); }
+      if(n){ ensureAthleteIds(); sortAthletes(); saveAthletes(); renderAthleteModal(); renderAthleteOptions(); }
+      return n;
+    }
+  };
+  AthletePicker.attach(Object.assign({ after: "btnManageAthletes" }, opts));
+  AthletePicker.attach(Object.assign({ after: "btnAddAthlete", className: "small", label: "👥 Aus Athletenverwaltung" }, opts));
+})();
 </script>
 </body>
 </html>

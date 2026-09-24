@@ -2091,3 +2091,26 @@ renderAll();
 </script>
 </body>
 </html>
+
+<script src="athlete-picker.js?v=20260924c"></script>
+<script>
+/* Trainings-App: Anbindung Athletenverwaltung */
+AthletePicker.attach({
+  after: "add-athlete",
+  subtitle: function(){ var t = activeTeam(); return "Wird dem aktiven Team „" + (t ? t.name : "") + "“ hinzugefügt (mit Geburtsdatum und Geschlecht). Bereits vorhandene Namen werden übersprungen."; },
+  existingKeys: function(){ var o = {}; state.athletes.filter(function(a){ return a.teamId === state.activeTeamId; }).forEach(function(a){ o[((a.vorname||"") + "|" + (a.nachname||"")).toLowerCase().replace(/\s+/g," ").trim()] = true; }); return o; },
+  onAdd: function(list){
+    var ex = {}; state.athletes.filter(function(a){ return a.teamId === state.activeTeamId; }).forEach(function(a){ ex[((a.vorname||"") + "|" + (a.nachname||"")).toLowerCase()] = true; });
+    var rows = list.filter(function(x){ return !ex[((x.first_name||"") + "|" + (x.last_name||"")).toLowerCase()]; });
+    if(!rows.length) return 0;
+    var de = function(iso){ if(!iso) return ""; var p = iso.split("-"); return p[2] + "." + p[1] + "." + p[0]; };
+    var txt = "Vorname;Nachname;Geburtsdatum;Geschlecht\n" + rows.map(function(x){
+      return [x.first_name||"", x.last_name||"", de(x.birthdate), (x.gender === "m" ? "m" : "w")].join(";");
+    }).join("\n");
+    var parsed = parseKaderText(txt).athletes;
+    state.athletes = state.athletes.concat(parsed.map(function(a){ return Object.assign({}, a, { teamId: state.activeTeamId }); }));
+    saveState(); renderAll();
+    return parsed.length;
+  }
+});
+</script>

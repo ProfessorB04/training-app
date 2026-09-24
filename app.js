@@ -355,58 +355,92 @@ function renderMenu(profile) {
 }
 
 // ---------------- Trainer-Ansicht: Load Management ----------------
+let LOAD_GROUP = '';   // gewählte Gruppe in der Load-Management-Übersicht ('' = alle mit App-Zugang)
+
 async function renderTrainerDashboard(profile) {
   const days = weekDates();
   const dayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
-  const { data: athletes } = await sb
-    .from('profiles')
-    .select('id, name')
-    .eq('role', 'athlete')
-    .order('name');
-
-  const { data: entries } = await sb
-    .from('load_entries')
-    .select('user_id, entry_date, srpe, duration_min')
-    .in('entry_date', days);
+  const [profRes, entRes, mgmt] = await Promise.all([
+    sb.from('profiles').select('id, name').eq('role', 'athlete').order('name'),
+    sb.from('load_entries').select('user_id, entry_date, srpe, duration_min').in('entry_date', days),
+    loadAthleteData().catch(() => null),
+  ]);
+  const profiles = profRes.data || [];
+  const entries = entRes.data || [];
 
   const byUserDate = {};
-  (entries || []).forEach(e => {
+  entries.forEach(e => {
     byUserDate[e.user_id] = byUserDate[e.user_id] || {};
     byUserDate[e.user_id][e.entry_date] = e;
   });
 
-  const rows = (athletes && athletes.length)
-    ? athletes.map(a => {
+  // Zeilen: ohne Gruppe = alle Athlet:innen mit App-Zugang; mit Gruppe = alle Mitglieder (auch ohne Zugang)
+  let people;
+  const groups = mgmt ? mgmt.groups : [];
+  if (LOAD_GROUP && mgmt && mgmt.groupsById[LOAD_GROUP]) {
+    people = mgmt.athletes
+      .filter(a => a.groupIds.includes(LOAD_GROUP))
+      .sort((x, y) => x.last_name.localeCompare(y.last_name, 'de') || x.first_name.localeCompare(y.first_name, 'de'))
+      .map(a => ({ name: `${a.first_name} ${a.last_name}`, userId: a.profile_id || null, athleteId: a.id }));
+  } else {
+    LOAD_GROUP = '';
+    people = profiles.map(p => ({ name: p.name, userId: p.id }));
+  }
+
+  const rows = people.length
+    ? people.map(a => {
+        if (!a.userId) {
+          return `<tr class="no-access"><td>${esc(a.name)}</td><td colspan="7" class="muted">kein App-Zugang${isAdmin(profile) ? ` &middot; <a href="#" data-grant="${a.athleteId}">Zugang anlegen</a>` : ''}</td></tr>`;
+        }
         const cells = days.map(d => {
-          const e = byUserDate[a.id] && byUserDate[a.id][d];
+          const e = byUserDate[a.userId] && byUserDate[a.userId][d];
           const load = e ? e.srpe * e.duration_min : null;
           const cls = load === null ? 'load-empty' : (load >= 500 ? 'load-high' : 'load-ok');
           return `<td class="${cls}">${load === null ? '–' : load}</td>`;
         }).join('');
         return `<tr><td>${esc(a.name)}</td>${cells}</tr>`;
       }).join('')
-    : `<tr><td colspan="8" class="muted">Noch keine Athletinnen/Athleten registriert.</td></tr>`;
+    : `<tr><td colspan="8" class="muted">${LOAD_GROUP ? 'Keine Athlet:innen in dieser Gruppe.' : 'Noch keine Athlet:innen mit App-Zugang.'}</td></tr>`;
 
   const content = `
     <div class="card">
-      <h2>Load Management — diese Woche</h2>
+      <div class="ath-toolbar" style="margin-bottom:6px;">
+        <h2 style="margin:0;">Load Management — diese Woche</h2>
+        <span class="spacer"></span>
+        <select id="loadGroup">
+          <option value="">Alle mit App-Zugang</option>
+          ${groups.map(g => `<option value="${g.id}" ${LOAD_GROUP === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}
+        </select>
+      </div>
       <div class="tablewrap">
         <table>
           <thead><tr><th>Name</th>${dayLabels.map(l => `<th>${l}</th>`).join('')}</tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <p class="hint">Wert je Zelle = sRPE &times; Trainingsdauer in Minuten (Session-Load nach Foster). Ab 500 farblich hervorgehoben.</p>
+      <p class="hint">Wert je Zelle = sRPE &times; Trainingsdauer in Minuten (Session-Load nach Foster). Ab 500 farblich hervorgehoben.
+      Gruppen kommen aus der Athletenverwaltung; Werte tragen die Athlet:innen mit ihrem App-Zugang selbst ein.</p>
     </div>
   `;
 
   renderShell(profile, 'loadmanagement', 'Load Management', content);
+  document.getElementById('loadGroup').onchange = (e) => { LOAD_GROUP = e.target.value; renderTrainerDashboard(profile); };
+  appEl.querySelectorAll('[data-grant]').forEach(a => {
+    a.onclick = (e) => { e.preventDefault(); INVITE_PRESELECT = a.dataset.grant; renderTeamPage(profile); };
+  });
 }
 
 // ---------------- Admin-Ansicht: Nutzerverwaltung ----------------
+let INVITE_PRESELECT = null;   // Athlet:in-ID, wenn aus dem Load Management „Zugang anlegen“ geklickt wurde
+
 async function renderTeamPage(profile) {
   if (!isAdmin(profile)) { renderMenu(profile); return; }
+  const mgmt = await loadAthleteData().catch(() => null);
+  const mAthletes = mgmt ? mgmt.athletes.slice().sort((x, y) => x.last_name.localeCompare(y.last_name, 'de') || x.first_name.localeCompare(y.first_name, 'de')) : [];
+  const linkedBy = {};   // profile_id -> athlete
+  mAthletes.forEach(a => { if (a.profile_id) linkedBy[a.profile_id] = a; });
+  const preselect = INVITE_PRESELECT; INVITE_PRESELECT = null;
 
   const { data: users } = await sb
     .from('profiles')
@@ -429,15 +463,28 @@ async function renderTeamPage(profile) {
         const resetCell = u.role === 'admin' ? ''
           : `<button type="button" class="secondary small-btn" data-reset="${u.id}">Einmalpasswort</button>
              <button type="button" class="danger small-btn" data-delete="${u.id}">L&ouml;schen</button>`;
-        return `<tr><td>${esc(u.name)}</td><td>${roleCell}</td><td>${resetCell}</td></tr>`;
+        const linked = linkedBy[u.id];
+        const linkCell = u.role !== 'athlete' ? '' :
+          `<select class="link-select" data-user="${u.id}">
+             <option value="">– nicht verknüpft –</option>
+             ${mAthletes.filter(a => !a.profile_id || a.profile_id === u.id).map(a =>
+               `<option value="${a.id}" ${linked && linked.id === a.id ? 'selected' : ''}>${esc(a.last_name)}, ${esc(a.first_name)}</option>`).join('')}
+           </select>`;
+        return `<tr><td>${esc(u.name)}</td><td>${roleCell}</td><td>${linkCell}</td><td>${resetCell}</td></tr>`;
       }).join('')
-    : `<tr><td colspan="3" class="muted">Noch keine Nutzer:innen.</td></tr>`;
+    : `<tr><td colspan="4" class="muted">Noch keine Nutzer:innen.</td></tr>`;
 
   const content = `
     <div class="card">
       <h2>Neue Person einladen</h2>
       <p class="hint">Selbstregistrierung ist deaktiviert. Name, Login-E-Mail und Rolle w&auml;hlen &mdash; die App erzeugt ein <b>Einmalpasswort</b>. Du schickst die Zugangsdaten an eine beliebige Adresse (oder per WhatsApp). Bei der ersten Anmeldung legt die Person ihr eigenes Passwort fest.</p>
       <form id="inviteForm" class="inline-form">
+        <label>Aus Athletenverwaltung
+          <select id="inviteAthlete">
+            <option value="">– frei eintragen –</option>
+            ${mAthletes.filter(a => !a.profile_id).map(a => `<option value="${a.id}" ${preselect === a.id ? 'selected' : ''}>${esc(a.last_name)}, ${esc(a.first_name)}</option>`).join('')}
+          </select>
+        </label>
         <label>Name<input type="text" id="inviteName" required></label>
         <label>Login-E-Mail<input type="email" id="inviteEmail" required></label>
         <label>Rolle
@@ -458,7 +505,7 @@ async function renderTeamPage(profile) {
       <h2>Alle Nutzer:innen</h2>
       <div class="tablewrap">
         <table class="user-table">
-          <thead><tr><th>Name</th><th>Rolle</th><th>Zugang</th></tr></thead>
+          <thead><tr><th>Name</th><th>Rolle</th><th>Athletenverwaltung</th><th>Zugang</th></tr></thead>
           <tbody>${userRows}</tbody>
         </table>
       </div>
@@ -477,6 +524,26 @@ async function renderTeamPage(profile) {
       } else {
         toast('Rolle gespeichert.');
       }
+    };
+  });
+
+  // Athlet:in aus der Athletenverwaltung übernehmen (Name vorbelegen)
+  const invAth = document.getElementById('inviteAthlete');
+  const fillFromAthlete = () => {
+    const a = mAthletes.find(x => x.id === invAth.value);
+    if (a) { document.getElementById('inviteName').value = `${a.first_name} ${a.last_name}`; document.getElementById('inviteRole').value = 'athlete'; }
+  };
+  invAth.onchange = fillFromAthlete;
+  if (preselect) { fillFromAthlete(); document.getElementById('inviteEmail').focus(); }
+
+  // Bestehenden Zugang mit Athlet:in verknüpfen
+  appEl.querySelectorAll('.link-select').forEach(sel => {
+    sel.onchange = async () => {
+      const uid = sel.dataset.user;
+      let { error } = await sb.from('athletes').update({ profile_id: null }).eq('profile_id', uid);
+      if (!error && sel.value) ({ error } = await sb.from('athletes').update({ profile_id: uid }).eq('id', sel.value));
+      toast(error ? 'Fehler: ' + error.message : 'Verknüpfung gespeichert.');
+      renderTeamPage(profile);
     };
   });
 
@@ -520,8 +587,9 @@ async function renderTeamPage(profile) {
     msgEl.hidden = false;
     msgEl.textContent = 'Lege Zugang an…';
 
+    const athleteId = document.getElementById('inviteAthlete').value || null;
     const { data, error } = await sb.functions.invoke('invite-user', {
-      body: { name, email, role },
+      body: { name, email, role, athleteId },
     });
 
     if (error || (data && data.error)) {
