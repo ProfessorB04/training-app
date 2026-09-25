@@ -408,3 +408,5 @@ tr.no-access a{ color:var(--brand-strong); }
   .mp-in{ font-size:1.2rem !important; padding:0 2px !important; }
   .mp-tick{ width:22px !important; height:22px !important; font-size:.75rem !important; }
 }
+.mp-in:disabled{ background:#eef0f3; border-color:#e3e7ef; color:#b8bfcc; }
+.mp-in:disabled::placeholder{ color:transparent; }

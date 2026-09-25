@@ -228,9 +228,9 @@ function renderMySession(profile, D, week, day) {
         ${ex.sets.map((s, j) => `
         <div class="mp-set${s.done ? ' done' : ''}">
           <span class="mp-sn">Satz ${j + 1}</span>
-          <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="reps" value="${s.reps === '' || s.reps == null ? '' : s.reps}" placeholder="Wdh" ${canEdit ? '' : 'disabled'}>
+          <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="reps" value="${s.reps === '' || s.reps == null ? '' : s.reps}" placeholder="Wdh" ${canEdit && !(parseFloat(s.sec) > 0 && !(parseFloat(s.reps) > 0)) ? '' : 'disabled'}>
           <input class="mp-in" inputmode="decimal" data-i="${i}" data-j="${j}" data-f="kg" value="${tpKgText(s.kg)}" placeholder="${s.hintKg ? tpKgText(s.hintKg) : 'kg'}" ${canEdit ? '' : 'disabled'}>
-          <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="sec" value="${s.sec === '' || s.sec == null ? '' : s.sec}" placeholder="s" ${canEdit ? '' : 'disabled'}>
+          <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="sec" value="${s.sec === '' || s.sec == null ? '' : s.sec}" placeholder="s" ${canEdit && !(parseFloat(s.reps) > 0 && !(parseFloat(s.sec) > 0)) ? '' : 'disabled'}>
           <span class="mp-tick" aria-label="${s.done ? 'erledigt' : 'offen'}">${s.done ? '&#10003;' : ''}</span>
         </div>`).join('')}
       </div>
@@ -286,6 +286,12 @@ function renderMySession(profile, D, week, day) {
           ex.sets[j][f] = v == null ? '' : v;
           el.value = v == null ? '' : (f === 'kg' ? tpKgText(v) : v);
           const st = ex.sets[j];
+          // Wiederholungen und Dauer schließen sich je Satz aus
+          if (f === 'reps' || f === 'sec') {
+            const row = el.closest('.mp-set');
+            const other = row && row.querySelector('input[data-f="' + (f === 'reps' ? 'sec' : 'reps') + '"]');
+            if (other) other.disabled = v != null && v > 0;
+          }
           const wasDone = st.done;
           st.done = tpSetDone(st);
           if (ex.status === 'open' && ex.sets.some(x => x.done)) ex.status = 'done';
