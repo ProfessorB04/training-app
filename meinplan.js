@@ -192,6 +192,12 @@ function renderMySession(profile, D, week, day) {
     });
     return { name: it.name, position: it.position, option: it.option, cat: it.cat, note: it.note, presc: it.presc, status: 'open', sets, athleteNote: '' };
   });
+  // Alte Entwürfe hatten Wdh/kg vorbefüllt (done:false) – nicht selbst eingetragene Werte leeren
+  if (!(existing && existing.completed)) exs.forEach(ex => (ex.sets || []).forEach(s => {
+    if (s.done) return;
+    if (s.kg !== '' && s.kg != null && !s.hintKg) s.hintKg = s.kg;
+    s.reps = ''; s.sec = ''; s.kg = tpKgFromNote(ex.note) != null ? tpKgFromNote(ex.note) : '';
+  }));
   const cooldown = content0 && content0.cooldown ? (content0.cooldown[day] || content0.cooldown[String(day)] || '') : '';
   const prep = content0 && content0.prepNote ? (content0.prepNote[day] || content0.prepNote[String(day)] || '') : '';
   const started = Date.now();
