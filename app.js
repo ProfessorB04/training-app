@@ -164,9 +164,11 @@ function renderShell(profile, activeKey, title, contentHtml, back) {
   const sidebar = document.getElementById('sidebar');
   const scrim = document.getElementById('sidebarScrim');
   const toggle = document.getElementById('menuToggle');
+  document.documentElement.classList.remove('menu-open');
   if (toggle) {
-    toggle.onclick = () => { sidebar.classList.add('open'); scrim.classList.add('show'); };
-    scrim.onclick = () => { sidebar.classList.remove('open'); scrim.classList.remove('show'); };
+    // Menü offen: Seite dahinter sperren, nur das Menü scrollt (iPhone)
+    toggle.onclick = () => { sidebar.classList.add('open'); scrim.classList.add('show'); document.documentElement.classList.add('menu-open'); sidebar.scrollTop = 0; };
+    scrim.onclick = () => { sidebar.classList.remove('open'); scrim.classList.remove('show'); document.documentElement.classList.remove('menu-open'); };
   }
   // Seitenleiste am Desktop einklappen (nur Symbole) – Zustand bleibt gespeichert
   document.getElementById('collapseBtn').onclick = () => {
