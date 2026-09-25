@@ -398,3 +398,13 @@ tr.no-access a{ color:var(--brand-strong); }
   .mp-sethead, .mp-set{ grid-template-columns:48px 1fr 1fr 28px !important; }
   .mp-exname{ font-size:1.2rem !important; }
 }
+
+/* Mein Trainingsplan: drei Eingabespalten (Wdh · Gewicht · Dauer) */
+.mp-sethead, .mp-set{ grid-template-columns:58px 1fr 1fr 1fr 28px !important; gap:8px !important; }
+.mp-sethead span{ font-size:.66rem !important; line-height:1.15; }
+@media (max-width:520px){
+  .mp-sethead, .mp-set{ grid-template-columns:40px 1fr 1fr 1fr 24px !important; gap:5px !important; }
+  .mp-sn{ font-size:.7rem !important; }
+  .mp-in{ font-size:1.2rem !important; padding:0 2px !important; }
+  .mp-tick{ width:22px !important; height:22px !important; font-size:.75rem !important; }
+}

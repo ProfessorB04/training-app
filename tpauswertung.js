@@ -120,11 +120,12 @@ function tpWeekView(plan, logs, week) {
       if (ex.status === 'skipped') sets = '<span class="muted">weggelassen</span>';
       else if (cat.type === 'check') sets = ex.status === 'done' ? '&#10003; erledigt' : '<span class="muted">nicht abgehakt</span>';
       else sets = (ex.sets || []).map((st, j) => {
-        const txt = `S${j + 1}: ${st.reps === '' || st.reps == null ? '–' : st.reps} Wdh${st.kg !== '' && st.kg != null && parseFloat(st.kg) > 0 ? ' &times; ' + tpKgText(st.kg) + ' kg' : ''}`;
+        const parts = [st.reps !== '' && st.reps != null ? st.reps + ' Wdh' : '', parseFloat(st.kg) > 0 ? tpKgText(st.kg) + ' kg' : '', parseFloat(st.sec) > 0 ? st.sec + ' s' : ''].filter(Boolean);
+        const txt = `S${j + 1}: ${parts.length ? parts.join(' &times; ') : '–'}`;
         return st.done ? txt : `<span class="nd">${txt}</span>`;
       }).join('<br>');
       const L = tpLoadOf(ex);
-      const sum = cat.type === 'sets' && L.reps ? `<div class="tp-daymeta" style="margin:2px 0 0;">= ${tpFmt(L.value)} ${L.unit === 'kg' ? 'kg bewegt' : 'Wdh'}</div>` : '';
+      const sum = cat.type === 'sets' && L.value ? `<div class="tp-daymeta" style="margin:2px 0 0;">= ${tpFmt(L.value)} ${L.unit === 'kg' ? 'kg bewegt' : (L.unit === 's' ? 's gesamt' : 'Wdh')}</div>` : '';
       return `<div class="tp-dex${ex.status === 'skipped' ? ' skipped' : ''}" style="--cat:${cat.color};"><b>${name}</b>
         <div class="tp-sets">${sets}</div>${sum}${ex.athleteNote ? `<div class="tp-dnote">&#128172; ${esc(ex.athleteNote)}</div>` : ''}</div>`;
     }).join('');
@@ -166,7 +167,7 @@ async function renderTpAthlete(profile, plan, uid, name, weekSel) {
     }).join('');
     const bNow = avg(table[k]), bPrev = avg(prevTable[k]);
     const btr = tpTrend(bNow, bPrev);
-    return `<tr><td><b>${esc(k)}</b><div class="muted-inline">${unit === 'kg' ? 'bewegte Last in kg' : 'Wiederholungen'}</div></td>${cells}
+    return `<tr><td><b>${esc(k)}</b><div class="muted-inline">${unit === 'kg' ? 'bewegte Last in kg' : (unit === 's' ? 'Dauer in Sekunden' : 'Wiederholungen')}</div></td>${cells}
       <td>${bPrev != null ? `${tpFmt(bPrev)} &rarr; ${tpFmt(bNow)} ${arrow(btr)}` : '<span class="muted">–</span>'}</td></tr>`;
   }).join('') || `<tr><td colspan="${weeks.length + 2}" class="muted">Noch keine Eintr&auml;ge mit S&auml;tzen.</td></tr>`;
 

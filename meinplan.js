@@ -66,15 +66,18 @@ function tpDayItems(content, day) {
 }
 // Bewegte Last einer protokollierten Übung: Σ Wdh × kg; ohne Gewicht: Σ Wdh (Volumen)
 function tpLoadOf(ex) {
-  let kgLoad = 0, reps = 0, anyKg = false;
+  let kgLoad = 0, reps = 0, secs = 0, anyKg = false;
   (ex.sets || []).forEach(s => {
     if (!s.done) return;
-    const r = parseFloat(s.reps) || 0, k = parseFloat(s.kg) || 0;
-    reps += r;
-    if (k > 0) { anyKg = true; kgLoad += r * k; }
+    const r = parseFloat(s.reps) || 0, k = parseFloat(s.kg) || 0, t = parseFloat(s.sec) || 0;
+    reps += r; secs += t;
+    if (k > 0 && r > 0) { anyKg = true; kgLoad += r * k; }
   });
-  return { value: anyKg ? kgLoad : reps, unit: anyKg ? 'kg' : 'Wdh', reps };
+  if (anyKg) return { value: kgLoad, unit: 'kg', reps: reps || secs };
+  if (reps) return { value: reps, unit: 'Wdh', reps };
+  return { value: secs, unit: 's', reps: secs };
 }
+function tpSetDone(s) { return parseFloat(s.reps) > 0 || parseFloat(s.sec) > 0; }
 function tpExerciseKey(ex) { return ex.status === 'swapped' && ex.swappedTo ? ex.swappedTo : tpLabel(ex); }
 function tpFmt(n) { return (Math.round(n * 10) / 10).toLocaleString('de-DE'); }
 // Ampel: Steigerung > +2 %, gleich ±2 %, Rückschritt < −2 %
@@ -185,8 +188,7 @@ function renderMySession(profile, D, week, day) {
     const noteKg = tpKgFromNote(it.note);
     const sets = type === 'check' ? [] : Array.from({ length: r.max }, (_, i) => {
       const p = prev && (prev[i] || prev[prev.length - 1]);
-      return { reps: '', kg: noteKg != null ? noteKg : '', done: false,
-        hintReps: p ? p.reps : (reps.min != null ? reps.min : ''), hintKg: p && p.kg ? p.kg : '' };
+      return { reps: '', kg: noteKg != null ? noteKg : '', sec: '', done: false, hintKg: p && p.kg ? p.kg : '' };
     });
     return { name: it.name, position: it.position, option: it.option, cat: it.cat, note: it.note, presc: it.presc, status: 'open', sets, athleteNote: '' };
   });
@@ -222,12 +224,13 @@ function renderMySession(profile, D, week, day) {
       body = `<label class="mp-check"><input type="checkbox" data-i="${i}" data-f="checkdone" ${ex.status === 'done' ? 'checked' : ''} ${canEdit ? '' : 'disabled'}> erledigt</label>`;
     } else if (!skip) {
       body = `<div class="mp-sets">
-        <div class="mp-sethead"><span></span><span>Wdh.</span><span>Gewicht</span><span></span></div>
+        <div class="mp-sethead"><span></span><span>Wdh.</span><span>Gewicht (kg)</span><span>Dauer (s)</span><span></span></div>
         ${ex.sets.map((s, j) => `
         <div class="mp-set${s.done ? ' done' : ''}">
           <span class="mp-sn">Satz ${j + 1}</span>
-          <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="reps" value="${s.reps === '' || s.reps == null ? '' : s.reps}" placeholder="${s.hintReps !== undefined && s.hintReps !== '' ? s.hintReps : 'Wdh'}" ${canEdit ? '' : 'disabled'}>
+          <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="reps" value="${s.reps === '' || s.reps == null ? '' : s.reps}" placeholder="Wdh" ${canEdit ? '' : 'disabled'}>
           <input class="mp-in" inputmode="decimal" data-i="${i}" data-j="${j}" data-f="kg" value="${tpKgText(s.kg)}" placeholder="${s.hintKg ? tpKgText(s.hintKg) : 'kg'}" ${canEdit ? '' : 'disabled'}>
+          <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="sec" value="${s.sec === '' || s.sec == null ? '' : s.sec}" placeholder="s" ${canEdit ? '' : 'disabled'}>
           <span class="mp-tick" aria-label="${s.done ? 'erledigt' : 'offen'}">${s.done ? '&#10003;' : ''}</span>
         </div>`).join('')}
       </div>
@@ -237,7 +240,7 @@ function renderMySession(profile, D, week, day) {
       </div>` : ''}`;
     }
     const lastSets = D.last[tpExerciseKey(ex)];
-    const lastTxt = lastSets && lastSets.length ? 'Letztes Mal: ' + lastSets.map(s => `${s.reps}${s.kg ? ' × ' + tpKgText(s.kg) + ' kg' : ''}`).join(' / ') : '';
+    const lastTxt = lastSets && lastSets.length ? 'Letztes Mal: ' + lastSets.map(s => [s.reps ? s.reps + ' Wdh' : '', s.kg ? tpKgText(s.kg) + ' kg' : '', s.sec ? s.sec + ' s' : ''].filter(Boolean).join(' × ')).join(' / ') : '';
     return `
       <div class="card mp-ex${skip ? ' skipped' : ''}${ex.status === 'extra' ? ' extra' : ''}" style="--cat:${cat.color || TP_EXTRA_COLOR};">
         <div class="mp-exhead">
@@ -276,15 +279,15 @@ function renderMySession(profile, D, week, day) {
     appEl.querySelectorAll('[data-f]').forEach(el => {
       const i = +el.dataset.i, j = el.dataset.j != null ? +el.dataset.j : null, f = el.dataset.f;
       const ex = exs[i];
-      if (el.tagName === 'INPUT' && (f === 'reps' || f === 'kg')) {
+      if (el.tagName === 'INPUT' && (f === 'reps' || f === 'kg' || f === 'sec')) {
         el.onchange = () => {
           let v = num(el.value);
-          if (v != null) v = f === 'reps' ? Math.round(v) : Math.round(v * 10) / 10;
+          if (v != null) v = f === 'kg' ? Math.round(v * 10) / 10 : Math.round(v);
           ex.sets[j][f] = v == null ? '' : v;
           el.value = v == null ? '' : (f === 'kg' ? tpKgText(v) : v);
           const st = ex.sets[j];
           const wasDone = st.done;
-          st.done = parseFloat(st.reps) > 0;
+          st.done = tpSetDone(st);
           if (ex.status === 'open' && ex.sets.some(x => x.done)) ex.status = 'done';
           if (ex.status === 'done' && !ex.sets.some(x => x.done)) ex.status = 'open';
           persistSoon();
@@ -305,12 +308,15 @@ function renderMySession(profile, D, week, day) {
             if (ex.status === 'open' && ex.sets.some(s => s.done)) ex.status = 'done';
           } else if (f === 'allplan') {
             const s0 = ex.sets[0];
-            if (!(parseFloat(s0.reps) > 0)) { toast('Bitte zuerst Satz 1 eintragen.'); return; }
-            ex.sets.forEach(s => { if (s.reps === '' || s.reps == null) { s.reps = s0.reps; if (s.kg === '' || s.kg == null) s.kg = s0.kg; } s.done = parseFloat(s.reps) > 0; });
+            if (!tpSetDone(s0)) { toast('Bitte zuerst Satz 1 eintragen.'); return; }
+            ex.sets.forEach(s => {
+              if (!tpSetDone(s)) { s.reps = s0.reps; s.sec = s0.sec; if (s.kg === '' || s.kg == null) s.kg = s0.kg; }
+              s.done = tpSetDone(s);
+            });
             if (ex.status === 'open') ex.status = 'done';
           } else if (f === 'addset') {
             const l = ex.sets[ex.sets.length - 1] || { reps: '', kg: '' };
-            ex.sets.push({ reps: '', kg: '', done: false, hintReps: l.reps || l.hintReps || '', hintKg: l.kg || l.hintKg || '' });
+            ex.sets.push({ reps: '', kg: '', sec: '', done: false, hintKg: l.kg || l.hintKg || '' });
           } else if (f === 'skip') {
             ex.status = ex.status === 'skipped' ? 'open' : 'skipped';
           } else if (f === 'swap') {
@@ -327,7 +333,7 @@ function renderMySession(profile, D, week, day) {
       const n = prompt('Welche Übung hast du zusätzlich gemacht?');
       if (!n || !n.trim()) return;
       exs.push({ name: n.trim(), position: '', option: '', cat: 'extra', note: '', presc: null, status: 'extra', athleteNote: '',
-        sets: [0, 1, 2].map(() => ({ reps: '', kg: '', done: false, optional: false })) });
+        sets: [0, 1, 2].map(() => ({ reps: '', kg: '', sec: '', done: false })) });
       persistSoon(); draw();
     };
     const fin = document.getElementById('mpFinish');
