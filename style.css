@@ -433,3 +433,12 @@ tr.no-access a{ color:var(--brand-strong); }
 .mp-keys button:active{ background:var(--brand-pale); }
 .mp-sheet-b{ display:grid; grid-template-columns:1fr 1fr 1.4fr; gap:8px; margin-top:12px; }
 .mp-sheet-b button{ height:48px; }
+
+/* iPhone: Seitenleiste an sichtbare Höhe anpassen (Safari-Leiste unten), Abmelden immer erreichbar */
+.sidebar{ height:100vh; height:100dvh; }
+.sidebar-footer{ padding-bottom:calc(14px + env(safe-area-inset-bottom)); }
+@media (max-width:860px){
+  .sidebar{ top:0; bottom:0; }
+  .sidebar-header{ padding:14px 16px 12px; }
+  .sidebar-header img{ max-height:64px; }
+}
