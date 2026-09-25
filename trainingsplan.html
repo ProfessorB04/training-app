@@ -2345,7 +2345,7 @@ async function openPublishDialog(){
     if(!p && !ids.length){ alert('Bitte mindestens eine Athletin / einen Athleten auswählen.'); return; }
     if(p && mode === 'variant' && !ids.length){ alert('Für eine Variante bitte die betroffenen Athlet:innen auswählen.'); return; }
     const content = JSON.parse(JSON.stringify({ plan: state.plan, prescription: state.prescription, cooldown: state.cooldown,
-      prepNote: state.prepNote, lang: state.lang, days: state.days, weeks: state.weeks, title: state.title, team: state.team }));
+      prepNote: state.prepNote, lang: state.lang, days: state.days, weeks: state.weeks, title: state.title, team: state.team, layout: state.layout }));
     const btn = box.querySelector('#pubGo'); btn.disabled = true; btn.textContent = 'Veröffentliche …';
     try{
       const { data: { user } } = await sb.auth.getUser();

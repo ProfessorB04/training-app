@@ -106,7 +106,34 @@ function tpExerciseTable(logs) {
   return t;
 }
 
-async function renderTpAthlete(profile, plan, uid, name) {
+// Wochen-/Tagesansicht: je Tag alle Übungen mit jedem Satz (Wdh × kg)
+function tpWeekView(plan, logs, week) {
+  const days = Array.from({ length: plan.days }, (_, i) => i + 1);
+  return `<div class="tp-weekgrid">${days.map(d => {
+    const l = (logs || []).find(x => x.week === week && x.day === d);
+    if (!l) return `<div class="tp-day"><h3>Tag ${d}</h3><div class="tp-daymeta">noch nicht eingetragen</div></div>`;
+    const exs = (l.exercises || []).map(ex => {
+      const cat = TP_CAT[ex.cat] || { color: TP_EXTRA_COLOR, type: 'sets', label: 'Extra' };
+      const name = ex.status === 'swapped' && ex.swappedTo ? `${esc(ex.swappedTo)} <span class="muted-inline">(statt ${esc(tpLabel(ex))})</span>`
+        : esc(tpLabel(ex)) + (ex.status === 'extra' ? ' <span class="muted-inline">(extra)</span>' : '');
+      let sets = '';
+      if (ex.status === 'skipped') sets = '<span class="muted">weggelassen</span>';
+      else if (cat.type === 'check') sets = ex.status === 'done' ? '&#10003; erledigt' : '<span class="muted">nicht abgehakt</span>';
+      else sets = (ex.sets || []).map((st, j) => {
+        const txt = `S${j + 1}: ${st.reps === '' || st.reps == null ? '–' : st.reps} Wdh${st.kg !== '' && st.kg != null && parseFloat(st.kg) > 0 ? ' &times; ' + tpKgText(st.kg) + ' kg' : ''}`;
+        return st.done ? txt : `<span class="nd">${txt}</span>`;
+      }).join('<br>');
+      const L = tpLoadOf(ex);
+      const sum = cat.type === 'sets' && L.reps ? `<div class="tp-daymeta" style="margin:2px 0 0;">= ${tpFmt(L.value)} ${L.unit === 'kg' ? 'kg bewegt' : 'Wdh'}</div>` : '';
+      return `<div class="tp-dex${ex.status === 'skipped' ? ' skipped' : ''}" style="--cat:${cat.color};"><b>${name}</b>
+        <div class="tp-sets">${sets}</div>${sum}${ex.athleteNote ? `<div class="tp-dnote">&#128172; ${esc(ex.athleteNote)}</div>` : ''}</div>`;
+    }).join('');
+    return `<div class="tp-day"><h3>Tag ${d} ${l.completed ? '&#10003;' : '&#9680;'}</h3>
+      <div class="tp-daymeta">${wDate(l.entry_date)}${l.srpe ? ' &middot; sRPE ' + l.srpe + ' &times; ' + l.duration_min + ' min = ' + (l.srpe * l.duration_min) : ''}</div>${exs}</div>`;
+  }).join('')}</div>`;
+}
+
+async function renderTpAthlete(profile, plan, uid, name, weekSel) {
   const back = { label: 'Auswertung', go: () => renderTpEval(profile) };
   renderShell(profile, 'trainingsplan', name, `<p class="muted">Lade&hellip;</p>`, back);
   // aktueller Block + vorheriger Block (zuletzt zugeordneter anderer Plan) für den Vergleich
@@ -147,11 +174,22 @@ async function renderTpAthlete(profile, plan, uid, name) {
     const notes = (l.exercises || []).filter(e => e.athleteNote).map(e => `<li><b>${esc(tpExerciseKey(e))}:</b> ${esc(e.athleteNote)}</li>`).join('');
     const changes = (l.exercises || []).filter(e => e.status === 'skipped' || e.status === 'swapped' || e.status === 'extra')
       .map(e => e.status === 'skipped' ? `<li>&#10060; weggelassen: ${esc(tpLabel(e))}</li>` : e.status === 'swapped' ? `<li>&#8644; getauscht: ${esc(tpLabel(e))} &rarr; ${esc(e.swappedTo)}</li>` : `<li>&#10133; zus&auml;tzlich: ${esc(e.name)}</li>`).join('');
-    return `<tr><td>W${l.week} &middot; T${l.day}</td><td>${wDate(l.entry_date)}</td><td>${l.completed ? '&#10003;' : '&#9680;'}</td>
+    return `<tr class="tp-row" data-w="${l.week}"><td>W${l.week} &middot; T${l.day}</td><td>${wDate(l.entry_date)}</td><td>${l.completed ? '&#10003;' : '&#9680;'}</td>
       <td>${l.srpe ? `${l.srpe} &times; ${l.duration_min} min = ${l.srpe * l.duration_min}` : '–'}</td><td><ul class="tp-ul">${changes}${notes}</ul></td></tr>`;
   }).join('') || `<tr><td colspan="5" class="muted">Noch keine Einheiten eingetragen.</td></tr>`;
 
+  const weeksWithLogs = [...new Set((logs || []).map(l => l.week))].sort((a, b) => a - b);
+  const week = weekSel || weeksWithLogs[weeksWithLogs.length - 1] || 1;
   const content = `
+    <div class="card">
+      <div class="ath-toolbar" style="margin-bottom:10px;">
+        <h2 style="margin:0;">Wochen&uuml;bersicht &mdash; S&auml;tze, Wiederholungen &amp; Gewicht</h2>
+        <span class="spacer"></span>
+        <select id="tpWeekSel">${weeks.map(w => `<option value="${w}" ${w === week ? 'selected' : ''}>Woche ${w}${weeksWithLogs.includes(w) ? '' : ' (leer)'}</option>`).join('')}</select>
+      </div>
+      ${tpWeekView(plan, logs, week)}
+      <p class="hint">Durchgestrichen = eingetragen, aber nicht abgehakt. Farbiger Rand = Kategorie wie in der Trainingsplanung.</p>
+    </div>
     <div class="card">
       <h2>${esc(plan.title || 'Trainingsplan')} &mdash; bewegte Last je &Uuml;bung</h2>
       <div class="tablewrap"><table class="tp-table">
@@ -168,4 +206,6 @@ async function renderTpAthlete(profile, plan, uid, name) {
       </table></div>
     </div>`;
   renderShell(profile, 'trainingsplan', name, content, back);
+  document.getElementById('tpWeekSel').onchange = (e) => renderTpAthlete(profile, plan, uid, name, +e.target.value);
+  appEl.querySelectorAll('tr.tp-row[data-w]').forEach(r => { r.onclick = () => { renderTpAthlete(profile, plan, uid, name, +r.dataset.w); window.scrollTo(0, 0); }; });
 }

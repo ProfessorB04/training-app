@@ -338,3 +338,46 @@ tr.no-access a{ color:var(--brand-strong); }
 .tp-tr.same{ color:#a3790f; }
 .tp-tr.down{ color:var(--warn); }
 .tp-ul{ margin:0; padding-left:16px; text-align:left; font-size:.82rem; }
+
+/* ---- Mein Trainingsplan: breite Zahlenfelder, Kategorie- und Layoutfarben ---- */
+.mp-sethead, .mp-set{ grid-template-columns:70px 1fr 1fr 56px !important; gap:10px !important; }
+.mp-in{ width:100%; min-width:0; height:52px; text-align:center; font-size:1.35rem; font-weight:800; border:2px solid var(--line); border-radius:11px; background:#fff; color:var(--ink); padding:0 6px; }
+.mp-in:focus{ outline:none; border-color:var(--cat, var(--brand-strong)); }
+.mp-in::placeholder{ color:#b8bfcc; font-weight:600; font-size:1rem; }
+.mp-tick{ height:52px !important; }
+.mp-ex{ border-left:6px solid var(--cat, var(--line)); }
+.mp-ex .mp-cat{ color:var(--cat); }
+.mp-ex .mp-presc{ color:var(--cat); }
+.mp-ex .mp-set{ background:color-mix(in srgb, var(--cat) 7%, #fff); }
+.mp-ex .mp-set.done{ background:#dcf5e7; }
+.mp-sesshead{ background:var(--lay-main, var(--brand-strong)); color:#fff; border:none; position:relative; }
+.mp-sesshead .mp-kicker, .mp-sesshead .muted-inline{ color:rgba(255,255,255,.85); }
+.mp-sesshead::after{ content:""; position:absolute; left:0; right:0; bottom:0; height:5px; background:var(--lay-accent, var(--brand)); border-radius:0 0 14px 14px; }
+.mp-laylogo{ float:right; height:40px; background:#fff; border-radius:8px; padding:4px 8px; }
+.mp-next{ border:2px solid var(--lay-main, var(--brand)) !important; }
+.mp-next button{ background:var(--lay-main, var(--brand)); color:#fff; }
+@media (max-width:520px){
+  .mp-sethead, .mp-set{ grid-template-columns:58px 1fr 1fr 48px !important; gap:7px !important; }
+  .mp-in{ height:50px; font-size:1.25rem; }
+}
+/* ---- Auswertung: Wochen-/Tagesansicht ---- */
+.tp-weekgrid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:12px; }
+.tp-day{ border:1px solid var(--line); border-radius:12px; padding:10px 12px; background:#fff; }
+.tp-day h3{ margin:0 0 2px; font-size:.95rem; }
+.tp-day .tp-daymeta{ font-size:.75rem; color:var(--ink-soft); margin-bottom:8px; }
+.tp-dex{ border-left:4px solid var(--cat, var(--line)); padding:4px 0 4px 8px; margin-bottom:6px; }
+.tp-dex b{ font-size:.85rem; }
+.tp-dex .tp-sets{ font-size:.8rem; color:var(--ink); margin-top:2px; line-height:1.5; }
+.tp-dex .tp-sets span.nd{ color:#b8bfcc; text-decoration:line-through; }
+.tp-dex .tp-dnote{ font-size:.75rem; color:#9a4a0b; }
+.tp-dex.skipped{ opacity:.5; }
+/* Mein Trainingsplan am Handy: mehr Platz für die Zahlenfelder */
+@media (max-width:520px){
+  .wrap{ padding-left:10px !important; padding-right:10px !important; }
+  .mp-ex, .mp-sesshead, .mp-next{ padding:14px 12px !important; }
+  .mp-sets{ margin-left:-4px; margin-right:-4px; }
+  .mp-sethead, .mp-set{ grid-template-columns:46px 1fr 1fr 46px !important; gap:6px !important; }
+  .mp-set{ padding:6px 6px !important; }
+  .mp-sn{ font-size:.78rem; }
+  .mp-in{ height:52px; font-size:1.35rem; }
+}

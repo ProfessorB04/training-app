@@ -5,14 +5,26 @@
 // ============================================================
 
 const TP_CATS = [
-  { key: 'mobility', label: 'Mobility', type: 'check' },
-  { key: 'dynamic', label: 'Dynamic Stretch', type: 'check' },
-  { key: 'core', label: 'Core', type: 'sets' },
-  { key: 'power', label: 'Power', type: 'sets' },
-  { key: 'strength', label: 'Strength', type: 'sets' },
-  { key: 'accessory', label: 'Accessory', type: 'sets' },
-  { key: 'conditioning', label: 'Conditioning', type: 'sets' },
+  { key: 'mobility', label: 'Mobility', type: 'check', color: '#0ea5a5' },
+  { key: 'dynamic', label: 'Dynamic Stretch', type: 'check', color: '#d9822b' },
+  { key: 'core', label: 'Core', type: 'sets', color: '#7c5cbf' },
+  { key: 'power', label: 'Power', type: 'sets', color: '#d0392b' },
+  { key: 'strength', label: 'Strength', type: 'sets', color: '#0042fc' },
+  { key: 'accessory', label: 'Accessory', type: 'sets', color: '#c2478d' },
+  { key: 'conditioning', label: 'Conditioning', type: 'sets', color: '#1f9d55' },
 ];
+const TP_EXTRA_COLOR = '#45565f';
+// Layouts wie in der Trainingsplanung (Kopf der Einheit)
+const TP_LAYOUTS = {
+  balance_movement: { name: 'Balance Movement', main: '#0042fc', dark: '#0032bd', accent: '#a1d7ff', logo: 'logo-balance-movement.png' },
+  astroladies: { name: 'VIACTIV Astroladies Bochum', main: '#005ba4', dark: '#004397', accent: '#ee7105', logo: '' },
+  nrw_sportschule: { name: 'NRW-Sportschule Pascal-Gymnasium Münster', main: '#010d6e', dark: '#01094d', accent: '#8cdcfe', logo: '' },
+};
+function tpLayoutOf(plan, content) {
+  const k = (content && content.layout) || ((plan && plan.team || '').toLowerCase().includes('astroladies') ? 'astroladies' : 'balance_movement');
+  return TP_LAYOUTS[k] || TP_LAYOUTS.balance_movement;
+}
+function tpKgText(v) { const n = parseFloat(v); return isNaN(n) ? '' : (Math.round(n * 10) / 10).toLocaleString('de-DE', { maximumFractionDigits: 1 }); }
 const TP_CAT = Object.fromEntries(TP_CATS.map(c => [c.key, c]));
 const KG_STEP = 0.5;
 
@@ -135,7 +147,7 @@ async function renderMyPlan(profile) {
       <div class="mp-week"><div class="mp-wlabel">Woche ${w}</div>${Array.from({ length: P.days }, (_, j) => cell(w, j + 1)).join('')}</div>`).join('');
   const content = `
     ${next ? `
-    <div class="card mp-next">
+    <div class="card mp-next" style="--lay-main:${tpLayoutOf(P, tpContentFor(D.versions, next.w, D.user.id)).main};--lay-accent:${tpLayoutOf(P, tpContentFor(D.versions, next.w, D.user.id)).accent};">
       <div><div class="mp-kicker">Als N&auml;chstes dran</div>
       <div class="mp-big">Woche ${next.w} &middot; Tag ${next.d}</div>
       <div class="muted-inline">${esc(P.title || 'Trainingsplan')}${P.team ? ' &middot; ' + esc(P.team) : ''}</div></div>
@@ -180,6 +192,7 @@ function renderMySession(profile, D, week, day) {
   const cooldown = content0 && content0.cooldown ? (content0.cooldown[day] || content0.cooldown[String(day)] || '') : '';
   const prep = content0 && content0.prepNote ? (content0.prepNote[day] || content0.prepNote[String(day)] || '') : '';
   const started = Date.now();
+  const LAY = tpLayoutOf(P, content0);
   let saveTimer = null;
 
   function persist(completed, extra) {
@@ -212,12 +225,8 @@ function renderMySession(profile, D, week, day) {
         ${ex.sets.map((s, j) => `
         <div class="mp-set${s.done ? ' done' : ''}${s.optional ? ' opt' : ''}">
           <span class="mp-sn">Satz ${j + 1}${s.optional ? '<small>optional</small>' : ''}</span>
-          <div class="mp-num"><button type="button" data-i="${i}" data-j="${j}" data-f="reps" data-d="-1" ${canEdit ? '' : 'disabled'}>&minus;</button>
-            <input inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="reps" value="${s.reps === '' || s.reps == null ? '' : s.reps}" ${canEdit ? '' : 'disabled'}>
-            <button type="button" data-i="${i}" data-j="${j}" data-f="reps" data-d="1" ${canEdit ? '' : 'disabled'}>+</button></div>
-          <div class="mp-num"><button type="button" data-i="${i}" data-j="${j}" data-f="kg" data-d="-${KG_STEP}" ${canEdit ? '' : 'disabled'}>&minus;</button>
-            <input inputmode="decimal" data-i="${i}" data-j="${j}" data-f="kg" value="${s.kg === '' || s.kg == null ? '' : String(s.kg).replace('.', ',')}" placeholder="–" ${canEdit ? '' : 'disabled'}>
-            <button type="button" data-i="${i}" data-j="${j}" data-f="kg" data-d="${KG_STEP}" ${canEdit ? '' : 'disabled'}>+</button></div>
+          <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="reps" value="${s.reps === '' || s.reps == null ? '' : s.reps}" placeholder="Wdh" ${canEdit ? '' : 'disabled'}>
+          <input class="mp-in" inputmode="decimal" data-i="${i}" data-j="${j}" data-f="kg" value="${tpKgText(s.kg)}" placeholder="kg" ${canEdit ? '' : 'disabled'}>
           <button type="button" class="mp-tick" data-i="${i}" data-j="${j}" data-f="tick" ${canEdit ? '' : 'disabled'}>${s.done ? '&#10003;' : '&#9675;'}</button>
         </div>`).join('')}
       </div>
@@ -227,9 +236,9 @@ function renderMySession(profile, D, week, day) {
       </div>` : ''}`;
     }
     const lastSets = D.last[tpExerciseKey(ex)];
-    const lastTxt = lastSets && lastSets.length ? 'Letztes Mal: ' + lastSets.map(s => `${s.reps}${s.kg ? ' × ' + String(s.kg).replace('.', ',') + ' kg' : ''}`).join(' / ') : '';
+    const lastTxt = lastSets && lastSets.length ? 'Letztes Mal: ' + lastSets.map(s => `${s.reps}${s.kg ? ' × ' + tpKgText(s.kg) + ' kg' : ''}`).join(' / ') : '';
     return `
-      <div class="card mp-ex${skip ? ' skipped' : ''}${ex.status === 'extra' ? ' extra' : ''}">
+      <div class="card mp-ex${skip ? ' skipped' : ''}${ex.status === 'extra' ? ' extra' : ''}" style="--cat:${cat.color || TP_EXTRA_COLOR};">
         <div class="mp-exhead">
           <div><div class="mp-cat">${esc(ex.status === 'extra' ? 'Zusätzlich' : cat.label)}</div><div class="mp-exname">${title}</div></div>
           ${canEdit && ex.status !== 'extra' ? `<div class="mp-exmenu">
@@ -247,7 +256,8 @@ function renderMySession(profile, D, week, day) {
   function draw() {
     const doneCnt = exs.filter(e => e.status === 'done' || e.status === 'swapped' || e.status === 'extra' || (e.sets || []).some(s => s.done)).length;
     const content = `
-      <div class="card mp-sesshead">
+      <div class="card mp-sesshead" style="--lay-main:${LAY.main};--lay-dark:${LAY.dark};--lay-accent:${LAY.accent};">
+        ${LAY.logo ? `<img src="${LAY.logo}" alt="" class="mp-laylogo">` : ''}
         <div><div class="mp-kicker">${esc(P.title || 'Trainingsplan')}</div><div class="mp-big">Woche ${week} &middot; Tag ${day}</div>
         <div class="muted-inline">${doneCnt} von ${exs.length} &Uuml;bungen begonnen${existing && existing.completed ? ' &middot; abgeschlossen' : ''}</div></div>
       </div>
@@ -266,17 +276,21 @@ function renderMySession(profile, D, week, day) {
       const i = +el.dataset.i, j = el.dataset.j != null ? +el.dataset.j : null, f = el.dataset.f;
       const ex = exs[i];
       if (el.tagName === 'INPUT' && (f === 'reps' || f === 'kg')) {
-        el.onchange = () => { const v = num(el.value); ex.sets[j][f] = v == null ? '' : v; persistSoon(); };
+        el.onchange = () => {
+          let v = num(el.value);
+          if (v != null) v = f === 'reps' ? Math.round(v) : Math.round(v * 10) / 10;
+          ex.sets[j][f] = v == null ? '' : v;
+          el.value = v == null ? '' : (f === 'kg' ? tpKgText(v) : v);
+          persistSoon();
+        };
+        el.onfocus = () => { try { el.select(); } catch (e) {} };
       } else if (f === 'anote') {
         el.oninput = () => { ex.athleteNote = el.value; persistSoon(); };
       } else if (f === 'checkdone') {
         el.onchange = () => { ex.status = el.checked ? 'done' : 'open'; persistSoon(); };
       } else if (el.tagName === 'BUTTON') {
         el.onclick = () => {
-          if (f === 'reps' || f === 'kg') {
-            const cur = num(ex.sets[j][f]) || 0, d = parseFloat(el.dataset.d);
-            ex.sets[j][f] = Math.max(0, Math.round((cur + d) * 10) / 10);
-          } else if (f === 'tick') {
+          if (f === 'tick') {
             ex.sets[j].done = !ex.sets[j].done;
             if (ex.status === 'open' && ex.sets.some(s => s.done)) ex.status = 'done';
           } else if (f === 'allplan') {
