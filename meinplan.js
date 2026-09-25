@@ -106,7 +106,7 @@ async function tpLoadMine() {
     sb.from('tp_logs').select('*').eq('plan_id', act.plan_id).eq('user_id', user.id),
   ]);
   if (pRes.error) throw pRes.error;
-  // letzte Werte je Übung (auch aus früheren Plänen) für die Vorbefüllung
+  // letzte Werte je Übung (auch aus früheren Plänen) für die Info „Letztes Mal“
   const { data: allLogs } = await sb.from('tp_logs').select('week, day, exercises, updated_at').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(60);
   const last = {};
   (allLogs || []).forEach(l => (l.exercises || []).forEach(ex => {
@@ -184,19 +184,15 @@ function renderMySession(profile, D, week, day) {
   else exs = tpDayItems(content0, day).map(it => {
     const type = TP_CAT[it.cat].type;
     const r = tpRange(it.presc && it.presc.sets, 3), reps = tpRange(it.presc && it.presc.reps, null);
-    const prev = D.last[tpLabel(it)];
-    const noteKg = tpKgFromNote(it.note);
     const sets = type === 'check' ? [] : Array.from({ length: r.max }, (_, i) => {
-      const p = prev && (prev[i] || prev[prev.length - 1]);
-      return { reps: '', kg: noteKg != null ? noteKg : '', sec: '', done: false, hintKg: p && p.kg ? p.kg : '' };
+        return { reps: '', kg: '', sec: '', done: false };
     });
     return { name: it.name, position: it.position, option: it.option, cat: it.cat, note: it.note, presc: it.presc, status: 'open', sets, athleteNote: '' };
   });
-  // Alte Entwürfe hatten Wdh/kg vorbefüllt (done:false) – nicht selbst eingetragene Werte leeren
+  // Zellen immer leer: nicht selbst eingetragene Werte (alte Vorbefüllungen) leeren
   if (!(existing && existing.completed)) exs.forEach(ex => (ex.sets || []).forEach(s => {
     if (s.done) return;
-    if (s.kg !== '' && s.kg != null && !s.hintKg) s.hintKg = s.kg;
-    s.reps = ''; s.sec = ''; s.kg = tpKgFromNote(ex.note) != null ? tpKgFromNote(ex.note) : '';
+    s.reps = ''; s.sec = ''; s.kg = ''; delete s.hintKg;
   }));
   const cooldown = content0 && content0.cooldown ? (content0.cooldown[day] || content0.cooldown[String(day)] || '') : '';
   const prep = content0 && content0.prepNote ? (content0.prepNote[day] || content0.prepNote[String(day)] || '') : '';
@@ -235,7 +231,7 @@ function renderMySession(profile, D, week, day) {
         <div class="mp-set${s.done ? ' done' : ''}">
           <span class="mp-sn">Satz ${j + 1}</span>
           <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="reps" value="${s.reps === '' || s.reps == null ? '' : s.reps}" placeholder="Wdh" ${canEdit && !(parseFloat(s.sec) > 0 && !(parseFloat(s.reps) > 0)) ? '' : 'disabled'}>
-          <input class="mp-in" inputmode="decimal" data-i="${i}" data-j="${j}" data-f="kg" value="${tpKgText(s.kg)}" placeholder="${s.hintKg ? tpKgText(s.hintKg) : 'kg'}" ${canEdit ? '' : 'disabled'}>
+          <input class="mp-in" inputmode="decimal" data-i="${i}" data-j="${j}" data-f="kg" value="${tpKgText(s.kg)}" placeholder="kg" ${canEdit ? '' : 'disabled'}>
           <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="sec" value="${s.sec === '' || s.sec == null ? '' : s.sec}" placeholder="s" ${canEdit && !(parseFloat(s.reps) > 0 && !(parseFloat(s.sec) > 0)) ? '' : 'disabled'}>
           <span class="mp-tick" aria-label="${s.done ? 'erledigt' : 'offen'}">${s.done ? '&#10003;' : ''}</span>
         </div>`).join('')}
@@ -328,7 +324,7 @@ function renderMySession(profile, D, week, day) {
             if (ex.status === 'open') ex.status = 'done';
           } else if (f === 'addset') {
             const l = ex.sets[ex.sets.length - 1] || { reps: '', kg: '' };
-            ex.sets.push({ reps: '', kg: '', sec: '', done: false, hintKg: l.kg || l.hintKg || '' });
+            ex.sets.push({ reps: '', kg: '', sec: '', done: false });
           } else if (f === 'skip') {
             ex.status = ex.status === 'skipped' ? 'open' : 'skipped';
           } else if (f === 'swap') {
