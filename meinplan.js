@@ -185,7 +185,8 @@ function renderMySession(profile, D, week, day) {
     const noteKg = tpKgFromNote(it.note);
     const sets = type === 'check' ? [] : Array.from({ length: r.max }, (_, i) => {
       const p = prev && (prev[i] || prev[prev.length - 1]);
-      return { reps: p ? p.reps : (reps.min != null ? reps.min : ''), kg: noteKg != null ? noteKg : (p ? p.kg : ''), done: false, optional: i >= r.min };
+      return { reps: '', kg: noteKg != null ? noteKg : '', done: false,
+        hintReps: p ? p.reps : (reps.min != null ? reps.min : ''), hintKg: p && p.kg ? p.kg : '' };
     });
     return { name: it.name, position: it.position, option: it.option, cat: it.cat, note: it.note, presc: it.presc, status: 'open', sets, athleteNote: '' };
   });
@@ -221,17 +222,17 @@ function renderMySession(profile, D, week, day) {
       body = `<label class="mp-check"><input type="checkbox" data-i="${i}" data-f="checkdone" ${ex.status === 'done' ? 'checked' : ''} ${canEdit ? '' : 'disabled'}> erledigt</label>`;
     } else if (!skip) {
       body = `<div class="mp-sets">
-        <div class="mp-sethead"><span></span><span>Wdh.</span><span>kg</span><span></span></div>
+        <div class="mp-sethead"><span></span><span>Wdh.</span><span>Gewicht</span><span></span></div>
         ${ex.sets.map((s, j) => `
-        <div class="mp-set${s.done ? ' done' : ''}${s.optional ? ' opt' : ''}">
-          <span class="mp-sn">Satz ${j + 1}${s.optional ? '<small>optional</small>' : ''}</span>
-          <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="reps" value="${s.reps === '' || s.reps == null ? '' : s.reps}" placeholder="Wdh" ${canEdit ? '' : 'disabled'}>
-          <input class="mp-in" inputmode="decimal" data-i="${i}" data-j="${j}" data-f="kg" value="${tpKgText(s.kg)}" placeholder="kg" ${canEdit ? '' : 'disabled'}>
-          <button type="button" class="mp-tick" data-i="${i}" data-j="${j}" data-f="tick" ${canEdit ? '' : 'disabled'}>${s.done ? '&#10003;' : '&#9675;'}</button>
+        <div class="mp-set${s.done ? ' done' : ''}">
+          <span class="mp-sn">Satz ${j + 1}</span>
+          <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="reps" value="${s.reps === '' || s.reps == null ? '' : s.reps}" placeholder="${s.hintReps !== undefined && s.hintReps !== '' ? s.hintReps : 'Wdh'}" ${canEdit ? '' : 'disabled'}>
+          <input class="mp-in" inputmode="decimal" data-i="${i}" data-j="${j}" data-f="kg" value="${tpKgText(s.kg)}" placeholder="${s.hintKg ? tpKgText(s.hintKg) : 'kg'}" ${canEdit ? '' : 'disabled'}>
+          <span class="mp-tick" aria-label="${s.done ? 'erledigt' : 'offen'}">${s.done ? '&#10003;' : ''}</span>
         </div>`).join('')}
       </div>
       ${canEdit ? `<div class="mp-exbtns">
-        <button type="button" class="secondary small-btn" data-i="${i}" data-f="allplan">Alle wie Satz 1 &#10003;</button>
+        <button type="button" class="secondary small-btn" data-i="${i}" data-f="allplan">Leere S&auml;tze wie Satz 1</button>
         <button type="button" class="secondary small-btn" data-i="${i}" data-f="addset">+ Satz</button>
       </div>` : ''}`;
     }
@@ -242,8 +243,8 @@ function renderMySession(profile, D, week, day) {
         <div class="mp-exhead">
           <div><div class="mp-cat">${esc(ex.status === 'extra' ? 'Zusätzlich' : cat.label)}</div><div class="mp-exname">${title}</div></div>
           ${canEdit && ex.status !== 'extra' ? `<div class="mp-exmenu">
-            <button type="button" class="secondary small-btn" data-i="${i}" data-f="swap">Tauschen</button>
-            <button type="button" class="secondary small-btn" data-i="${i}" data-f="skip">${skip ? 'Doch machen' : 'Weglassen'}</button></div>` : ''}
+            <button type="button" class="mp-mini" data-i="${i}" data-f="swap">&#8644; Tauschen</button>
+            <button type="button" class="mp-mini" data-i="${i}" data-f="skip">${skip ? '&#8634; Doch machen' : '&#10005; Weglassen'}</button></div>` : ''}
         </div>
         ${prescText(ex) ? `<div class="mp-presc">Vorgabe: ${esc(prescText(ex))}</div>` : ''}
         ${ex.note ? `<div class="mp-note">&#128204; ${esc(ex.note)}</div>` : ''}
@@ -281,7 +282,16 @@ function renderMySession(profile, D, week, day) {
           if (v != null) v = f === 'reps' ? Math.round(v) : Math.round(v * 10) / 10;
           ex.sets[j][f] = v == null ? '' : v;
           el.value = v == null ? '' : (f === 'kg' ? tpKgText(v) : v);
+          const st = ex.sets[j];
+          const wasDone = st.done;
+          st.done = parseFloat(st.reps) > 0;
+          if (ex.status === 'open' && ex.sets.some(x => x.done)) ex.status = 'done';
+          if (ex.status === 'done' && !ex.sets.some(x => x.done)) ex.status = 'open';
           persistSoon();
+          if (wasDone !== st.done) {
+            const row = el.closest('.mp-set');
+            if (row) { row.classList.toggle('done', st.done); const t = row.querySelector('.mp-tick'); if (t) t.innerHTML = st.done ? '&#10003;' : ''; }
+          }
         };
         el.onfocus = () => { try { el.select(); } catch (e) {} };
       } else if (f === 'anote') {
@@ -295,11 +305,12 @@ function renderMySession(profile, D, week, day) {
             if (ex.status === 'open' && ex.sets.some(s => s.done)) ex.status = 'done';
           } else if (f === 'allplan') {
             const s0 = ex.sets[0];
-            ex.sets.forEach(s => { if (!s.optional) { s.reps = s.reps === '' ? s0.reps : s.reps; s.kg = s.kg === '' ? s0.kg : s.kg; s.done = true; } });
+            if (!(parseFloat(s0.reps) > 0)) { toast('Bitte zuerst Satz 1 eintragen.'); return; }
+            ex.sets.forEach(s => { if (s.reps === '' || s.reps == null) { s.reps = s0.reps; if (s.kg === '' || s.kg == null) s.kg = s0.kg; } s.done = parseFloat(s.reps) > 0; });
             if (ex.status === 'open') ex.status = 'done';
           } else if (f === 'addset') {
             const l = ex.sets[ex.sets.length - 1] || { reps: '', kg: '' };
-            ex.sets.push({ reps: l.reps, kg: l.kg, done: false, optional: true });
+            ex.sets.push({ reps: '', kg: '', done: false, hintReps: l.reps || l.hintReps || '', hintKg: l.kg || l.hintKg || '' });
           } else if (f === 'skip') {
             ex.status = ex.status === 'skipped' ? 'open' : 'skipped';
           } else if (f === 'swap') {

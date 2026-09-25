@@ -381,3 +381,20 @@ tr.no-access a{ color:var(--brand-strong); }
   .mp-sn{ font-size:.78rem; }
   .mp-in{ height:52px; font-size:1.35rem; }
 }
+
+/* Mein Trainingsplan: Satz automatisch grün, Haken nur Anzeige, prägnante Übungsnamen, kleine Aktionsknöpfe */
+.mp-tick{ display:flex !important; align-items:center; justify-content:center; height:auto !important; width:26px; height:26px !important;
+  border-radius:50%; border:2px solid var(--line) !important; background:#fff !important; color:#fff !important; font-size:.85rem !important;
+  justify-self:center; padding:0 !important; pointer-events:none; }
+.mp-set.done .mp-tick{ background:var(--ok) !important; border-color:var(--ok) !important; }
+.mp-sethead, .mp-set{ grid-template-columns:62px 1fr 1fr 30px !important; }
+.mp-in::placeholder{ color:#c3c9d4; font-weight:700; }
+.mp-exname{ font-size:1.3rem !important; font-weight:900 !important; color:var(--brand-dark); letter-spacing:-.01em; line-height:1.2; }
+.mp-mini{ background:transparent !important; border:1px solid var(--line) !important; color:var(--ink-soft) !important; font-size:.72rem !important;
+  font-weight:600 !important; padding:4px 8px !important; border-radius:99px !important; }
+.mp-mini:hover{ background:var(--paper) !important; }
+.mp-exmenu{ gap:4px !important; }
+@media (max-width:520px){
+  .mp-sethead, .mp-set{ grid-template-columns:48px 1fr 1fr 28px !important; }
+  .mp-exname{ font-size:1.2rem !important; }
+}
