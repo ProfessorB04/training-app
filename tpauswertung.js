@@ -72,6 +72,7 @@ async function renderTpEval(profile) {
       <div class="ath-toolbar">
         <select id="tpPlanSel">${plans.map(p => `<option value="${p.id}" ${p.id === plan.id ? 'selected' : ''}>${esc(p.title || 'Ohne Titel')}${p.team ? ' · ' + esc(p.team) : ''} (${new Date(p.created_at).toLocaleDateString('de-DE')})</option>`).join('')}</select>
         <span class="spacer"></span>
+        <button type="button" class="secondary" id="tpEdit">&#9998; Plan bearbeiten</button>
         <button type="button" class="secondary" id="tpArchive">Plan archivieren</button>
       </div>
       <div class="tablewrap"><table class="tp-table">
@@ -82,6 +83,7 @@ async function renderTpEval(profile) {
     </div>`;
   renderShell(profile, 'trainingsplan', 'Auswertung Trainingspläne', content, back);
   document.getElementById('tpPlanSel').onchange = (e) => { TP_EVAL_PLAN = e.target.value; renderTpEval(profile); };
+  document.getElementById('tpEdit').onclick = () => { window.location.href = 'trainingsplan.html#edit=' + plan.id; };
   document.getElementById('tpArchive').onclick = async () => {
     if (!confirm('Plan „' + (plan.title || '') + '“ archivieren? Er verschwindet aus dieser Liste; Einträge bleiben für Block-Vergleiche erhalten.')) return;
     await sb.from('tp_plans').update({ archived: true }).eq('id', plan.id);

@@ -163,8 +163,18 @@ async function renderMyPlan(profile) {
       <p class="hint">&#10003; erledigt &middot; &#9680; angefangen</p>
     </div>`;
   renderShell(profile, 'meinplan', 'Mein Trainingsplan', content);
-  if (next) document.getElementById('mpStart').onclick = () => renderMySession(profile, D, next.w, next.d);
-  appEl.querySelectorAll('.mp-cell').forEach(b => { b.onclick = () => renderMySession(profile, D, +b.dataset.w, +b.dataset.d); });
+  // beim Öffnen einer Einheit den aktuellen Planstand holen (Trainer kann laufende Pläne ändern)
+  const open = async (w, d) => {
+    const [v, l] = await Promise.all([
+      sb.from('tp_plan_versions').select('*').eq('plan_id', P.id).order('from_week'),
+      sb.from('tp_logs').select('*').eq('plan_id', P.id).eq('user_id', D.user.id),
+    ]);
+    if (!v.error && v.data) D.versions = v.data;
+    if (!l.error && l.data) D.logs = l.data;
+    renderMySession(profile, D, w, d);
+  };
+  if (next) document.getElementById('mpStart').onclick = () => open(next.w, next.d);
+  appEl.querySelectorAll('.mp-cell').forEach(b => { b.onclick = () => open(+b.dataset.w, +b.dataset.d); });
 }
 
 // ---------- Eingabe-Overlay: Wdh als Scroll-Auswahl (bis Vorgabe-Max), Gewicht/Dauer als Tastenfeld ----------
@@ -236,17 +246,31 @@ function renderMySession(profile, D, week, day) {
   try { draft = JSON.parse(localStorage.getItem(draftKey)); } catch (e) {}
 
   // Protokoll-Grundlage: gespeichert > lokaler Entwurf > Plan
-  let exs;
-  if (existing && existing.exercises && existing.exercises.length) exs = existing.exercises;
-  else if (draft && draft.length) exs = draft;
-  else exs = tpDayItems(content0, day).map(it => {
+  const fresh = it => {
     const type = TP_CAT[it.cat].type;
     const r = tpRange(it.presc && it.presc.sets, 3), reps = tpRange(it.presc && it.presc.reps, null);
     const sets = type === 'check' ? [] : Array.from({ length: r.max }, (_, i) => {
         return { reps: '', kg: '', sec: '', done: false };
     });
     return { name: it.name, position: it.position, option: it.option, cat: it.cat, note: it.note, presc: it.presc, status: 'open', sets, athleteNote: '' };
-  });
+  };
+  let exs;
+  const saved = existing && existing.exercises && existing.exercises.length ? existing.exercises : (draft && draft.length ? draft : null);
+  if (!saved) exs = tpDayItems(content0, day).map(fresh);
+  else if (existing && existing.completed) exs = saved;
+  else {
+    // Laufende Einheit: Änderungen des Trainers übernehmen – neue Übungen ergänzen, gestrichene (noch nicht begonnene) entfernen
+    const key = e => e.cat + '|' + tpLabel(e);
+    const pool = saved.slice();
+    const begun = e => e.status === 'skipped' || e.status === 'swapped' || e.athleteNote || (e.sets || []).some(s => s.done);
+    exs = tpDayItems(content0, day).map(it => {
+      const k = pool.findIndex(e => e.status !== 'extra' && key(e) === key(it));
+      if (k < 0) return fresh(it);
+      const e = pool.splice(k, 1)[0];
+      return Object.assign(e, { note: it.note, presc: it.presc });
+    });
+    pool.forEach(e => { if (e.status === 'extra' || begun(e)) exs.push(e); });
+  }
   // Zellen immer leer: nicht selbst eingetragene Werte (alte Vorbefüllungen) leeren
   if (!(existing && existing.completed)) exs.forEach(ex => (ex.sets || []).forEach(s => {
     if (s.done) return;
@@ -422,14 +446,14 @@ function renderMySession(profile, D, week, day) {
   }
 
   function finishDialog() {
-    const mins = Math.max(10, Math.round((Date.now() - started) / 60000));
+    const mins = 45;
     const host = document.createElement('div');
     host.innerHTML = `
       <div class="modal-scrim"><div class="modal">
         <h2>Einheit abschlie&szlig;en</h2>
         <p class="hint" style="margin-top:0;">Wie anstrengend war die Einheit insgesamt? (1 = sehr leicht &hellip; 10 = maximal)</p>
         <div class="mp-rpe">${Array.from({ length: 10 }, (_, k) => `<button type="button" class="secondary" data-rpe="${k + 1}">${k + 1}</button>`).join('')}</div>
-        <label class="wq-date" style="margin-top:12px;">Dauer (Minuten)<input type="number" inputmode="numeric" id="mpDur" min="1" max="300" value="${existing && existing.duration_min ? existing.duration_min : mins}"></label>
+        <label class="wq-date" style="margin-top:12px;">Dauer (Minuten)<input type="number" inputmode="numeric" id="mpDur" min="1" max="300" value="${existing && existing.duration_min ? existing.duration_min : ''}" placeholder="${mins}"></label>
         <div class="modal-actions"><span class="spacer"></span>
           <button type="button" class="secondary" id="mpCancel">Zur&uuml;ck</button>
           <button type="button" id="mpSave" disabled>Speichern</button></div>

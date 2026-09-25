@@ -2280,6 +2280,11 @@ async function openPublishDialog(){
   let planSel = (state.publishedPlanId && plans.some(p=>p.id===state.publishedPlanId)) ? state.publishedPlanId : '__new';
   let mode = 'all';
 
+  const curWeekOf = p => {
+    if(!p || !p.start_date) return 1;
+    const d = Math.floor((Date.now() - new Date(p.start_date + 'T00:00:00').getTime()) / 86400000);
+    return d < 0 ? 1 : Math.min(p.weeks, Math.floor(d / 7) + 1);
+  };
   function render(){
     const p = plans.find(x=>x.id===planSel);
     const weeksN = p ? p.weeks : state.weeks;
@@ -2293,7 +2298,7 @@ async function openPublishDialog(){
       </select>
       ${p ? `
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:12px;font-size:13px;">
-        <label>Gilt ab Woche <select id="pubWeek" style="width:auto;">${Array.from({length:weeksN},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select></label>
+        <label>Gilt ab Woche <select id="pubWeek" style="width:auto;">${Array.from({length:weeksN},(_,i)=>`<option value="${i+1}" ${i+1===curWeekOf(p)?'selected':''}>${i+1}${i+1===curWeekOf(p)?' (aktuell)':''}</option>`).join('')}</select></label>
         <label><input type="radio" name="pubMode" value="all" ${mode==='all'?'checked':''}> f&uuml;r alle im Plan</label>
         <label><input type="radio" name="pubMode" value="variant" ${mode==='variant'?'checked':''}> nur f&uuml;r die Ausgew&auml;hlten (Variante)</label>
       </div>
@@ -2371,7 +2376,7 @@ async function openPublishDialog(){
         const a = await sb.from('tp_assignments').upsert({ plan_id: planId, user_id: uid, active: true }, { onConflict: 'plan_id,user_id' });
         if(a.error) throw a.error;
       }
-      state.publishedPlanId = planId; saveState(true);
+      state.publishedPlanId = planId; state.editingFromApp = false; saveState(true);
       close();
       toast(!p ? 'Plan veröffentlicht für ' + ids.length + ' Athlet:innen' : (userIds ? 'Variante ab Woche ' + fromWeek + ' für ' + ids.length + ' Athlet:innen' : 'Änderung ab Woche ' + fromWeek + ' veröffentlicht'));
     } catch(e){
@@ -2388,6 +2393,32 @@ async function openPublishDialog(){
   b.addEventListener('click', openPublishDialog);
   const anchor = document.getElementById('btnSeriesExport') || document.getElementById('btnExport');
   anchor.insertAdjacentElement('afterend', b);
+})();
+/* Laufenden App-Plan zum Bearbeiten laden (Link „✎ Plan bearbeiten“ aus der Auswertung: trainingsplan.html#edit=<planId>) */
+(async function(){
+  const m = location.hash.match(/^#edit=([0-9a-f-]{36})$/i);
+  if(!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  for(let k=0; k<100 && !window.appSb; k++) await new Promise(r=>setTimeout(r,100));
+  const sb = window.appSb;
+  if(!sb){ alert('Keine Verbindung zur App – Plan konnte nicht geladen werden.'); return; }
+  const [p, v] = await Promise.all([
+    sb.from('tp_plans').select('*').eq('id', m[1]).single(),
+    sb.from('tp_plan_versions').select('*').eq('plan_id', m[1]).is('user_ids', null).order('from_week', {ascending:false}).order('id', {ascending:false}).limit(1),
+  ]);
+  if(p.error || v.error || !(v.data||[]).length){ alert('Plan konnte nicht geladen werden: ' + ((p.error||v.error||{}).message || 'keine Version gefunden')); return; }
+  if(!confirm('Laufenden Plan „' + (p.data.title || 'Ohne Titel') + '“ zum Bearbeiten laden?\nDer aktuell geöffnete Stand in der Trainingsplanung wird dabei ersetzt.')) return;
+  const c = v.data[0].content || {};
+  state = Object.assign(defaultState(), JSON.parse(JSON.stringify({ plan: c.plan || {}, prescription: c.prescription, cooldown: c.cooldown || {},
+    prepNote: c.prepNote || {}, lang: c.lang || 'de', days: p.data.days, weeks: p.data.weeks, title: p.data.title || c.title || '',
+    team: p.data.team || c.team || '', layout: c.layout || LAYOUTS[0].key, start: p.data.start_date || '' })));
+  if(!state.prescription) state.prescription = JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION));
+  state.publishedPlanId = p.data.id; state.editingFromApp = true;
+  ensurePrescription(); state.activeDay = 1;
+  for(let d=1; d<=state.days; d++) ensureDayStructure(d);
+  saveState(true);
+  syncConfigInputs(); renderPrescriptionTable(); renderTabs(); renderPanels();
+  toast('Laufender Plan geladen – Übungen ändern, dann „📲 In App veröffentlichen“ (ab aktueller Woche)');
 })();
 function escapeHtmlSeries(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 (function(){
