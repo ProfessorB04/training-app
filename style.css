@@ -410,3 +410,26 @@ tr.no-access a{ color:var(--brand-strong); }
 }
 .mp-in:disabled{ background:#eef0f3; border-color:#e3e7ef; color:#b8bfcc; }
 .mp-in:disabled::placeholder{ color:transparent; }
+
+/* Mein Trainingsplan: Eingabe-Overlay (Scroll-Auswahl Wdh, Tastenfeld Gewicht/Dauer) */
+.mp-in[readonly]{ cursor:pointer; caret-color:transparent; }
+.mp-in::placeholder{ color:#b3bcc4; font-weight:700; }
+.mp-ov{ position:fixed; inset:0; background:rgba(15,25,35,.45); z-index:1000; display:flex; align-items:flex-end; justify-content:center; }
+.mp-sheet{ background:#fff; width:100%; max-width:420px; border-radius:18px 18px 0 0; padding:16px 16px calc(16px + env(safe-area-inset-bottom)); box-shadow:0 -6px 24px rgba(0,0,0,.18); }
+.mp-sheet-t{ font-weight:800; font-size:1.1rem; }
+.mp-sheet-s{ color:var(--ink-soft); font-size:.88rem; margin:2px 0 12px; }
+.mp-wheel{ position:relative; height:240px; overflow:hidden; border-radius:12px; background:var(--paper); }
+.mp-wheel-sc{ height:100%; overflow-y:auto; scroll-snap-type:y mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+.mp-wheel-sc::-webkit-scrollbar{ display:none; }
+.mp-wheel-it{ height:48px; line-height:48px; text-align:center; font-size:1.3rem; font-weight:700; color:#9aa5ae; scroll-snap-align:center; cursor:pointer; }
+.mp-wheel-it.sel{ color:var(--ink); font-size:1.7rem; font-weight:800; }
+.mp-wheel-mark{ position:absolute; left:10px; right:10px; top:96px; height:48px; border-top:2px solid var(--brand); border-bottom:2px solid var(--brand); pointer-events:none; }
+.mp-disp{ display:flex; align-items:baseline; justify-content:flex-end; gap:6px; background:var(--paper); border-radius:12px; padding:10px 16px; margin-bottom:10px; }
+.mp-disp-v{ font-size:2.2rem; font-weight:800; }
+.mp-disp-v.empty{ color:#b3bcc4; }
+.mp-disp-u{ color:var(--ink-soft); font-weight:700; }
+.mp-keys{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.mp-keys button{ height:54px; font-size:1.4rem; font-weight:700; background:#fff; color:var(--ink); border:2px solid var(--line); border-radius:12px; }
+.mp-keys button:active{ background:var(--brand-pale); }
+.mp-sheet-b{ display:grid; grid-template-columns:1fr 1fr 1.4fr; gap:8px; margin-top:12px; }
+.mp-sheet-b button{ height:48px; }

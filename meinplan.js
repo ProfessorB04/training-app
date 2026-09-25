@@ -167,6 +167,64 @@ async function renderMyPlan(profile) {
   appEl.querySelectorAll('.mp-cell').forEach(b => { b.onclick = () => renderMySession(profile, D, +b.dataset.w, +b.dataset.d); });
 }
 
+// ---------- Eingabe-Overlay: Wdh als Scroll-Auswahl (bis Vorgabe-Max), Gewicht/Dauer als Tastenfeld ----------
+function mpPad(o) {
+  const ov = document.createElement('div');
+  ov.className = 'mp-ov';
+  const IH = 48;
+  let txt = o.value == null ? '' : (o.mode === 'kg' ? tpKgText(o.value) : String(o.value));
+  const wheel = o.mode === 'wheel';
+  const nums = wheel ? Array.from({ length: o.max }, (_, k) => k + 1) : [];
+  ov.innerHTML = `<div class="mp-sheet" role="dialog" aria-modal="true">
+    <div class="mp-sheet-t">${esc(o.title)}</div>
+    <div class="mp-sheet-s">${esc(o.sub || '')}${o.hint ? ' &middot; letztes Mal: ' + esc(o.hint) : ''}</div>
+    ${wheel ? `<div class="mp-wheel"><div class="mp-wheel-mark"></div><div class="mp-wheel-sc">
+        <div style="height:${IH * 2}px"></div>${nums.map(n => `<div class="mp-wheel-it" data-n="${n}">${n}</div>`).join('')}<div style="height:${IH * 2}px"></div>
+      </div></div>`
+    : `<div class="mp-disp"><span class="mp-disp-v"></span><span class="mp-disp-u">${o.mode === 'kg' ? 'kg' : 's'}</span></div>
+      <div class="mp-keys">${['1','2','3','4','5','6','7','8','9', o.mode === 'kg' ? ',' : '', '0', '⌫'].map(k => k ? `<button type="button" data-k="${k}">${k}</button>` : '<span></span>').join('')}</div>`}
+    <div class="mp-sheet-b">
+      <button type="button" class="secondary" data-a="clear">Leeren</button>
+      <button type="button" class="secondary" data-a="cancel">Abbrechen</button>
+      <button type="button" data-a="ok">&Uuml;bernehmen</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  const close = () => ov.remove();
+  ov.addEventListener('click', e => { if (e.target === ov) close(); });
+  let sc = null;
+  if (wheel) {
+    sc = ov.querySelector('.mp-wheel-sc');
+    const start = o.value != null ? o.value : (o.hint && parseInt(o.hint, 10) <= o.max ? parseInt(o.hint, 10) : o.max);
+    const idx = Math.max(0, Math.min(nums.length - 1, start - 1));
+    const mark = () => { const k = Math.round(sc.scrollTop / IH); sc.querySelectorAll('.mp-wheel-it').forEach((it, n) => it.classList.toggle('sel', n === k)); };
+    requestAnimationFrame(() => { sc.scrollTop = idx * IH; mark(); });
+    sc.addEventListener('scroll', mark);
+    sc.querySelectorAll('.mp-wheel-it').forEach((it, n) => { it.onclick = () => sc.scrollTo({ top: n * IH, behavior: 'smooth' }); });
+  } else {
+    const disp = ov.querySelector('.mp-disp-v');
+    const show = () => { disp.textContent = txt || '0'; disp.classList.toggle('empty', !txt); };
+    show();
+    ov.querySelectorAll('[data-k]').forEach(b => {
+      b.onclick = () => {
+        const k = b.dataset.k;
+        if (k === '⌫') txt = txt.slice(0, -1);
+        else if (k === ',') { if (!txt.includes(',')) txt = (txt || '0') + ','; }
+        else if (txt.includes(',')) { if (txt.split(',')[1].length < 1) txt += k; }   // nur eine Nachkommastelle
+        else if (txt.length < (o.mode === 'kg' ? 3 : 4)) txt = txt === '0' ? k : txt + k;
+        show();
+      };
+    });
+  }
+  ov.querySelector('[data-a="cancel"]').onclick = close;
+  ov.querySelector('[data-a="clear"]').onclick = () => { close(); o.onSet(null); };
+  ov.querySelector('[data-a="ok"]').onclick = () => {
+    let v;
+    if (wheel) v = nums[Math.max(0, Math.min(nums.length - 1, Math.round(sc.scrollTop / IH)))];
+    else { const n = parseFloat(txt.replace(',', '.')); v = isNaN(n) || n <= 0 ? null : n; }
+    close(); o.onSet(v);
+  };
+}
+
 // ---------- Einheit eintragen ----------
 function renderMySession(profile, D, week, day) {
   const P = D.plan, uid = D.user.id;
@@ -225,14 +283,16 @@ function renderMySession(profile, D, week, day) {
     if (!skip && cat.type === 'check') {
       body = `<label class="mp-check"><input type="checkbox" data-i="${i}" data-f="checkdone" ${ex.status === 'done' ? 'checked' : ''} ${canEdit ? '' : 'disabled'}> erledigt</label>`;
     } else if (!skip) {
+      const lastS = D.last[tpExerciseKey(ex)] || [];
+      const ph = (j, f, dflt) => { const l = lastS[j] || lastS[lastS.length - 1]; const v = l && parseFloat(l[f]) > 0 ? l[f] : null; return v == null ? dflt : (f === 'kg' ? tpKgText(v) : v); };
       body = `<div class="mp-sets">
         <div class="mp-sethead"><span></span><span>Wdh.</span><span>Gewicht (kg)</span><span>Dauer (s)</span><span></span></div>
         ${ex.sets.map((s, j) => `
         <div class="mp-set${s.done ? ' done' : ''}">
           <span class="mp-sn">Satz ${j + 1}</span>
-          <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="reps" value="${s.reps === '' || s.reps == null ? '' : s.reps}" placeholder="Wdh" ${canEdit && !(parseFloat(s.sec) > 0 && !(parseFloat(s.reps) > 0)) ? '' : 'disabled'}>
-          <input class="mp-in" inputmode="decimal" data-i="${i}" data-j="${j}" data-f="kg" value="${tpKgText(s.kg)}" placeholder="kg" ${canEdit ? '' : 'disabled'}>
-          <input class="mp-in" inputmode="numeric" pattern="[0-9]*" data-i="${i}" data-j="${j}" data-f="sec" value="${s.sec === '' || s.sec == null ? '' : s.sec}" placeholder="s" ${canEdit && !(parseFloat(s.reps) > 0 && !(parseFloat(s.sec) > 0)) ? '' : 'disabled'}>
+          <input class="mp-in" inputmode="none" data-i="${i}" data-j="${j}" data-f="reps" value="${s.reps === '' || s.reps == null ? '' : s.reps}" placeholder="${ph(j, 'reps', 'Wdh')}" readonly ${canEdit && !(parseFloat(s.sec) > 0 && !(parseFloat(s.reps) > 0)) ? '' : 'disabled'}>
+          <input class="mp-in" inputmode="none" data-i="${i}" data-j="${j}" data-f="kg" value="${tpKgText(s.kg)}" placeholder="${ph(j, 'kg', 'kg')}" readonly ${canEdit ? '' : 'disabled'}>
+          <input class="mp-in" inputmode="none" data-i="${i}" data-j="${j}" data-f="sec" value="${s.sec === '' || s.sec == null ? '' : s.sec}" placeholder="${ph(j, 'sec', 's')}" readonly ${canEdit && !(parseFloat(s.reps) > 0 && !(parseFloat(s.sec) > 0)) ? '' : 'disabled'}>
           <span class="mp-tick" aria-label="${s.done ? 'erledigt' : 'offen'}">${s.done ? '&#10003;' : ''}</span>
         </div>`).join('')}
       </div>
@@ -304,7 +364,20 @@ function renderMySession(profile, D, week, day) {
             if (row) { row.classList.toggle('done', st.done); const t = row.querySelector('.mp-tick'); if (t) t.innerHTML = st.done ? '&#10003;' : ''; }
           }
         };
-        el.onfocus = () => { try { el.select(); } catch (e) {} };
+        el.onclick = () => {
+          if (el.disabled) return;
+          const st = ex.sets[j], name = ex.status === 'swapped' && ex.swappedTo ? ex.swappedTo : tpLabel(ex);
+          const cur = f === 'kg' ? st.kg : st[f];
+          mpPad({
+            mode: f === 'reps' ? 'wheel' : (f === 'kg' ? 'kg' : 'int'),
+            title: (f === 'reps' ? 'Wiederholungen' : (f === 'kg' ? 'Gewicht (kg)' : 'Dauer (s)')) + ' · Satz ' + (j + 1),
+            sub: name,
+            max: tpRange(ex.presc && ex.presc.reps, 30).max || 30,
+            value: cur === '' || cur == null ? null : cur,
+            hint: el.placeholder && /\d/.test(el.placeholder) ? el.placeholder : null,
+            onSet: v => { el.value = v == null ? '' : (f === 'kg' ? tpKgText(v) : v); el.onchange(); },
+          });
+        };
       } else if (f === 'anote') {
         el.oninput = () => { ex.athleteNote = el.value; persistSoon(); };
       } else if (f === 'checkdone') {
