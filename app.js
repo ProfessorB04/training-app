@@ -71,7 +71,7 @@ const isStaff = (profile) => profile.role === 'admin' || profile.role === 'train
 
 // ---------------- App-Shell (Sidebar + Kopfzeile) ----------------
 // Tool-Rechte je Athlet:in (profiles.permissions); Admin + Trainer:innen haben immer vollen Zugriff
-const PERM_DEFAULT = { srpe: 'edit', wellness: 'none', trainingsplan: 'none', warmup: 'none', meinplan: 'none' };
+const PERM_DEFAULT = { srpe: 'edit', wellness: 'none', trainingsplan: 'none', warmup: 'none', meinplan: 'edit' };
 const perm = (profile, tool) => isStaff(profile) ? 'edit' : ((profile.permissions || PERM_DEFAULT)[tool] || 'none');
 const can = (profile, tool) => perm(profile, tool) !== 'none';
 
