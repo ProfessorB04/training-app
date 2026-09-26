@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Warm-up — Balance Movement</title>
+<title>Warm-Up — Balance Movement</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* Trainings-App: Login-Schutz (nur Admin + Trainer:innen) */
@@ -34,7 +34,7 @@
 })();
 </script>
 <script>
-/* Trainings-App: Warm-up-Bibliothek = Stand aus Maiks Mobility & Warm-up Builder (Safari, 24.09.2026) –
+/* Trainings-App: Warm-Up-Bibliothek = Stand aus Maiks Mobility & Warm-Up Builder (Safari, 24.09.2026) –
    Übungen inkl. Wiederholungen/Hinweisen (EN/DE); nur in der App neu angelegte Übungen bleiben erhalten */
 (function(){
   var KEY = "mwb_sync_bibliothek_2026-09-24";
@@ -54,7 +54,7 @@
   } catch(e){}
   window.__mwbSync = { total: SRC.length + keep.length, keep: keep.length };
   window.addEventListener("load", function(){
-    setTimeout(function(){ if(typeof toast === "function") toast("Warm-up-Bibliothek aktualisiert (Stand Builder 24.09.): " + window.__mwbSync.total + " Übungen"); }, 700);
+    setTimeout(function(){ if(typeof toast === "function") toast("Warm-Up-Bibliothek aktualisiert (Stand Builder 24.09.): " + window.__mwbSync.total + " Übungen"); }, 700);
   });
 })();
 </script>
@@ -225,7 +225,7 @@
     <div class="brandmark">
       <img id="brandLogo" alt="">
       <div class="t">
-        <div class="eyebrow">Athletik &middot; Warm-up</div>
+        <div class="eyebrow">Athletik &middot; Warm-Up</div>
         <h1 id="brandOrg">Balance Movement</h1>
       </div>
     </div>
@@ -284,7 +284,7 @@
       </div>
       <div class="card-body">
         <div class="sess-meta">
-          <div><label>Titel</label><input id="sessTitle" placeholder="z. B. Pre-Lift Warm-up"></div>
+          <div><label>Titel</label><input id="sessTitle" placeholder="z. B. Pre-Lift Warm-Up"></div>
           <div><label>Athletin / Gruppe</label><input id="sessGroup" placeholder="z. B. U16 / Ben S."></div>
           <div><label>Datum</label><input id="sessDate" type="date"></div>
           <div style="align-self:end;"><span class="muted">Reihenfolge per &uarr;&darr;, Dosierung/Notiz je Zeile editierbar.</span></div>
@@ -366,7 +366,7 @@ Walking Knee Hug | 1 length, tall posture | Full Body | dyn | FT"></textarea>
 <script>
 "use strict";
 /* ------------------------------------------------------------------ *
- *  Mobility & Warm-up Builder  —  companion to Trainingsplan_Builder
+ *  Mobility & Warm-Up Builder  —  companion to Trainingsplan_Builder
  *  Library seeded from that tool + Maik's OneDrive "Preparation &
  *  Correctives" / NRW-Sportschule mobility plans + Boyle / Cook-FMS.
  * ------------------------------------------------------------------ */
@@ -844,7 +844,7 @@ function renderSession(){
 function updatePrintMeta(){
   // Grosse, zentrierte Ueberschrift fuer den Plakat-Druck
   document.getElementById("printTitle").textContent =
-    (session.title && session.title.trim()) ? session.title.trim() : "Warm-up";
+    (session.title && session.title.trim()) ? session.title.trim() : "Warm-Up";
   const bits = [];
   if(session.group) bits.push(esc(session.group));
   if(session.date)  bits.push(fmtDE(session.date));
@@ -862,7 +862,7 @@ document.getElementById("btnPrint").onclick = ()=> window.print();
 document.getElementById("btnCopy").onclick = ()=>{
   if(!session.items.length){ toast("Session ist leer."); return; }
   const L = LAYOUTS[layoutKey];
-  let lines = [L.org + " — Mobility & Dynamic Warm-up"];
+  let lines = [L.org + " — Mobility & Dynamic Warm-Up"];
   const meta = [session.title, session.group, fmtDE(session.date)].filter(Boolean).join(" · ");
   if(meta) lines.push(meta);
   lines.push("");
@@ -883,7 +883,7 @@ document.getElementById("btnWord").onclick = ()=>{
   if(!session.items.length){ toast("Session ist leer."); return; }
   const L = LAYOUTS[layoutKey];
   const HB = "#3FA3D9";  // hell-blau fuer die Kategorien (wie NRW-Sportschule-Akzent)
-  const title = (session.title && session.title.trim()) ? session.title.trim() : "Warm-up";
+  const title = (session.title && session.title.trim()) ? session.title.trim() : "Warm-Up";
   const metaBits = [session.group, fmtDE(session.date)].filter(Boolean);
 
   let rows = "";
@@ -988,4 +988,5 @@ renderSession();
 </body>
 </html>
 
-<script src="app-rail.js?v=20260924n"></script>
+<script src="app-rail.js?v=20260926a"></script>
+<script src="idle-logout.js?v=20260926a"></script>

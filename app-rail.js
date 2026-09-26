@@ -12,7 +12,7 @@
     { href: "index.html#srpe", icon: "&#128200;", label: "Session-RPE", match: [], perm: "srpe", athleteOnly: true },
     { href: "index.html#wellness", icon: "&#128154;", label: "Wellness-Check", match: [], perm: "wellness", athleteOnly: true },
     { href: "index.html#testungen", icon: "&#129514;", label: "Testungen & Assessments", match: ["test-"], show: "staff" },
-    { href: "warmup.html", icon: "&#128293;", label: "Warm-up", match: ["warmup.html"], perm: "warmup" },
+    { href: "warmup.html", icon: "&#128293;", label: "Warm-Up", match: ["warmup.html"], perm: "warmup" },
     { href: "index.html#athleten", icon: "&#127939;", label: "Athletenverwaltung", match: [], show: "staff" },
     { href: "index.html#team", icon: "&#128101;", label: "Nutzerverwaltung", match: [], show: "admin" }
   ];

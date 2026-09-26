@@ -83,7 +83,7 @@ const NAV_ITEMS = [
   { key: 'srpe', label: 'Session-RPE', icon: '&#128200;', show: p => !isStaff(p) && can(p, 'srpe') },
   { key: 'wellness', label: 'Wellness-Check', icon: '&#128154;', show: p => !isStaff(p) && can(p, 'wellness') },
   { key: 'testungen', label: 'Testungen & Assessments', icon: '&#129514;', show: p => isStaff(p) },
-  { key: 'warmup', label: 'Warm-up', icon: '&#128293;', show: p => can(p, 'warmup') },
+  { key: 'warmup', label: 'Warm-Up', icon: '&#128293;', show: p => can(p, 'warmup') },
   { key: 'athleten', label: 'Athletenverwaltung', icon: '&#127939;', show: p => isStaff(p) },
   { key: 'team', label: 'Nutzerverwaltung', icon: '&#128101;', show: p => isAdmin(p) },
 ];
@@ -154,6 +154,7 @@ function renderShell(profile, activeKey, title, contentHtml, back) {
   if (back) document.getElementById('backBtn').onclick = back.go;
 
   document.getElementById('logoutBtn').onclick = async () => {
+    try { localStorage.removeItem('bm_last_activity'); } catch (e) {}
     await sb.auth.signOut();
   };
 
@@ -193,7 +194,7 @@ function renderAuth() {
           <label>E-Mail<input type="email" id="loginEmail" required autocomplete="username"></label>
           <label>Passwort<input type="password" id="loginPassword" required autocomplete="current-password"></label>
           <button type="submit">Anmelden</button>
-          <p class="error" id="loginError"></p>
+          <p class="error" id="loginError">${(() => { try { const f = sessionStorage.getItem('bm_idle_logout'); sessionStorage.removeItem('bm_idle_logout'); return f ? 'Du wurdest nach 30 Minuten Inaktivit&auml;t automatisch abgemeldet.' : ''; } catch (e) { return ''; } })()}</p>
         </form>
         <form id="forgotForm" class="auth-form" hidden>
           <label>E-Mail<input type="email" id="forgotEmail" required autocomplete="username"></label>
@@ -213,6 +214,7 @@ function renderAuth() {
     e.preventDefault();
     const email = document.getElementById('loginEmail').value.trim();
     const password = document.getElementById('loginPassword').value;
+    if (window.appIdleFreshLogin) window.appIdleFreshLogin();
     const { error } = await sb.auth.signInWithPassword({ email, password });
     document.getElementById('loginError').textContent = error ? 'E-Mail oder Passwort falsch.' : '';
   };
@@ -321,6 +323,7 @@ async function renderDashboard(user) {
     return;
   }
 
+  if (window.appIdleStart) window.appIdleStart(sb, profile.role);   // Auto-Abmeldung nur Admin/Trainer
   const hashKey = (window.location.hash || '').slice(1);
   if (hashKey) {
     history.replaceState(null, '', window.location.pathname);
@@ -402,7 +405,7 @@ const MENU_TILES = [
   { key: 'srpe', tint: 'tint-load', icon: '&#128200;', title: 'Session-RPE', sub: 'Einheit eintragen: Anstrengung (1&ndash;10) und Dauer' },
   { key: 'wellness', tint: 'tint-ath', icon: '&#128154;', title: 'Wellness-Check', sub: 'Morgens vor dem Training &ndash; 4 kurze Fragen' },
   { key: 'testungen', tint: 'tint-test', icon: '&#129514;', title: 'Testungen &amp; Assessments', sub: 'Performance-Test, 30-15 IFT, 10m Sprint' },
-  { key: 'warmup', tint: 'tint-warm', icon: '&#128293;', title: 'Warm-up', sub: 'Mobility-, Dynamic-, Runner&rsquo;s-ABC-Bibliothek, Warm-up-Sessions' },
+  { key: 'warmup', tint: 'tint-warm', icon: '&#128293;', title: 'Warm-Up', sub: 'Mobility-, Dynamic-, Runner&rsquo;s-ABC-Bibliothek, Warm-Up-Sessions' },
   { key: 'athleten', tint: 'tint-ath', icon: '&#127939;', title: 'Athletenverwaltung', sub: 'Athlet:innen &amp; Gruppen zentral verwalten, Import aus der Trainingsplanung' },
   { key: 'team', tint: 'tint-team', icon: '&#128101;', title: 'Nutzerverwaltung', sub: 'Zug&auml;nge anlegen, Rollen &amp; Tool-Rechte verwalten' },
 ];

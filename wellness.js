@@ -144,7 +144,7 @@ const PERM_TOOLS = [
   { key: 'srpe', label: 'Session-RPE', levels: [['none', 'kein Zugriff'], ['view', 'nur ansehen'], ['edit', 'eintragen']] },
   { key: 'wellness', label: 'Wellness-Check', levels: [['none', 'kein Zugriff'], ['view', 'nur ansehen'], ['edit', 'eintragen']] },
   { key: 'trainingsplan', label: 'Trainingsplanung', levels: [['none', 'kein Zugriff'], ['edit', 'Zugriff']] },
-  { key: 'warmup', label: 'Warm-up', levels: [['none', 'kein Zugriff'], ['edit', 'Zugriff']] },
+  { key: 'warmup', label: 'Warm-Up', levels: [['none', 'kein Zugriff'], ['edit', 'Zugriff']] },
   { key: 'meinplan', label: 'Mein Trainingsplan', levels: [['none', 'kein Zugriff'], ['view', 'nur ansehen'], ['edit', 'eintragen']] },
 ];
 function permSummary(perms) {
