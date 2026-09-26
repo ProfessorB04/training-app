@@ -1295,13 +1295,25 @@ function buildCategorySection(d, cat){
   }
 
   const sel = document.createElement('select');
+  // Accessory: eigene Liste + alle Strength-Übungen (ohne doppelte Namen), Wert = "kategorie:index"
+  const srcCats = cat.key === 'accessory' ? ['accessory','strength'] : [cat.key];
   function populateExerciseSelect(){
     const filterPattern = patternSel ? patternSel.value : "";
-    const indices = sortedIdx(DB[cat.key]);
-    const filtered = filterPattern ? indices.filter(i=>DB[cat.key][i].pattern===filterPattern) : indices;
-    sel.innerHTML = `<option value="">— Übung aus ${cat.label}-Liste wählen —</option>` +
-      filtered.map(i=>`<option value="${i}">${escapeHtml(DB[cat.key][i].name)}</option>`).join('');
+    const seen = new Set(), items = [];
+    srcCats.forEach(k=>{
+      sortedIdx(DB[k] || []).forEach(i=>{
+        const ex = DB[k][i];
+        if(filterPattern && ex.pattern!==filterPattern) return;
+        const key = (ex.name||'').trim().toLowerCase();
+        if(seen.has(key)) return;
+        seen.add(key); items.push({k, i, name: ex.name});
+      });
+    });
+    items.sort((a,b)=>a.name.localeCompare(b.name,'de'));
+    sel.innerHTML = `<option value="">— Übung aus ${cat.label}-Liste wählen${cat.key==='accessory'?' (inkl. Strength)':''} —</option>` +
+      items.map(x=>`<option value="${x.k}:${x.i}">${escapeHtml(x.name)}</option>`).join('');
   }
+  const pickedEx = ()=>{ const [k,i] = sel.value.split(':'); return {k, i: parseInt(i,10), ex: (DB[k]||[])[parseInt(i,10)]}; };
   populateExerciseSelect();
   if(patternSel) patternSel.addEventListener('change', populateExerciseSelect);
 
@@ -1309,7 +1321,7 @@ function buildCategorySection(d, cat){
   addBtn.textContent = 'Hinzufügen';
   addBtn.addEventListener('click', ()=>{
     if(sel.value==="") return;
-    const ex = DB[cat.key][parseInt(sel.value)];
+    const ex = pickedEx().ex;
     state.plan[d][cat.key].push({name:ex.name, note:"", position:"", option:""});
     renderPanels();
   });
@@ -1319,9 +1331,10 @@ function buildCategorySection(d, cat){
   delDbBtn.textContent = '🗑';
   delDbBtn.addEventListener('click', ()=>{
     if(sel.value==="") return;
-    const ex = DB[cat.key][parseInt(sel.value)];
+    const pk = pickedEx(), ex = pk.ex;
+    if(pk.k !== cat.key){ alert(`"${ex.name}" stammt aus der Strength-Liste – bitte dort löschen.`); return; }
     if(!confirm(`"${ex.name}" endgültig aus der ${cat.label}-Datenbank löschen?`)) return;
-    DB[cat.key].splice(parseInt(sel.value),1);
+    DB[cat.key].splice(pk.i,1);
     saveDB();
     renderPanels();
   });
