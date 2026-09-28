@@ -858,7 +858,24 @@ document.getElementById("sessDate").oninput  = e=>{ session.date=e.target.value;
 document.getElementById("btnClearSess").onclick = ()=>{
   if(!session.items.length || confirm("Session leeren?")){ session.items=[]; saveSession(); renderSession(); }
 };
-document.getElementById("btnPrint").onclick = ()=> window.print();
+document.getElementById("btnPrint").onclick = ()=>{
+  if(!session.items.length){ toast("Session ist leer."); return; }
+  // druckt exakt das Word-Dokument (ohne App-Leiste, gleiche Schriftgrößen)
+  const { html } = buildDocHtml();
+  const old = document.getElementById("printFrame"); if(old) old.remove();
+  const f = document.createElement("iframe");
+  f.id = "printFrame";
+  f.setAttribute("style", "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;");
+  document.body.appendChild(f);
+  const d = f.contentWindow.document;
+  d.open();
+  d.write(html.replace("</style>", " body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}</style>"));
+  d.close();
+  const go = ()=>{ f.contentWindow.focus(); f.contentWindow.print(); };
+  const imgs = [...d.images].filter(i=>!i.complete);
+  if(!imgs.length) setTimeout(go, 150);
+  else { let n = imgs.length; imgs.forEach(i=>{ i.onload = i.onerror = ()=>{ if(--n===0) setTimeout(go, 100); }; }); }
+};
 document.getElementById("btnCopy").onclick = ()=>{
   if(!session.items.length){ toast("Session ist leer."); return; }
   const L = LAYOUTS[layoutKey];
@@ -879,8 +896,8 @@ document.getElementById("btnCopy").onclick = ()=>{
 };
 
 /* ---------- Word-Export (Plakat-Layout als .doc) ---------- */
-document.getElementById("btnWord").onclick = ()=>{
-  if(!session.items.length){ toast("Session ist leer."); return; }
+/* Gleiches Dokument für Word-Export und Drucken/PDF */
+function buildDocHtml(){
   const L = LAYOUTS[layoutKey];
   const HB = "#3FA3D9";  // hell-blau fuer die Kategorien (wie NRW-Sportschule-Akzent)
   const title = (session.title && session.title.trim()) ? session.title.trim() : "Warm-Up";
@@ -921,7 +938,11 @@ document.getElementById("btnWord").onclick = ()=>{
     + `<p style="border-bottom:3pt solid ${L.brand};margin:8pt 0 0;font-size:1pt;line-height:1pt;">&nbsp;</p>`
     + rows
     + `</body></html>`;
-
+  return { html, title };
+}
+document.getElementById("btnWord").onclick = ()=>{
+  if(!session.items.length){ toast("Session ist leer."); return; }
+  const { html, title } = buildDocHtml();
   const blob = new Blob(["﻿" + html], {type:"application/msword"});
   const clean = s => (s||"").trim().replace(/[^a-zA-Z0-9äöüÄÖÜß_-]+/g,"_").replace(/^_+|_+$/g,"");
   const a = document.createElement("a");
