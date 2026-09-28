@@ -201,6 +201,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   .tp-cfg-foot{ display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-top:10px; font-size:12px; color:var(--muted); }
   .cloud-status.ok{ color:#1f7a45; } .cloud-status.err{ color:#b0281c; font-weight:600; } .cloud-status.busy{ color:var(--muted); }
   .tp-del{ color:#b0281c; }
+  .tp-bulk{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0 2px; font-size:12.5px; }
+  .tp-bulk button[disabled]{ opacity:.45; cursor:default; }
   .tp-lib td{ border-top:1px solid var(--grid); padding:8px 6px; vertical-align:middle; font-size:13px; }
   @media (max-width:640px){ .tp-more{ margin-left:0; } .tp-more-body{ left:0; right:auto; } }
 </style>
@@ -2634,6 +2636,29 @@ async function tpOpenPlansDialog(){
   autos.sort((a,b)=>(b.savedAt||'').localeCompare(a.savedAt||''));
   const teams = [...new Set(saved.map(p=>p.team).concat(autos.map(a=>a.team)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de'));
   let fText = '', fTeam = '', autoOpen = false;
+  const aSel = new Set();
+  // Sicherung entfernen (ohne Rückfrage) – Gruppenstand bzw. Eintrag der Athletinnen-Historie
+  function removeAuto(a){
+    if(a.kind === 'group'){ delete GROUP_PLANS[a.key]; }
+    else {
+      const list = ATHLETE_PLANS[a.key] || [];
+      const e = list.find(x=>x.savedAt === a.savedAt && (x.title || (x.state && x.state.title) || 'Plan') === a.title);
+      if(e) list.splice(list.indexOf(e), 1);
+      if(!list.length) delete ATHLETE_PLANS[a.key];
+    }
+    autos.splice(autos.indexOf(a), 1); aSel.delete(a);
+  }
+  function afterRemove(n){
+    saveGroupPlans(); saveAthletePlans();
+    if(typeof updateGroupPlanButton === 'function') updateGroupPlanButton();
+    autos.forEach(x=>{ if(x.kind==='athlete'){ const l = ATHLETE_PLANS[x.key]||[]; x.idx = l.findIndex(y=>y.savedAt===x.savedAt); } });
+    render(); toast(n === 1 ? 'Sicherung gelöscht' : n + ' Sicherungen gelöscht');
+  }
+  function bulk(list, what){
+    if(!list.length){ toast('Nichts zu löschen.'); return; }
+    if(!confirm(list.length + ' ' + what + ' löschen? Das lässt sich nicht rückgängig machen.')) return;
+    list.slice().forEach(removeAuto); afterRemove(list.length);
+  }
   function render(){
     const match = (t, team, ath) => (!fTeam || team === fTeam) && (!fText || (t + ' ' + (team||'') + ' ' + (ath||'')).toLowerCase().includes(fText));
     const sRows = saved.filter(p=>match(p.title, p.team, p.athlete)).map(p=>`
@@ -2641,7 +2666,7 @@ async function tpOpenPlansDialog(){
       <td class="hint" style="white-space:nowrap;">${tpFmtDate(p.updated_at)}<br>${escapeHtml(who[p.updated_by]||'')}</td>
       <td style="white-space:nowrap;text-align:right;"><button type="button" class="primary small" data-open="${p.id}">&Ouml;ffnen</button> <button type="button" class="small tp-del" data-del="${p.id}" title="Plan endg&uuml;ltig l&ouml;schen">🗑 L&ouml;schen</button></td></tr>`).join('');
     const aRows = autos.filter(a=>match(a.title, a.team, a.athlete)).map((a,i)=>`
-      <tr><td>${escapeHtml(a.title)}<div class="hint" style="margin:2px 0 0;">${a.kind==='group' ? 'Letzter Plan der Gruppe ' + escapeHtml(a.team) : 'Export f&uuml;r ' + escapeHtml(a.athlete || '?')}${a.weeks ? ' &middot; ' + a.weeks + ' Wo. &times; ' + a.days + ' Tage' : ''}</div></td>
+      <tr><td style="width:22px;"><input type="checkbox" data-asel="${autos.indexOf(a)}" ${aSel.has(a) ? 'checked' : ''}></td><td>${escapeHtml(a.title)}<div class="hint" style="margin:2px 0 0;">${a.kind==='group' ? 'Letzter Plan der Gruppe ' + escapeHtml(a.team) : 'Export f&uuml;r ' + escapeHtml(a.athlete || '?')}${a.weeks ? ' &middot; ' + a.weeks + ' Wo. &times; ' + a.days + ' Tage' : ''}</div></td>
       <td class="hint" style="white-space:nowrap;">${tpFmtDate(a.savedAt)}</td>
       <td style="white-space:nowrap;text-align:right;"><button type="button" class="small" data-auto="${autos.indexOf(a)}">&Ouml;ffnen</button> <button type="button" class="small tp-del" data-adel="${autos.indexOf(a)}" title="Sicherung l&ouml;schen">🗑 L&ouml;schen</button></td></tr>`).join('');
     box.innerHTML = `
@@ -2653,6 +2678,12 @@ async function tpOpenPlansDialog(){
       <h3 style="font-size:13px;margin:6px 0;">Gespeicherte Pl&auml;ne <span class="hint">(alle Ger&auml;te &amp; Trainer:innen)</span></h3>
       <table style="width:100%;border-collapse:collapse;" class="tp-lib">${sRows || '<tr><td class="hint">Noch keine gespeicherten Pl&auml;ne &mdash; im Plan auf &bdquo;💾 Plan speichern&ldquo; klicken.</td></tr>'}</table>
       <details id="tpAutoDet" style="margin-top:14px;" ${autoOpen ? 'open' : ''}><summary style="cursor:pointer;font-weight:600;font-size:13px;">Automatische Sicherungen (${autos.length}) &mdash; letzter Plan je Gruppe, Excel-Exporte je Athletin</summary>
+        ${autos.length ? `<div class="tp-bulk">
+          <label><input type="checkbox" id="tpASelAll"> alle</label>
+          <button type="button" class="small tp-del" id="tpADelSel" ${aSel.size ? '' : 'disabled'}>🗑 Ausgew&auml;hlte l&ouml;schen (${aSel.size})</button>
+          <button type="button" class="small tp-del" id="tpADelOld">🗑 &Auml;lter als 30 Tage</button>
+          <button type="button" class="small tp-del" id="tpADelAll">🗑 Alle Sicherungen</button>
+        </div>` : ''}
         <table style="width:100%;border-collapse:collapse;margin-top:6px;" class="tp-lib">${aRows || '<tr><td class="hint">Keine.</td></tr>'}</table>
       </details>
       <p class="hint" style="margin-top:12px;">Tipp: Einen Plan f&uuml;r eine andere Athletin nutzen &rarr; &ouml;ffnen, oben &bdquo;F&uuml;r wen?&ldquo; umstellen, anpassen und &bdquo;💾 Plan speichern&ldquo; &rarr; &bdquo;Als neuen Plan speichern&ldquo;.</p>
@@ -2681,18 +2712,17 @@ async function tpOpenPlansDialog(){
     box.querySelectorAll('[data-adel]').forEach(b=>b.onclick = ()=>{
       const a = autos[+b.dataset.adel];
       if(!confirm('Sicherung „' + a.title + '“ (' + (a.kind==='group' ? 'Gruppe ' + a.team : a.athlete) + ') löschen?')) return;
-      if(a.kind === 'group'){ delete GROUP_PLANS[a.key]; saveGroupPlans(); if(typeof updateGroupPlanButton === 'function') updateGroupPlanButton(); }
-      else {
-        const list = ATHLETE_PLANS[a.key] || [];
-        const e = list.find(x=>x.savedAt === a.savedAt && (x.title || (x.state && x.state.title) || 'Plan') === a.title);
-        if(e) list.splice(list.indexOf(e), 1);
-        if(!list.length) delete ATHLETE_PLANS[a.key];
-        saveAthletePlans();
-      }
-      autos.splice(autos.indexOf(a), 1);
-      autos.forEach(x=>{ if(x.kind==='athlete' && x.key===a.key){ const l = ATHLETE_PLANS[x.key]||[]; x.idx = l.findIndex(y=>y.savedAt===x.savedAt); } });
-      render(); toast('Sicherung gelöscht');
+      removeAuto(a); afterRemove(1);
     });
+    box.querySelectorAll('[data-asel]').forEach(c=>c.onchange = ()=>{ const a = autos[+c.dataset.asel]; if(c.checked) aSel.add(a); else aSel.delete(a); render(); });
+    if(q('#tpASelAll')){
+      const vis = autos.filter(a=>match(a.title, a.team, a.athlete));
+      q('#tpASelAll').checked = vis.length > 0 && vis.every(a=>aSel.has(a));
+      q('#tpASelAll').onchange = e => { vis.forEach(a=>{ if(e.target.checked) aSel.add(a); else aSel.delete(a); }); render(); };
+      q('#tpADelSel').onclick = () => bulk([...aSel], 'ausgewählte Sicherungen');
+      q('#tpADelOld').onclick = () => { const lim = Date.now() - 30*86400000; bulk(autos.filter(a=>a.savedAt && new Date(a.savedAt).getTime() < lim), 'Sicherungen älter als 30 Tage'); };
+      q('#tpADelAll').onclick = () => bulk(autos.slice(), 'Sicherungen (alle)');
+    }
     box.querySelectorAll('[data-auto]').forEach(b=>b.onclick = ()=>{
       const a = autos[+b.dataset.auto];
       if(!confirm('Aktuellen Entwurf durch diese Sicherung ersetzen?')) return;
