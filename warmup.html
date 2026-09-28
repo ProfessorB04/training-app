@@ -212,6 +212,7 @@
   }
   #printHeader{ display:none; }
   .si-print-cue{ display:none; }
+  .shown-tag{ color:var(--brand); font-weight:700; font-size:.85em; margin-left:4px; }
 </style>
 </head>
 <body>
@@ -316,8 +317,8 @@
     <div class="dlg-head" id="dlgTitle">&Uuml;bung hinzuf&uuml;gen</div>
     <div class="dlg-body">
       <div><label>Name (englisch)</label><input id="fName" required placeholder="e.g. 90/90 Hip Switch"></div>
-      <div><label>Dosierung / Cue (englisch)</label><input id="fDosage" placeholder="e.g. 6x per side, controlled transition"></div>
-      <div><label>Dosierung / Hinweis (deutsch)</label><input id="fDosageDe" placeholder="z. B. 6x pro Seite, kontrollierter Wechsel"></div>
+      <div id="fDosageWrap"><label>Dosierung / Cue (englisch) <b class="shown-tag" id="tagEn"></b></label><input id="fDosage" placeholder="e.g. 6x per side, controlled transition"></div>
+      <div id="fDosageDeWrap"><label>Dosierung / Hinweis (deutsch) <b class="shown-tag" id="tagDe"></b></label><input id="fDosageDe" placeholder="z. B. 6x pro Seite, kontrollierter Wechsel"></div>
       <div class="two">
         <div><label>Kategorie</label><select id="fCat">
           <option value="mobilisation">Mobilisation</option>
@@ -733,9 +734,19 @@ function openAdd(){
   editingId = null;
   dlg.returnValue = "";
   document.getElementById("dlgTitle").textContent = "Übung hinzufügen";
+  markShownLang();
   fName.value=""; fDosage.value=""; fDosageDe.value=""; fCat.value="mobilisation"; fRegion.value="Hip";
   fEquip.value=""; fSource.value="FT"; fNote.value="";
   dlg.showModal();
+}
+// im Dialog markieren, welcher Hinweis gerade angezeigt wird (EN/DE-Umschalter)
+function markShownLang(){
+  const de = cueLang === "de";
+  document.getElementById("tagEn").textContent = de ? "" : "← wird angezeigt";
+  document.getElementById("tagDe").textContent = de ? "← wird angezeigt" : "";
+  const wEn = document.getElementById("fDosageWrap"), wDe = document.getElementById("fDosageDeWrap");
+  if(de && wDe.nextElementSibling === wEn) return;
+  if(de) wEn.parentNode.insertBefore(wDe, wEn); else wDe.parentNode.insertBefore(wEn, wDe);
 }
 function openEdit(id){
   const e = library.find(x=>x.id===id); if(!e) return;
@@ -744,6 +755,7 @@ function openEdit(id){
   document.getElementById("dlgTitle").textContent = "Übung bearbeiten";
   fName.value=e.name; fDosage.value=e.dosage||""; fDosageDe.value=e.dosageDe||""; fCat.value=e.cat; fRegion.value=e.region||"Hip";
   fEquip.value=e.equip||""; fSource.value=e.source||"FT"; fNote.value=e.note||"";
+  markShownLang();
   dlg.showModal();
 }
 dlg.addEventListener("close", ()=>{
@@ -751,7 +763,17 @@ dlg.addEventListener("close", ()=>{
   const name = fName.value.trim(); if(!name){ toast("Name fehlt."); return; }
   const rec = { name, dosage:fDosage.value.trim(), dosageDe:fDosageDe.value.trim(), cat:fCat.value, region:fRegion.value,
     equip:fEquip.value.trim(), source:fSource.value, note:fNote.value.trim() };
-  if(editingId){ Object.assign(library.find(x=>x.id===editingId), rec); toast("Gespeichert."); }
+  if(editingId){
+    const old = library.find(x=>x.id===editingId);
+    const onlyHidden = cueLang==="de" ? (rec.dosage!==(old.dosage||"") && rec.dosageDe===(old.dosageDe||"") && rec.dosageDe)
+                                      : (rec.dosageDe!==(old.dosageDe||"") && rec.dosage===(old.dosage||"") && rec.dosage);
+    Object.assign(old, rec);
+    // Übung auch in der aktuellen Session aktualisieren
+    let upd = 0;
+    session.items.forEach(it=>{ if(it.libId===editingId){ Object.assign(it, { name:rec.name, cat:rec.cat, region:rec.region, dosage:rec.dosage, dosageDe:rec.dosageDe }); upd++; } });
+    if(upd){ saveSession(); renderSession(); }
+    toast(onlyHidden ? "Gespeichert – angezeigt wird aber der " + (cueLang==="de" ? "deutsche" : "englische") + " Hinweis (oben EN/DE umschalten)." : "Gespeichert.");
+  }
   else { library.unshift(Object.assign({id:uid()}, rec)); toast("Übung hinzugefügt."); }
   saveLibrary(); renderLibrary();
 });
