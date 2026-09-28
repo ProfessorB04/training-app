@@ -186,6 +186,15 @@
 
   /* KW-Anwahl für die Wochensteuerung (unabhängig von der oberen Wochen-Navigation) */
   .steer-target{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:4px 0 16px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--radius); background:var(--bg-elevated); }
+  .steer-sel{ margin:-6px 0 16px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--radius); background:var(--bg-elevated); }
+  .steer-sel-head{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
+  .steer-sel-head .lbl{ font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-faint); }
+  .steer-sel-head .cnt{ font-size:.8rem; color:var(--ink-soft); margin-right:auto; }
+  .steer-sel-head button{ font-size:.78rem; padding:4px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
+  .steer-sel-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+  .steer-chip{ font-size:.8rem; padding:4px 10px; border-radius:999px; border:1.5px solid var(--brand, #005ba4); background:var(--brand, #005ba4); color:#fff; cursor:pointer; }
+  .steer-chip.off{ background:transparent; color:var(--ink-faint); border-color:var(--line); text-decoration:line-through; }
+  .steer-chip .nd{ opacity:.75; font-size:.72rem; margin-left:4px; }
   .steer-target .lbl{ font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-faint); }
   .steer-target button{ width:30px; height:30px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:1rem; cursor:pointer; }
   .steer-target button:hover{ border-color:var(--accent); }
@@ -472,6 +481,16 @@
       <button id="steerNextWeek" aria-label="Woche vor">&rarr;</button>
       <button id="steerWeekReset" class="link" title="Auf die Folgewoche der oben gew&auml;hlten Woche setzen">&#8635; Folgewoche von <span id="steerResetKW">&ndash;</span></button>
       <span class="basis" id="steerBasisNote"></span>
+    </div>
+    <div class="steer-sel no-print" id="steerSelBox">
+      <div class="steer-sel-head">
+        <span class="lbl">Spielerinnen f&uuml;r Team-Empfehlung &amp; Einzelauswertung</span>
+        <span class="cnt" id="steerSelCount"></span>
+        <button type="button" id="steerSelAll">Alle</button>
+        <button type="button" id="steerSelNone">Keine</button>
+        <button type="button" id="steerSelActive" title="Nur Spielerinnen, die in der Bezugswoche oder den 2 Wochen davor Werte eingetragen haben">Nur mit Eintr&auml;gen (3 Wo.)</button>
+      </div>
+      <div class="steer-sel-chips" id="steerSelChips"></div>
     </div>
 
     <div id="steeringPrintArea">
@@ -1434,12 +1453,49 @@
   // statt dass dieser rein vom Spieltag-Abstand abhängt (classifyDayRoles bleibt dafür
   // zuständig: Taper vor / Regeneration nach Spieltagen ist sportwissenschaftlich fix
   // und wird bewusst NICHT durch die Team-Load-Signal verschoben).
+  // Auswahl für Empfehlungen: alle Spielerinnen außer den abgewählten (state.steerExcl)
+  function steerPlayers(){
+    var ex = Array.isArray(state.steerExcl) ? state.steerExcl : [];
+    return state.players.filter(function(n){ return ex.indexOf(n) === -1; });
+  }
+  function steerHasRecent(name){
+    var src = steeringSourceWeek();
+    return [0, -7, -14].some(function(o){ return weekTotal(addDays(src, o), name) !== null; });
+  }
+  function renderSteerSel(){
+    var box = document.getElementById("steerSelChips");
+    if (!box) return;
+    if (!Array.isArray(state.steerExcl)) state.steerExcl = [];
+    var sel = steerPlayers();
+    document.getElementById("steerSelCount").textContent = sel.length + " von " + state.players.length + " ausgewählt";
+    box.innerHTML = state.players.map(function(n, i){
+      var on = state.steerExcl.indexOf(n) === -1;
+      return "<button type='button' class='steer-chip" + (on ? "" : " off") + "' data-i='" + i + "' title='" + (on ? "Klicken zum Abwählen" : "Klicken zum Auswählen") + "'>" +
+        esc(n) + (steerHasRecent(n) ? "" : "<span class='nd'>&middot; keine Daten</span>") + "</button>";
+    }).join("");
+    var apply = function(){ save(); renderAll(); };
+    [].forEach.call(box.querySelectorAll(".steer-chip"), function(b){
+      b.onclick = function(){
+        var n = state.players[+b.getAttribute("data-i")], k = state.steerExcl.indexOf(n);
+        if (k === -1) state.steerExcl.push(n); else state.steerExcl.splice(k, 1);
+        apply();
+      };
+    });
+    document.getElementById("steerSelAll").onclick = function(){ state.steerExcl = []; apply(); };
+    document.getElementById("steerSelNone").onclick = function(){ state.steerExcl = state.players.slice(); apply(); };
+    document.getElementById("steerSelActive").onclick = function(){
+      state.steerExcl = state.players.filter(function(n){ return !steerHasRecent(n); });
+      apply(); toast(steerPlayers().length + " Spielerinnen mit Einträgen ausgewählt.");
+    };
+  }
+
   function computeTeamLoadSignal(weekIso){
     weekIso = weekIso || steeringSourceWeek();
     var counts = { r:0, a:0, g:0, idle:0 };
     var overCount = 0, underCount = 0, dataCount = 0;
-    var total = state.players.length;
-    state.players.forEach(function(name){
+    var selP = steerPlayers();
+    var total = selP.length;
+    selP.forEach(function(name){
       var sig = overallSignal(computeMetrics(name, weekIso), computeWellnessMetrics(name, weekIso));
       counts[sig.zone] = (counts[sig.zone] || 0) + 1;
       if (sig.zone !== "idle"){
@@ -1484,10 +1540,11 @@
   // Wochenplan-Zusammenfassung (Wort-Export übergibt sie ebenfalls).
   function buildAutoInsight(sw){
     if (!state.players.length) return "Noch keine Spielerinnen im Kader.";
+    if (!steerPlayers().length) return "Keine Spielerin für die Empfehlung ausgewählt.";
     var srcWeek = steeringSourceWeek();
     var teamSig = computeTeamLoadSignal(srcWeek);
     var namesOver = [], namesAmberOver = [], namesUnder = [];
-    state.players.forEach(function(name){
+    steerPlayers().forEach(function(name){
       var sig = overallSignal(computeMetrics(name, srcWeek), computeWellnessMetrics(name, srcWeek));
       if (sig.zone === "r" && sig.dir === "under") namesUnder.push(name);
       else if (sig.zone === "r") namesOver.push(name);
@@ -1717,7 +1774,7 @@
     for (var i = 7; i >= 0; i--) weeks.push(addDays(anchor, -7 * i));
     var rows = weeks.map(function(wIso){
       var c = { g:0, a:0, r:0, idle:0 }, loads = [];
-      state.players.forEach(function(name){
+      steerPlayers().forEach(function(name){
         c[overallZone(computeMetrics(name, wIso), computeWellnessMetrics(name, wIso))]++;
         var t = weekTotal(wIso, name);
         if (t !== null) loads.push(t);
@@ -1727,7 +1784,7 @@
     var dayAvgs = [];
     for (var d = 0; d < 7; d++){
       var vals = [];
-      state.players.forEach(function(name){
+      steerPlayers().forEach(function(name){
         var v = getPlayerWeek(anchor, name)[d];
         if (v !== null && v !== undefined && !isNaN(v)) vals.push(v);
       });
@@ -1767,10 +1824,11 @@
 
   function renderSteerTeamOverview(){
     var el = document.getElementById("steerTeamOverview");
-    if (el) el.innerHTML = state.players.length ? steerTeamOverviewHtml("screen") : "<div class='to-cap'>Noch keine Spielerinnen im Kader.</div>";
+    if (el) el.innerHTML = steerPlayers().length ? steerTeamOverviewHtml("screen") : "<div class='to-cap'>Noch keine Spielerinnen im Kader.</div>";
   }
 
   function renderWeekSteering(){
+    renderSteerSel();
     var sw = getSteeringWeek();
     renderPrintHeader();
     renderSteerTargetControls();
@@ -1871,7 +1929,8 @@
       rows = "<tr><td colspan='10' style='color:var(--ink-faint)'>Noch keine Spielerinnen im Kader.</td></tr>";
     } else {
       var srcWeek = steeringSourceWeek();
-      state.players.forEach(function(name){
+      if (!steerPlayers().length) rows = "<tr><td colspan='10' style='color:var(--ink-faint)'>Keine Spielerin ausgewählt (oben unter „Spielerinnen für Team-Empfehlung“).</td></tr>";
+      steerPlayers().forEach(function(name){
         var m = computeMetrics(name, srcWeek);
         var wm = computeWellnessMetrics(name, srcWeek);
         var sig = overallSignal(m, wm);
