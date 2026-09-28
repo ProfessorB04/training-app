@@ -2701,9 +2701,10 @@ setTimeout(function tpTidyConfig(){
   const wrap = document.createElement('div'); wrap.id = 'tpCfgNew';
   wrap.appendChild(group('1 &middot; Plan', ['cfgTitle','cfgTeam','cfgDays','cfgWeeks','cfgStart','cfgLayout']));
   wrap.appendChild(group('2 &middot; F&uuml;r wen?', ['cfgAthlete'], 'narrow'));
-  const exp = group('Export-Einstellungen', ['cfgLang','cfgNameOrder'], 'narrow');
+  const exp = group('3 &middot; Export: Sprache &amp; Namensformat', ['cfgLang','cfgNameOrder'], 'narrow');
   // alte Einzel-Lader (Pläne dieser Athletin / letzter Plan der Gruppe) stecken jetzt in „📂 Pläne öffnen“
   const apf = document.getElementById('athletePlanField'); if(apf) apf.style.display = 'none';
+  wrap.appendChild(exp);
   grid.replaceWith(wrap);
 
   const acts = card.querySelector('.actions');
@@ -2724,7 +2725,6 @@ setTimeout(function tpTidyConfig(){
   more.innerHTML = '<summary>⋯ Mehr</summary><div class="tp-more-body"></div>';
   const mb = more.querySelector('.tp-more-body');
   ['btnFullBackupExport','btnFullBackupImport','btnReset'].forEach(id=>{ if(btn(id)) mb.append(btn(id)); });
-  mb.append(exp);
   ['btnSave','btnLoadGroupPlan'].forEach(id=>{ if(btn(id)) btn(id).style.display = 'none'; });
   const status = document.createElement('span'); status.id = 'cloudStatus'; status.className = 'cloud-status';
   if(window.__tpCloudStatus){ status.textContent = window.__tpCloudStatus.t; status.className = 'cloud-status ' + window.__tpCloudStatus.cls; }
