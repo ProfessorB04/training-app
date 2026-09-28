@@ -76,6 +76,21 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: "Nicht angemeldet." }, 401);
 
     const admin = createClient(url, serviceKey);
+
+    // ---- Eigenen Benutzernamen ändern (jede angemeldete Person, nur für sich selbst) ----
+    if (body.action === "setOwnUsername") {
+      const uname = String(body.username ?? "").trim().toLowerCase();
+      if (uname && !USERNAME_RE.test(uname)) return json({ error: "Benutzername: 3–30 Zeichen, nur a–z, 0–9, Punkt, Bindestrich, Unterstrich." }, 400);
+      if (!uname && isPlaceholder(user.email)) return json({ error: "Ohne E-Mail brauchst du einen Benutzernamen zum Anmelden." }, 400);
+      if (uname) {
+        const { data: taken } = await admin.from("profiles").select("id").eq("username", uname).neq("id", user.id).maybeSingle();
+        if (taken) return json({ error: "Benutzername „" + uname + "“ ist schon vergeben." }, 409);
+      }
+      const { error } = await admin.from("profiles").update({ username: uname || null }).eq("id", user.id);
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true, username: uname || null });
+    }
+
     const { data: me } = await admin.from("profiles").select("role").eq("id", user.id).single();
     if (!me || me.role !== "admin") {
       return json({ error: "Nur Admins dürfen Zugänge verwalten." }, 403);

@@ -86,6 +86,7 @@ const NAV_ITEMS = [
   { key: 'warmup', label: 'Warm-Up', icon: '&#128293;', show: p => can(p, 'warmup') },
   { key: 'athleten', label: 'Athletenverwaltung', icon: '&#127939;', show: p => isStaff(p) },
   { key: 'team', label: 'Nutzerverwaltung', icon: '&#128101;', show: p => isAdmin(p) },
+  { key: 'konto', label: 'Mein Konto', icon: '&#128100;', show: () => true },
 ];
 
 // Zentrale Navigation (Seitenleiste, Kacheln, Sprungziele #…)
@@ -102,6 +103,70 @@ function navigate(profile, key) {
   else if (key === 'testungen') renderTestingPage(profile);
   else if (key === 'athleten') renderAthletesPage(profile);
   else if (key === 'team') renderTeamPage(profile);
+  else if (key === 'konto') renderAccountPage(profile);
+}
+
+// ---------------- Mein Konto: Benutzername + Passwort ändern ----------------
+async function renderAccountPage(profile) {
+  let email = '';
+  try { const { data: { user } } = await sb.auth.getUser(); email = (user && user.email) || ''; } catch (e) {}
+  const { data: pr } = await sb.from('profiles').select('username').eq('id', profile.id).single();
+  const uname = (pr && pr.username) || '';
+  const noMail = isNoMail(email);
+  const content = `
+    <div class="card">
+      <h2>Anmeldung</h2>
+      <div class="cred-grid">
+        <span>Name</span><b>${esc(profile.name || '')}</b>
+        <span>Benutzername</span><b>${uname ? esc(uname) : '<span class="muted">keiner</span>'}</b>
+        <span>E-Mail</span><b>${noMail || !email ? '<span class="muted">ohne E-Mail</span>' : esc(email)}</b>
+      </div>
+      <p class="hint">Anmelden kannst du dich mit ${uname && !noMail ? 'dem Benutzernamen oder der E-Mail' : (uname ? 'dem Benutzernamen' : 'der E-Mail')}.</p>
+    </div>
+    <div class="card">
+      <h2>Benutzername &auml;ndern</h2>
+      <form id="accUnameForm" class="auth-form" style="max-width:420px;">
+        <label>Neuer Benutzername<input type="text" id="accUname" value="${esc(uname)}" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="z. B. lotta.m"></label>
+        <p class="hint" style="margin:0;">3&ndash;30 Zeichen: a&ndash;z, 0&ndash;9, Punkt, Bindestrich, Unterstrich. Merk ihn dir gut &mdash; du brauchst ihn zum Anmelden.${noMail ? '' : ' Leer lassen = Anmeldung nur noch mit E-Mail.'}</p>
+        <button type="submit">Benutzername speichern</button>
+        <p class="error" id="accUnameErr"></p>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Passwort &auml;ndern</h2>
+      <form id="accPwForm" class="auth-form" style="max-width:420px;">
+        <input type="text" name="username" autocomplete="username" value="${esc(uname || email)}" hidden>
+        <label>Neues Passwort<input type="password" id="accPw1" required minlength="10" autocomplete="new-password"></label>
+        <label>Passwort wiederholen<input type="password" id="accPw2" required minlength="10" autocomplete="new-password"></label>
+        <button type="submit">Passwort speichern</button>
+        <p class="error" id="accPwErr"></p>
+      </form>
+    </div>`;
+  renderShell(profile, 'konto', 'Mein Konto', content);
+  const unIn = document.getElementById('accUname');
+  unIn.addEventListener('input', () => { unIn.value = unIn.value.toLowerCase().replace(/\s/g, ''); });
+  document.getElementById('accUnameForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const v = unIn.value.trim().toLowerCase();
+    const errEl = document.getElementById('accUnameErr');
+    errEl.textContent = '';
+    if (v === uname) { toast('Keine Änderung.'); return; }
+    const { data, error } = await sb.functions.invoke('invite-user', { body: { action: 'setOwnUsername', username: v } });
+    if (error || (data && data.error)) { errEl.textContent = (data && data.error) ? data.error : 'Fehler: ' + error.message; return; }
+    toast(data.username ? 'Benutzername „' + data.username + '“ gespeichert.' : 'Benutzername entfernt.');
+    renderAccountPage(profile);
+  };
+  document.getElementById('accPwForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const p1 = document.getElementById('accPw1').value, p2 = document.getElementById('accPw2').value;
+    const errEl = document.getElementById('accPwErr');
+    if (p1 !== p2) { errEl.textContent = 'Passwörter stimmen nicht überein.'; return; }
+    const { error } = await sb.auth.updateUser({ password: p1 });
+    if (error) { errEl.textContent = 'Fehler: ' + error.message; return; }
+    errEl.textContent = '';
+    e.target.reset();
+    toast('Passwort geändert.');
+  };
 }
 
 function renderShell(profile, activeKey, title, contentHtml, back) {
