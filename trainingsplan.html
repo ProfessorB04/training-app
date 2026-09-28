@@ -200,6 +200,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   .tp-more-body .config-grid{ grid-template-columns:1fr !important; }
   .tp-cfg-foot{ display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-top:10px; font-size:12px; color:var(--muted); }
   .cloud-status.ok{ color:#1f7a45; } .cloud-status.err{ color:#b0281c; font-weight:600; } .cloud-status.busy{ color:var(--muted); }
+  .tp-del{ color:#b0281c; }
   .tp-lib td{ border-top:1px solid var(--grid); padding:8px 6px; vertical-align:middle; font-size:13px; }
   @media (max-width:640px){ .tp-more{ margin-left:0; } .tp-more-body{ left:0; right:auto; } }
 </style>
@@ -2632,17 +2633,17 @@ async function tpOpenPlansDialog(){
   Object.keys(ATHLETE_PLANS||{}).forEach(id=>{ const a = ATHLETES.find(x=>x.id===id); (ATHLETE_PLANS[id]||[]).forEach((e,i)=>{ if(e && e.state) autos.push({ kind:'athlete', key:id, idx:i, title: e.title || e.state.title || 'Plan', team:e.team || '', athlete: a ? athleteDisplayName(a,false) : '', savedAt:e.savedAt, weeks:e.state.weeks, days:e.state.days }); }); });
   autos.sort((a,b)=>(b.savedAt||'').localeCompare(a.savedAt||''));
   const teams = [...new Set(saved.map(p=>p.team).concat(autos.map(a=>a.team)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de'));
-  let fText = '', fTeam = '';
+  let fText = '', fTeam = '', autoOpen = false;
   function render(){
     const match = (t, team, ath) => (!fTeam || team === fTeam) && (!fText || (t + ' ' + (team||'') + ' ' + (ath||'')).toLowerCase().includes(fText));
     const sRows = saved.filter(p=>match(p.title, p.team, p.athlete)).map(p=>`
       <tr><td><b>${escapeHtml(p.title||'Plan')}</b><div class="hint" style="margin:2px 0 0;">${escapeHtml(p.team||'–')}${p.athlete ? ' &middot; ' + escapeHtml(p.athlete) : ''} &middot; ${p.weeks||'?'} Wo. &times; ${p.days||'?'} Tage</div></td>
       <td class="hint" style="white-space:nowrap;">${tpFmtDate(p.updated_at)}<br>${escapeHtml(who[p.updated_by]||'')}</td>
-      <td style="white-space:nowrap;text-align:right;"><button type="button" class="primary small" data-open="${p.id}">&Ouml;ffnen</button> <button type="button" class="ghost small" data-del="${p.id}" title="L&ouml;schen">🗑</button></td></tr>`).join('');
+      <td style="white-space:nowrap;text-align:right;"><button type="button" class="primary small" data-open="${p.id}">&Ouml;ffnen</button> <button type="button" class="small tp-del" data-del="${p.id}" title="Plan endg&uuml;ltig l&ouml;schen">🗑 L&ouml;schen</button></td></tr>`).join('');
     const aRows = autos.filter(a=>match(a.title, a.team, a.athlete)).map((a,i)=>`
       <tr><td>${escapeHtml(a.title)}<div class="hint" style="margin:2px 0 0;">${a.kind==='group' ? 'Letzter Plan der Gruppe ' + escapeHtml(a.team) : 'Export f&uuml;r ' + escapeHtml(a.athlete || '?')}${a.weeks ? ' &middot; ' + a.weeks + ' Wo. &times; ' + a.days + ' Tage' : ''}</div></td>
       <td class="hint" style="white-space:nowrap;">${tpFmtDate(a.savedAt)}</td>
-      <td style="text-align:right;"><button type="button" class="small" data-auto="${autos.indexOf(a)}">&Ouml;ffnen</button></td></tr>`).join('');
+      <td style="white-space:nowrap;text-align:right;"><button type="button" class="small" data-auto="${autos.indexOf(a)}">&Ouml;ffnen</button> <button type="button" class="small tp-del" data-adel="${autos.indexOf(a)}" title="Sicherung l&ouml;schen">🗑 L&ouml;schen</button></td></tr>`).join('');
     box.innerHTML = `
       <h2 style="margin-bottom:10px;">📂 Pl&auml;ne &ouml;ffnen</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
@@ -2651,7 +2652,7 @@ async function tpOpenPlansDialog(){
       </div>
       <h3 style="font-size:13px;margin:6px 0;">Gespeicherte Pl&auml;ne <span class="hint">(alle Ger&auml;te &amp; Trainer:innen)</span></h3>
       <table style="width:100%;border-collapse:collapse;" class="tp-lib">${sRows || '<tr><td class="hint">Noch keine gespeicherten Pl&auml;ne &mdash; im Plan auf &bdquo;💾 Plan speichern&ldquo; klicken.</td></tr>'}</table>
-      <details style="margin-top:14px;"><summary style="cursor:pointer;font-weight:600;font-size:13px;">Automatische Sicherungen (${autos.length}) &mdash; letzter Plan je Gruppe, Excel-Exporte je Athletin</summary>
+      <details id="tpAutoDet" style="margin-top:14px;" ${autoOpen ? 'open' : ''}><summary style="cursor:pointer;font-weight:600;font-size:13px;">Automatische Sicherungen (${autos.length}) &mdash; letzter Plan je Gruppe, Excel-Exporte je Athletin</summary>
         <table style="width:100%;border-collapse:collapse;margin-top:6px;" class="tp-lib">${aRows || '<tr><td class="hint">Keine.</td></tr>'}</table>
       </details>
       <p class="hint" style="margin-top:12px;">Tipp: Einen Plan f&uuml;r eine andere Athletin nutzen &rarr; &ouml;ffnen, oben &bdquo;F&uuml;r wen?&ldquo; umstellen, anpassen und &bdquo;💾 Plan speichern&ldquo; &rarr; &bdquo;Als neuen Plan speichern&ldquo;.</p>
@@ -2660,6 +2661,7 @@ async function tpOpenPlansDialog(){
     q('#tpF').oninput = e => { fText = e.target.value.toLowerCase(); const pos = e.target.selectionStart; render(); const n = box.querySelector('#tpF'); n.focus(); n.setSelectionRange(pos,pos); };
     q('#tpFT').onchange = e => { fTeam = e.target.value; render(); };
     q('#tpClose').onclick = () => host.remove();
+    q('#tpAutoDet').ontoggle = e => { autoOpen = e.target.open; };
     box.querySelectorAll('[data-open]').forEach(b=>b.onclick = async ()=>{
       if(!confirm('Aktuellen Entwurf durch diesen Plan ersetzen?')) return;
       const r = await sb.from('tp_saved_plans').select('*').eq('id', b.dataset.open).single();
@@ -2675,6 +2677,21 @@ async function tpOpenPlansDialog(){
       saved.splice(saved.indexOf(p), 1);
       if(state.savedPlanId === p.id){ delete state.savedPlanId; delete state.savedPlanName; saveState(true); tpUpdateOpenInfo(); }
       render(); toast('Gelöscht');
+    });
+    box.querySelectorAll('[data-adel]').forEach(b=>b.onclick = ()=>{
+      const a = autos[+b.dataset.adel];
+      if(!confirm('Sicherung „' + a.title + '“ (' + (a.kind==='group' ? 'Gruppe ' + a.team : a.athlete) + ') löschen?')) return;
+      if(a.kind === 'group'){ delete GROUP_PLANS[a.key]; saveGroupPlans(); if(typeof updateGroupPlanButton === 'function') updateGroupPlanButton(); }
+      else {
+        const list = ATHLETE_PLANS[a.key] || [];
+        const e = list.find(x=>x.savedAt === a.savedAt && (x.title || (x.state && x.state.title) || 'Plan') === a.title);
+        if(e) list.splice(list.indexOf(e), 1);
+        if(!list.length) delete ATHLETE_PLANS[a.key];
+        saveAthletePlans();
+      }
+      autos.splice(autos.indexOf(a), 1);
+      autos.forEach(x=>{ if(x.kind==='athlete' && x.key===a.key){ const l = ATHLETE_PLANS[x.key]||[]; x.idx = l.findIndex(y=>y.savedAt===x.savedAt); } });
+      render(); toast('Sicherung gelöscht');
     });
     box.querySelectorAll('[data-auto]').forEach(b=>b.onclick = ()=>{
       const a = autos[+b.dataset.auto];
