@@ -184,6 +184,24 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   .legend{display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--text-2); margin-top:6px;}
   .legend span{display:inline-flex; align-items:center; gap:6px;}
+
+  /* Plan-Konfiguration übersichtlich (2026-09-28) */
+  .tp-cfg-group{ margin-bottom:14px; }
+  .tp-cfg-title{ font-size:12px; font-weight:800; color:#00113d; margin:0 0 8px; text-transform:uppercase; letter-spacing:.4px; }
+  .tp-cfg-group.narrow .config-grid{ grid-template-columns:repeat(auto-fill, minmax(220px, 320px)); }
+  .tp-actbar{ display:flex; flex-wrap:wrap; gap:10px 18px; align-items:flex-end; margin-top:6px; padding-top:14px; border-top:1px solid var(--grid); }
+  .tp-actgrp{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .tp-actlbl{ width:100%; font-size:10.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; }
+  .tp-more{ margin-left:auto; position:relative; }
+  .tp-more > summary{ list-style:none; cursor:pointer; padding:9px 14px; border:1px solid var(--grid); border-radius:9px; font-size:13px; font-weight:600; background:#fff; }
+  .tp-more > summary::-webkit-details-marker{ display:none; }
+  .tp-more-body{ position:absolute; right:0; top:calc(100% + 6px); z-index:20; background:#fff; border:1px solid var(--grid); border-radius:12px; padding:12px; box-shadow:0 10px 30px rgba(0,17,61,.15); display:flex; flex-direction:column; gap:8px; min-width:280px; }
+  .tp-more-body .tp-cfg-group{ margin:6px 0 0; }
+  .tp-more-body .config-grid{ grid-template-columns:1fr !important; }
+  .tp-cfg-foot{ display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-top:10px; font-size:12px; color:var(--muted); }
+  .cloud-status.ok{ color:#1f7a45; } .cloud-status.err{ color:#b0281c; font-weight:600; } .cloud-status.busy{ color:var(--muted); }
+  .tp-lib td{ border-top:1px solid var(--grid); padding:8px 6px; vertical-align:middle; font-size:13px; }
+  @media (max-width:640px){ .tp-more{ margin-left:0; } .tp-more-body{ left:0; right:auto; } }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -205,6 +223,94 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       if(window.appRailInit) window.appRailInit(r.data.role, window.appPerms);
     });
   });
+})();
+</script>
+<script>
+/* Trainingsplanung: Cloud-Speicher (Supabase tp_builder_store, 2026-09-28)
+   Alle Daten der Trainingsplanung lagen bisher nur im Browser. Jetzt:
+   - jeder Speichervorgang (localStorage) der geteilten Schlüssel geht zusätzlich in die Cloud
+   - beim Öffnen wird der neueste Cloud-Stand geladen (anderes Gerät/andere Person) – bei Änderung einmal neu laden
+   Geteilt: Übungsbibliothek, Positionen/Optionen, Athleten, Gruppen, Plan-Historie je Gruppe/Athletin.
+   Je Person: der aktuelle Arbeitsstand (state:<user-id>). */
+(function(){
+  var sb = window.appSb; if(!sb) return;
+  var SHARED = ["tp_builder_db_v2","tp_builder_vocab_v1","tp_builder_athletes_v1","tp_builder_groups_v1","tp_builder_group_plans_v1","tp_builder_athlete_plans_v1"];
+  var STATE = "tp_builder_state_v1";
+  var ready = false, uid = null, pending = {}, timer = null;
+  var raw = Storage.prototype.setItem;
+  var ls = window.localStorage;
+  function cloudKey(k){ return k === STATE ? (uid ? "state:" + uid : null) : (SHARED.indexOf(k) !== -1 ? k : null); }
+  function localKey(ck){ return ck.indexOf("state:") === 0 ? STATE : ck; }
+  function rawSet(k, v){ try { raw.call(ls, k, v); } catch(e){} }
+  function setStatus(t, cls){
+    window.__tpCloudStatus = { t: t, cls: cls || "" };
+    var el = document.getElementById("cloudStatus");
+    if(el){ el.textContent = t; el.className = "cloud-status " + (cls || ""); }
+  }
+  Storage.prototype.setItem = function(k, v){
+    raw.call(this, k, v);
+    if(this !== ls || !(k === STATE || SHARED.indexOf(k) !== -1)) return;
+    rawSet("tpc_dirty_" + k, "1");
+    if(ready && cloudKey(k)){ pending[k] = true; clearTimeout(timer); timer = setTimeout(flush, 1200); }
+  };
+  async function flush(){
+    var keys = Object.keys(pending); pending = {};
+    if(!keys.length || !uid) return;
+    setStatus("☁︎ speichert …", "busy");
+    var rows = [];
+    keys.forEach(function(k){
+      var v = null; try { v = JSON.parse(ls.getItem(k)); } catch(e){}
+      if(v !== null && cloudKey(k)) rows.push({ key: cloudKey(k), data: v, updated_at: new Date().toISOString(), updated_by: uid });
+    });
+    if(!rows.length) return;
+    var r = await sb.from("tp_builder_store").upsert(rows).select("key,updated_at");
+    if(r.error){
+      keys.forEach(function(k){ pending[k] = true; });
+      setStatus("☁︎ nicht gespeichert – nur auf diesem Gerät (offline?)", "err");
+      clearTimeout(timer); timer = setTimeout(flush, 15000);
+      return;
+    }
+    (r.data || []).forEach(function(x){ var lk = localKey(x.key); rawSet("tpc_stamp_" + lk, x.updated_at); try { ls.removeItem("tpc_dirty_" + lk); } catch(e){} });
+    setStatus("☁︎ in der Cloud gespeichert", "ok");
+  }
+  window.tpCloudFlush = function(){ SHARED.concat([STATE]).forEach(function(k){ if(ls.getItem("tpc_dirty_" + k)) pending[k] = true; }); return flush(); };
+  document.addEventListener("visibilitychange", function(){ if(document.hidden && ready) flush(); });
+
+  (async function pull(){
+    setStatus("☁︎ lädt …", "busy");
+    var s = await sb.auth.getSession();
+    if(!s.data.session) return;
+    uid = s.data.session.user.id;
+    var r = await sb.from("tp_builder_store").select("key,data,updated_at");
+    if(r.error){ setStatus("☁︎ Cloud nicht erreichbar – nur auf diesem Gerät", "err"); ready = true; return; }
+    var cloud = {}; (r.data || []).forEach(function(x){ cloud[x.key] = x; });
+    var changed = false, toPush = [];
+    SHARED.concat([STATE]).forEach(function(k){
+      var c = cloud[cloudKey(k)], local = ls.getItem(k), st = ls.getItem("tpc_stamp_" + k), dirty = !!ls.getItem("tpc_dirty_" + k);
+      if(c){
+        if(!st || new Date(c.updated_at) > new Date(st)){
+          var nv = JSON.stringify(c.data);
+          if(nv !== local){
+            if(local && !st) rawSet("tpc_backup_" + k, local);   // erster Abgleich dieses Geräts: alten lokalen Stand aufheben
+            rawSet(k, nv); changed = true;
+          }
+          rawSet("tpc_stamp_" + k, c.updated_at);
+          try { ls.removeItem("tpc_dirty_" + k); } catch(e){}
+        } else if(dirty && local){ toPush.push(k); }
+      } else if(local){ toPush.push(k); }
+    });
+    ready = true;
+    if(changed){
+      var last = 0; try { last = parseInt(sessionStorage.getItem("tpc_reload"), 10) || 0; } catch(e){}
+      if(Date.now() - last > 15000){
+        try { sessionStorage.setItem("tpc_reload", String(Date.now())); } catch(e){}
+        location.reload();
+        return;
+      }
+    }
+    if(toPush.length){ toPush.forEach(function(k){ pending[k] = true; }); flush(); }
+    else setStatus("☁︎ Cloud aktuell", "ok");
+  })();
 })();
 </script>
 <div class="app-backbar" style="background:#a1d7ff;color:#00113d;font-family:-apple-system,sans-serif;font-size:13px;font-weight:600;padding:9px 16px;">
@@ -2433,6 +2539,204 @@ async function openPublishDialog(){
   syncConfigInputs(); renderPrescriptionTable(); renderTabs(); renderPanels();
   toast('Laufender Plan geladen – Übungen ändern, dann „📲 In App veröffentlichen“ (ab aktueller Woche)');
 })();
+/* ---------------------------------------------------------------------
+   Plan-Bibliothek in der Cloud (tp_saved_plans, 2026-09-28) + übersichtlichere Plan-Konfiguration
+   - „💾 Plan speichern“: aktuellen Plan unter einem Namen speichern (neu oder den geöffneten aktualisieren)
+   - „📂 Pläne öffnen“: alle gespeicherten Pläne (alle Geräte, alle Trainer:innen) + automatische
+     Sicherungen (letzter Plan je Gruppe, letzte Exporte je Athletin) – öffnen, dann für andere Athlet:innen nutzen
+--------------------------------------------------------------------- */
+function tpAthleteName(){
+  const a = state.athleteIdx ? ATHLETES.find(x=>x.id===state.athleteIdx) : null;
+  return a ? athleteDisplayName(a, false) : '';
+}
+function tpFmtDate(iso){ if(!iso) return ''; const d = new Date(iso); return d.toLocaleDateString('de-DE') + ' ' + d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}); }
+function tpOpenModal(inner){
+  const host = document.createElement('div');
+  host.className = 'modal-backdrop open';
+  host.innerHTML = `<div class="modal" style="max-width:760px;">${inner}</div>`;
+  document.body.appendChild(host);
+  host.addEventListener('click', e=>{ if(e.target === host) host.remove(); });
+  return host;
+}
+function tpApplyLoadedState(content, extra){
+  state = Object.assign(defaultState(), JSON.parse(JSON.stringify(content)), extra || {});
+  if(state.athleteIdx && !ATHLETES.some(a=>a.id===state.athleteIdx)) state.athleteIdx = "";
+  if(state.team && !GROUPS.includes(state.team)){ GROUPS.push(state.team); sortGroups(); saveGroups(); }
+  ensurePrescription(); state.activeDay = 1;
+  for(let d=1; d<=state.days; d++) ensureDayStructure(d);
+  saveState(true);
+  syncConfigInputs(); renderPrescriptionTable(); renderTabs(); renderPanels();
+  tpUpdateOpenInfo();
+}
+function tpUpdateOpenInfo(){
+  const el = document.getElementById('tpOpenInfo');
+  if(!el) return;
+  el.innerHTML = state.savedPlanId
+    ? `Ge&ouml;ffnet: <b>${escapeHtml(state.savedPlanName || state.title || 'Plan')}</b> &middot; &Auml;nderungen mit &bdquo;💾 Plan speichern&ldquo; sichern`
+    : `Neuer Plan &middot; noch nicht in der Plan-Bibliothek gespeichert`;
+}
+
+async function tpSavePlanDialog(){
+  const sb = window.appSb;
+  if(!sb){ alert('Keine Verbindung zur App.'); return; }
+  const who = tpAthleteName();
+  const def = state.savedPlanName || [state.title || 'Plan', who || state.team].filter(Boolean).join(' – ');
+  const host = tpOpenModal(`
+    <h2 style="margin-bottom:6px;">💾 Plan speichern</h2>
+    <p class="hint" style="margin:0 0 12px;">Gespeicherte Pl&auml;ne sind auf allen Ger&auml;ten (Mac, iPad, Handy) und f&uuml;r alle Trainer:innen unter &bdquo;📂 Pl&auml;ne &ouml;ffnen&ldquo; verf&uuml;gbar.</p>
+    <div class="field"><label>Name des Plans</label><input type="text" id="tpSaveName" value="${escapeHtml(def)}" style="width:100%;"></div>
+    <p class="hint">Team: <b>${escapeHtml(state.team || '–')}</b> &middot; F&uuml;r: <b>${escapeHtml(who || 'ganze Gruppe')}</b> &middot; ${state.weeks} Wochen &times; ${state.days} Tage</p>
+    <div class="actions" style="justify-content:flex-end;">
+      <button type="button" id="tpSaveCancel">Abbrechen</button>
+      ${state.savedPlanId ? `<button type="button" id="tpSaveNew">Als neuen Plan speichern</button>
+      <button type="button" class="primary" id="tpSaveUpd">&Auml;nderungen speichern</button>` : `<button type="button" class="primary" id="tpSaveNew">Speichern</button>`}
+    </div>`);
+  const q = s => host.querySelector(s);
+  q('#tpSaveName').focus(); q('#tpSaveName').select();
+  q('#tpSaveCancel').onclick = () => host.remove();
+  const doSave = async (asNew) => {
+    const name = q('#tpSaveName').value.trim() || def;
+    const { data: { user } } = await sb.auth.getUser();
+    const content = JSON.parse(JSON.stringify(state));
+    delete content.savedPlanId; delete content.savedPlanName;
+    const row = { title: name, team: state.team || null, athlete: who || null, weeks: state.weeks, days: state.days,
+      content, updated_by: user.id, updated_at: new Date().toISOString() };
+    let r;
+    if(!asNew && state.savedPlanId) r = await sb.from('tp_saved_plans').update(row).eq('id', state.savedPlanId).select('id').single();
+    else r = await sb.from('tp_saved_plans').insert(Object.assign({ created_by: user.id }, row)).select('id').single();
+    if(r.error){ alert('Speichern fehlgeschlagen: ' + r.error.message); return; }
+    state.savedPlanId = r.data.id; state.savedPlanName = name;
+    saveState(true); snapshotCurrentPlan();
+    host.remove(); tpUpdateOpenInfo();
+    toast('„' + name + '“ gespeichert – auf allen Geräten verfügbar');
+  };
+  q('#tpSaveNew').onclick = () => doSave(true);
+  if(q('#tpSaveUpd')) q('#tpSaveUpd').onclick = () => doSave(false);
+}
+
+async function tpOpenPlansDialog(){
+  const sb = window.appSb;
+  if(!sb){ alert('Keine Verbindung zur App.'); return; }
+  const host = tpOpenModal(`<h2>📂 Pl&auml;ne &ouml;ffnen</h2><p>Lade …</p>`);
+  const box = host.querySelector('.modal');
+  const [pl, pr] = await Promise.all([
+    sb.from('tp_saved_plans').select('id,title,team,athlete,weeks,days,updated_at,updated_by').order('updated_at', {ascending:false}),
+    sb.from('profiles').select('id,name'),
+  ]);
+  if(pl.error){ box.innerHTML = `<h2>📂 Pl&auml;ne &ouml;ffnen</h2><p style="color:#b0281c">Fehler: ${escapeHtml(pl.error.message)}</p><button type="button" id="tpX">Schlie&szlig;en</button>`; box.querySelector('#tpX').onclick = ()=>host.remove(); return; }
+  const who = Object.fromEntries((pr.data||[]).map(p=>[p.id, p.name]));
+  const saved = pl.data || [];
+  // automatische Sicherungen (geräteübergreifend über den Cloud-Speicher)
+  const autos = [];
+  Object.keys(GROUP_PLANS||{}).forEach(g=>{ const e = GROUP_PLANS[g]; if(e && e.state) autos.push({ kind:'group', key:g, title: e.state.title || 'Plan', team:g, athlete:'', savedAt:e.savedAt, weeks:e.state.weeks, days:e.state.days }); });
+  Object.keys(ATHLETE_PLANS||{}).forEach(id=>{ const a = ATHLETES.find(x=>x.id===id); (ATHLETE_PLANS[id]||[]).forEach((e,i)=>{ if(e && e.state) autos.push({ kind:'athlete', key:id, idx:i, title: e.title || e.state.title || 'Plan', team:e.team || '', athlete: a ? athleteDisplayName(a,false) : '', savedAt:e.savedAt, weeks:e.state.weeks, days:e.state.days }); }); });
+  autos.sort((a,b)=>(b.savedAt||'').localeCompare(a.savedAt||''));
+  const teams = [...new Set(saved.map(p=>p.team).concat(autos.map(a=>a.team)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de'));
+  let fText = '', fTeam = '';
+  function render(){
+    const match = (t, team, ath) => (!fTeam || team === fTeam) && (!fText || (t + ' ' + (team||'') + ' ' + (ath||'')).toLowerCase().includes(fText));
+    const sRows = saved.filter(p=>match(p.title, p.team, p.athlete)).map(p=>`
+      <tr><td><b>${escapeHtml(p.title||'Plan')}</b><div class="hint" style="margin:2px 0 0;">${escapeHtml(p.team||'–')}${p.athlete ? ' &middot; ' + escapeHtml(p.athlete) : ''} &middot; ${p.weeks||'?'} Wo. &times; ${p.days||'?'} Tage</div></td>
+      <td class="hint" style="white-space:nowrap;">${tpFmtDate(p.updated_at)}<br>${escapeHtml(who[p.updated_by]||'')}</td>
+      <td style="white-space:nowrap;text-align:right;"><button type="button" class="primary small" data-open="${p.id}">&Ouml;ffnen</button> <button type="button" class="ghost small" data-del="${p.id}" title="L&ouml;schen">🗑</button></td></tr>`).join('');
+    const aRows = autos.filter(a=>match(a.title, a.team, a.athlete)).map((a,i)=>`
+      <tr><td>${escapeHtml(a.title)}<div class="hint" style="margin:2px 0 0;">${a.kind==='group' ? 'Letzter Plan der Gruppe ' + escapeHtml(a.team) : 'Export f&uuml;r ' + escapeHtml(a.athlete || '?')}${a.weeks ? ' &middot; ' + a.weeks + ' Wo. &times; ' + a.days + ' Tage' : ''}</div></td>
+      <td class="hint" style="white-space:nowrap;">${tpFmtDate(a.savedAt)}</td>
+      <td style="text-align:right;"><button type="button" class="small" data-auto="${autos.indexOf(a)}">&Ouml;ffnen</button></td></tr>`).join('');
+    box.innerHTML = `
+      <h2 style="margin-bottom:10px;">📂 Pl&auml;ne &ouml;ffnen</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <input type="text" id="tpF" placeholder="Suchen (Name, Team, Athletin) …" value="${escapeHtml(fText)}" style="flex:1;min-width:180px;">
+        <select id="tpFT" style="width:auto;"><option value="">Alle Teams</option>${teams.map(t=>`<option ${t===fTeam?'selected':''}>${escapeHtml(t)}</option>`).join('')}</select>
+      </div>
+      <h3 style="font-size:13px;margin:6px 0;">Gespeicherte Pl&auml;ne <span class="hint">(alle Ger&auml;te &amp; Trainer:innen)</span></h3>
+      <table style="width:100%;border-collapse:collapse;" class="tp-lib">${sRows || '<tr><td class="hint">Noch keine gespeicherten Pl&auml;ne &mdash; im Plan auf &bdquo;💾 Plan speichern&ldquo; klicken.</td></tr>'}</table>
+      <details style="margin-top:14px;"><summary style="cursor:pointer;font-weight:600;font-size:13px;">Automatische Sicherungen (${autos.length}) &mdash; letzter Plan je Gruppe, Excel-Exporte je Athletin</summary>
+        <table style="width:100%;border-collapse:collapse;margin-top:6px;" class="tp-lib">${aRows || '<tr><td class="hint">Keine.</td></tr>'}</table>
+      </details>
+      <p class="hint" style="margin-top:12px;">Tipp: Einen Plan f&uuml;r eine andere Athletin nutzen &rarr; &ouml;ffnen, oben &bdquo;F&uuml;r wen?&ldquo; umstellen, anpassen und &bdquo;💾 Plan speichern&ldquo; &rarr; &bdquo;Als neuen Plan speichern&ldquo;.</p>
+      <div class="actions" style="justify-content:flex-end;"><button type="button" id="tpClose">Schlie&szlig;en</button></div>`;
+    const q = s => box.querySelector(s);
+    q('#tpF').oninput = e => { fText = e.target.value.toLowerCase(); const pos = e.target.selectionStart; render(); const n = box.querySelector('#tpF'); n.focus(); n.setSelectionRange(pos,pos); };
+    q('#tpFT').onchange = e => { fTeam = e.target.value; render(); };
+    q('#tpClose').onclick = () => host.remove();
+    box.querySelectorAll('[data-open]').forEach(b=>b.onclick = async ()=>{
+      if(!confirm('Aktuellen Entwurf durch diesen Plan ersetzen?')) return;
+      const r = await sb.from('tp_saved_plans').select('*').eq('id', b.dataset.open).single();
+      if(r.error){ alert('Öffnen fehlgeschlagen: ' + r.error.message); return; }
+      tpApplyLoadedState(r.data.content, { savedPlanId: r.data.id, savedPlanName: r.data.title });
+      host.remove(); toast('„' + r.data.title + '“ geöffnet');
+    });
+    box.querySelectorAll('[data-del]').forEach(b=>b.onclick = async ()=>{
+      const p = saved.find(x=>x.id===b.dataset.del);
+      if(!confirm('Gespeicherten Plan „' + (p.title||'Plan') + '“ endgültig löschen?')) return;
+      const r = await sb.from('tp_saved_plans').delete().eq('id', p.id);
+      if(r.error){ alert('Löschen fehlgeschlagen: ' + r.error.message); return; }
+      saved.splice(saved.indexOf(p), 1);
+      if(state.savedPlanId === p.id){ delete state.savedPlanId; delete state.savedPlanName; saveState(true); tpUpdateOpenInfo(); }
+      render(); toast('Gelöscht');
+    });
+    box.querySelectorAll('[data-auto]').forEach(b=>b.onclick = ()=>{
+      const a = autos[+b.dataset.auto];
+      if(!confirm('Aktuellen Entwurf durch diese Sicherung ersetzen?')) return;
+      const ok = a.kind === 'group' ? loadGroupPlan(a.key) : loadAthletePlanAt(a.key, a.idx);
+      if(ok){ delete state.savedPlanId; delete state.savedPlanName; saveState(true); tpUpdateOpenInfo(); host.remove(); toast('Sicherung geöffnet'); }
+    });
+  }
+  render();
+}
+
+/* Übersichtlichere Plan-Konfiguration: Felder in drei Gruppen, Knöpfe in Aktionsgruppen */
+setTimeout(function tpTidyConfig(){
+  const grid = document.querySelector('.config-grid');
+  const card = grid && grid.closest('.card');
+  if(!card || document.getElementById('tpCfgNew')) return;
+  const fieldOf = id => { const el = document.getElementById(id); return el ? el.closest('.field') : null; };
+  const group = (title, ids, cls) => {
+    const g = document.createElement('div'); g.className = 'tp-cfg-group ' + (cls||'');
+    g.innerHTML = `<div class="tp-cfg-title">${title}</div><div class="config-grid"></div>`;
+    ids.map(fieldOf).filter(Boolean).forEach(f => g.querySelector('.config-grid').appendChild(f));
+    return g;
+  };
+  const wrap = document.createElement('div'); wrap.id = 'tpCfgNew';
+  wrap.appendChild(group('1 &middot; Plan', ['cfgTitle','cfgTeam','cfgDays','cfgWeeks','cfgStart','cfgLayout']));
+  wrap.appendChild(group('2 &middot; F&uuml;r wen?', ['cfgAthlete'], 'narrow'));
+  const exp = group('Export-Einstellungen', ['cfgLang','cfgNameOrder'], 'narrow');
+  // alte Einzel-Lader (Pläne dieser Athletin / letzter Plan der Gruppe) stecken jetzt in „📂 Pläne öffnen“
+  const apf = document.getElementById('athletePlanField'); if(apf) apf.style.display = 'none';
+  grid.replaceWith(wrap);
+
+  const acts = card.querySelector('.actions');
+  const btn = id => document.getElementById(id);
+  const mk = (id, txt, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.id = id; b.textContent = txt; if(cls) b.className = cls; b.onclick = fn; return b; };
+  const bar = document.createElement('div'); bar.className = 'tp-actbar';
+  const g1 = document.createElement('div'); g1.className = 'tp-actgrp';
+  g1.innerHTML = '<span class="tp-actlbl">Speichern</span>';
+  g1.append(mk('btnCloudSave', '💾 Plan speichern', 'primary', tpSavePlanDialog), mk('btnCloudOpen', '📂 Pläne öffnen', '', tpOpenPlansDialog));
+  const g2 = document.createElement('div'); g2.className = 'tp-actgrp';
+  g2.innerHTML = '<span class="tp-actlbl">Athlet:innen</span>';
+  if(btn('btnPublishApp')) g2.append(btn('btnPublishApp'));
+  const g3 = document.createElement('div'); g3.className = 'tp-actgrp';
+  g3.innerHTML = '<span class="tp-actlbl">Export</span>';
+  if(btn('btnExport')){ btn('btnExport').classList.remove('primary'); g3.append(btn('btnExport')); }
+  if(btn('btnSeriesExport')) g3.append(btn('btnSeriesExport'));
+  const more = document.createElement('details'); more.className = 'tp-more';
+  more.innerHTML = '<summary>⋯ Mehr</summary><div class="tp-more-body"></div>';
+  const mb = more.querySelector('.tp-more-body');
+  ['btnFullBackupExport','btnFullBackupImport','btnReset'].forEach(id=>{ if(btn(id)) mb.append(btn(id)); });
+  mb.append(exp);
+  ['btnSave','btnLoadGroupPlan'].forEach(id=>{ if(btn(id)) btn(id).style.display = 'none'; });
+  const status = document.createElement('span'); status.id = 'cloudStatus'; status.className = 'cloud-status';
+  if(window.__tpCloudStatus){ status.textContent = window.__tpCloudStatus.t; status.className = 'cloud-status ' + window.__tpCloudStatus.cls; }
+  const info = document.createElement('div'); info.id = 'tpOpenInfo'; info.className = 'tp-openinfo';
+  bar.append(g1, g2, g3, more);
+  acts.replaceWith(bar);
+  const fi = document.getElementById('fullBackupFileInput'); if(fi) bar.append(fi);
+  const foot = document.createElement('div'); foot.className = 'tp-cfg-foot'; foot.append(info, status);
+  bar.insertAdjacentElement('afterend', foot);
+  tpUpdateOpenInfo();
+}, 0);
+
 function escapeHtmlSeries(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 (function(){
   const b = document.createElement('button');
