@@ -195,6 +195,11 @@
   .steer-chip{ font-size:.8rem; padding:4px 10px; border-radius:999px; border:1.5px solid var(--brand, #005ba4); background:var(--brand, #005ba4); color:#fff; cursor:pointer; }
   .steer-chip.off{ background:transparent; color:var(--ink-faint); border-color:var(--line); text-decoration:line-through; }
   .steer-chip .nd{ opacity:.75; font-size:.72rem; margin-left:4px; }
+  .lm-fold{ cursor:pointer; user-select:none; }
+  .lm-fold-ic{ display:inline-block; transition:transform .15s ease; color:var(--ink-faint); margin-right:4px; }
+  #wellnessEntry:not(.lm-collapsed) .lm-fold-ic{ transform:rotate(90deg); }
+  #wellnessEntry.lm-collapsed > :not(.section-head){ display:none !important; }
+  #wellnessEntry.lm-collapsed .section-head .btn{ display:none; }
   .steer-target .lbl{ font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-faint); }
   .steer-target button{ width:30px; height:30px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:1rem; cursor:pointer; }
   .steer-target button:hover{ border-color:var(--accent); }
@@ -429,7 +434,7 @@
   </section>
 
   <section id="wellnessEntry">
-    <div class="section-head"><h2>Wochen-Erfassung &middot; Wellness (1&ndash;5)</h2>
+    <div class="section-head"><h2 id="wellnessToggle" class="lm-fold" role="button" tabindex="0" title="Ein-/ausklappen"><span class="lm-fold-ic">&#9656;</span> Wochen-Erfassung &middot; Wellness (1&ndash;5)</h2>
       <button class="btn" id="appWellnessImportBtn" title="Wellness-Checks aus der Trainings-App für diese Woche laden">&#128241; Aus App übernehmen</button>
       <button class="btn" id="wellnessPasteToggleBtn" style="margin-left:auto;">Aus Excel einf&uuml;gen</button>
       <button class="btn" id="clearWellnessWeekBtn" style="color:var(--zone-r);">Woche leeren</button>
@@ -1826,6 +1831,21 @@
     var el = document.getElementById("steerTeamOverview");
     if (el) el.innerHTML = steerPlayers().length ? steerTeamOverviewHtml("screen") : "<div class='to-cap'>Noch keine Spielerinnen im Kader.</div>";
   }
+
+  (function(){
+    var sec = document.getElementById("wellnessEntry"), t = document.getElementById("wellnessToggle");
+    if (!sec || !t) return;
+    var open = false;
+    try { open = localStorage.getItem("lm_wellness_open") === "1"; } catch(e){}
+    sec.classList.toggle("lm-collapsed", !open);
+    var flip = function(){
+      open = sec.classList.contains("lm-collapsed");
+      sec.classList.toggle("lm-collapsed", !open);
+      try { localStorage.setItem("lm_wellness_open", open ? "1" : "0"); } catch(e){}
+    };
+    t.addEventListener("click", flip);
+    t.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); flip(); } });
+  })();
 
   function renderWeekSteering(){
     renderSteerSel();
