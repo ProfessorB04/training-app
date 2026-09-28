@@ -191,7 +191,7 @@ function renderAuth() {
         <h1>Balance Movement</h1>
         <p class="sub">Trainings-App</p>
         <form id="loginForm" class="auth-form">
-          <label>E-Mail<input type="email" id="loginEmail" required autocomplete="username"></label>
+          <label>E-Mail oder Benutzername<input type="text" id="loginEmail" required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"></label>
           <label>Passwort<input type="password" id="loginPassword" required autocomplete="current-password"></label>
           <button type="submit">Anmelden</button>
           <p class="error" id="loginError">${(() => { try { const f = sessionStorage.getItem('bm_idle_logout'); sessionStorage.removeItem('bm_idle_logout'); return f ? 'Du wurdest nach 30 Minuten Inaktivit&auml;t automatisch abgemeldet.' : ''; } catch (e) { return ''; } })()}</p>
@@ -199,6 +199,7 @@ function renderAuth() {
         <form id="forgotForm" class="auth-form" hidden>
           <label>E-Mail<input type="email" id="forgotEmail" required autocomplete="username"></label>
           <button type="submit">Link zum Zur&uuml;cksetzen senden</button>
+          <p class="hint" style="margin:0;">Nur mit E-Mail m&ouml;glich. Wer sich mit Benutzernamen anmeldet, bekommt ein neues Einmalpasswort vom Trainer.</p>
           <p class="error" id="forgotError"></p>
           <p class="ok" id="forgotOk"></p>
         </form>
@@ -212,11 +213,21 @@ function renderAuth() {
 
   document.getElementById('loginForm').onsubmit = async (e) => {
     e.preventDefault();
-    const email = document.getElementById('loginEmail').value.trim();
+    const login = document.getElementById('loginEmail').value.trim();
     const password = document.getElementById('loginPassword').value;
+    const errEl = document.getElementById('loginError');
     if (window.appIdleFreshLogin) window.appIdleFreshLogin();
-    const { error } = await sb.auth.signInWithPassword({ email, password });
-    document.getElementById('loginError').textContent = error ? 'E-Mail oder Passwort falsch.' : '';
+    if (login.includes('@')) {
+      const { error } = await sb.auth.signInWithPassword({ email: login, password });
+      errEl.textContent = error ? 'E-Mail oder Passwort falsch.' : '';
+      return;
+    }
+    // Benutzername: Prüfung auf dem Server (E-Mail-Adresse wird nie an den Browser gegeben)
+    errEl.textContent = '';
+    const { data, error } = await sb.functions.invoke('invite-user', { body: { action: 'login', username: login.toLowerCase(), password } });
+    if (error || !data || !data.access_token) { errEl.textContent = 'Benutzername oder Passwort falsch.'; return; }
+    const { error: sErr } = await sb.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
+    if (sErr) errEl.textContent = 'Anmeldung fehlgeschlagen: ' + sErr.message;
   };
 
   const loginForm = document.getElementById('loginForm');
@@ -258,7 +269,11 @@ async function renderSetPassword() {
   // E-Mail des Kontos mit anzeigen: sonst speichert der Passwort-Manager des Browsers das neue Passwort
   // beim falschen Konto (z. B. beim Admin-Zugang, wenn mehrere Personen dasselbe Gerät nutzen).
   let email = '';
-  try { const { data: { user } } = await sb.auth.getUser(); email = (user && user.email) || ''; } catch (e) {}
+  try {
+    const { data: { user } } = await sb.auth.getUser(); email = (user && user.email) || '';
+    const { data: pr } = await sb.from('profiles').select('username').eq('id', user.id).single();
+    if (pr && pr.username && (isNoMail(email) || !email)) email = pr.username;
+  } catch (e) {}
   appEl.innerHTML = `
     <main class="login-page">
       <div class="login-card">
@@ -266,7 +281,7 @@ async function renderSetPassword() {
         <h1>Willkommen</h1>
         <p class="sub">Bitte lege jetzt dein eigenes Passwort fest (mind. 10 Zeichen). Das Einmalpasswort ist danach ung&uuml;ltig.</p>
         <form id="setPwForm" class="auth-form">
-          <label>Konto<input type="email" id="setPwUser" name="username" autocomplete="username" value="${esc(email)}" readonly></label>
+          <label>Konto<input type="text" id="setPwUser" name="username" autocomplete="username" value="${esc(email)}" readonly></label>
           <label>Neues Passwort<input type="password" id="newPassword" required minlength="10" autocomplete="new-password"></label>
           <label>Passwort wiederholen<input type="password" id="newPassword2" required minlength="10" autocomplete="new-password"></label>
           <button type="submit">Passwort speichern</button>
@@ -509,6 +524,18 @@ async function renderTrainerDashboard(profile) {
 // ---------------- Admin-Ansicht: Nutzerverwaltung ----------------
 let INVITE_PRESELECT = null;   // Athlet:in-ID, wenn aus dem Load Management „Zugang anlegen“ geklickt wurde
 
+// Zugänge ohne E-Mail haben intern eine Platzhalter-Adresse
+const NOMAIL_DOMAIN = '@ohne-email.balancemovement.de';
+const isNoMail = (email) => !!email && email.toLowerCase().endsWith(NOMAIL_DOMAIN);
+// Vorschlag für Benutzernamen: vorname.n (Umlaute umschreiben)
+function suggestUsername(name) {
+  const t = String(name || '').toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 .-]/g, '').trim().split(/\s+/).filter(Boolean);
+  if (!t.length) return '';
+  const u = t.length > 1 ? t[0] + '.' + t[t.length - 1][0] : t[0];
+  return u.replace(/^[^a-z0-9]+/, '').slice(0, 30);
+}
+
 async function renderTeamPage(profile) {
   if (!isAdmin(profile)) { renderMenu(profile); return; }
   const mgmt = await loadAthleteData().catch(() => null);
@@ -520,7 +547,7 @@ async function renderTeamPage(profile) {
   const statusCell = (u) => {
     const st = statusById[u.id];
     if (!st) return '<span class="muted">–</span>';
-    const mail = `<div class="status-mail">${esc(st.email || '')}</div>`;
+    const mail = `<div class="status-mail">${isNoMail(st.email) ? '<i>ohne E-Mail</i>' : esc(st.email || '')}</div>`;
     if (!st.last_sign_in_at) return `<span class="status-pill open">Erste Anmeldung ausstehend</span>${mail}`;
     if (st.must_change) return `<span class="status-pill half" title="Mit Einmalpasswort angemeldet, eigenes Passwort noch nicht festgelegt">Eigenes Passwort fehlt</span>${mail}`;
     return `<span class="status-pill ok">Aktiv</span> <span class="status-when">zuletzt ${fmtDT(st.last_sign_in_at)}</span>${mail}`;
@@ -532,7 +559,7 @@ async function renderTeamPage(profile) {
 
   const { data: users } = await sb
     .from('profiles')
-    .select('id, name, role, created_at, permissions')
+    .select('id, name, role, created_at, permissions, username')
     .order('role')
     .order('name');
 
@@ -560,14 +587,17 @@ async function renderTeamPage(profile) {
            </select>`;
         const permCell = u.role !== 'athlete' ? '<span class="muted">alle Tools</span>' :
           `<div class="chips">${permSummary(u.permissions)}</div><button type="button" class="secondary small-btn" data-perm="${u.id}" style="margin-top:4px;">Rechte</button>`;
-        return `<tr><td>${esc(u.name)}</td><td>${statusCell(u)}</td><td>${roleCell}</td><td>${permCell}</td><td>${linkCell}</td><td>${resetCell}</td></tr>`;
+        const unameCell = `<div class="uname">${u.username ? '&#128100; ' + esc(u.username) : '<span class="muted">kein Benutzername</span>'}
+            <button type="button" class="link-btn" data-uname="${u.id}" title="Benutzername f&uuml;r die Anmeldung festlegen">${u.username ? '&auml;ndern' : 'festlegen'}</button></div>`;
+        return `<tr><td><span class="uname-name">${esc(u.name)}</span>${unameCell}</td><td>${statusCell(u)}</td><td>${roleCell}</td><td>${permCell}</td><td>${linkCell}</td><td>${resetCell}</td></tr>`;
       }).join('')
     : `<tr><td colspan="6" class="muted">Noch keine Nutzer:innen.</td></tr>`;
 
   const content = `
     <div class="card">
       <h2>Neue Person einladen</h2>
-      <p class="hint">Selbstregistrierung ist deaktiviert. Name, Login-E-Mail und Rolle w&auml;hlen &mdash; die App erzeugt ein <b>Einmalpasswort</b>. Du schickst die Zugangsdaten an eine beliebige Adresse (oder per WhatsApp). Bei der ersten Anmeldung legt die Person ihr eigenes Passwort fest.</p>
+      <p class="hint">Anmelden geht mit <b>Benutzername oder E-Mail</b>. Ohne E-Mail reicht ein Benutzername (z.&nbsp;B. f&uuml;r Sch&uuml;ler:innen) &mdash; &bdquo;Passwort vergessen&ldquo; geht dann nicht, stattdessen hier ein neues Einmalpasswort erzeugen.</p>
+      <p class="hint">Selbstregistrierung ist deaktiviert. Name, Benutzername und/oder Login-E-Mail und Rolle w&auml;hlen &mdash; die App erzeugt ein <b>Einmalpasswort</b>. Du schickst die Zugangsdaten an eine beliebige Adresse (oder per WhatsApp). Bei der ersten Anmeldung legt die Person ihr eigenes Passwort fest.</p>
       <form id="inviteForm" class="inline-form">
         <label>Aus Athletenverwaltung
           <select id="inviteAthlete">
@@ -576,7 +606,8 @@ async function renderTeamPage(profile) {
           </select>
         </label>
         <label>Name<input type="text" id="inviteName" required></label>
-        <label>Login-E-Mail<input type="email" id="inviteEmail" required></label>
+        <label>Benutzername<input type="text" id="inviteUsername" placeholder="z. B. lotta.m" autocapitalize="none" autocorrect="off" spellcheck="false" title="3–30 Zeichen: a–z, 0–9, Punkt, Bindestrich, Unterstrich"></label>
+        <label>Login-E-Mail <span class="muted">(optional)</span><input type="email" id="inviteEmail"></label>
         <label>Rolle
           <select id="inviteRole">
             <option value="athlete">Athlet:in</option>
@@ -621,8 +652,27 @@ async function renderTeamPage(profile) {
   const invAth = document.getElementById('inviteAthlete');
   const fillFromAthlete = () => {
     const a = mAthletes.find(x => x.id === invAth.value);
-    if (a) { document.getElementById('inviteName').value = `${a.first_name} ${a.last_name}`; document.getElementById('inviteRole').value = 'athlete'; }
+    if (a) { document.getElementById('inviteName').value = `${a.first_name} ${a.last_name}`; document.getElementById('inviteRole').value = 'athlete'; unameAuto(); }
   };
+  // Benutzername aus dem Namen vorschlagen, solange nicht selbst geändert
+  const unIn = document.getElementById('inviteUsername');
+  let unTouched = false;
+  const unameAuto = () => { if (!unTouched) unIn.value = suggestUsername(document.getElementById('inviteName').value); };
+  document.getElementById('inviteName').addEventListener('input', unameAuto);
+  unIn.addEventListener('input', () => { unTouched = !!unIn.value; unIn.value = unIn.value.toLowerCase().replace(/\s/g, ''); });
+
+  // Benutzername bestehender Zugänge setzen/ändern
+  appEl.querySelectorAll('[data-uname]').forEach(btn => {
+    btn.onclick = async () => {
+      const u = sorted.find(x => x.id === btn.dataset.uname);
+      const v = prompt('Benutzername für ' + u.name + ' (3–30 Zeichen: a–z, 0–9, Punkt, Bindestrich, Unterstrich; leer = entfernen):', u.username || suggestUsername(u.name));
+      if (v === null) return;
+      const { data, error } = await sb.functions.invoke('invite-user', { body: { action: 'setUsername', userId: u.id, username: v.trim().toLowerCase() } });
+      if (error || (data && data.error)) { toast('Fehler: ' + (data && data.error ? data.error : error.message)); return; }
+      toast(data.username ? 'Benutzername „' + data.username + '“ gespeichert.' : 'Benutzername entfernt.');
+      renderTeamPage(profile);
+    };
+  });
   invAth.onchange = fillFromAthlete;
   if (preselect) { fillFromAthlete(); document.getElementById('inviteEmail').focus(); }
 
@@ -677,14 +727,16 @@ async function renderTeamPage(profile) {
     e.preventDefault();
     const name = document.getElementById('inviteName').value.trim();
     const email = document.getElementById('inviteEmail').value.trim();
+    const username = document.getElementById('inviteUsername').value.trim().toLowerCase();
     const role = document.getElementById('inviteRole').value;
     const msgEl = document.getElementById('inviteMsg');
     msgEl.hidden = false;
+    if (!email && !username) { msgEl.textContent = 'Bitte Benutzername und/oder E-Mail angeben.'; return; }
     msgEl.textContent = 'Lege Zugang an…';
 
     const athleteId = document.getElementById('inviteAthlete').value || null;
     const { data, error } = await sb.functions.invoke('invite-user', {
-      body: { name, email, role, athleteId },
+      body: { name, email, username, role, athleteId },
     });
 
     if (error || (data && data.error)) {
@@ -706,8 +758,10 @@ function showCredentials(d) {
     'Hallo ' + d.name + ',\n\n' +
     'hier sind deine Zugangsdaten für die Balance Movement Trainings-App:\n\n' +
     'Adresse: ' + appUrl + '\n' +
-    'Login-E-Mail: ' + d.email + '\n' +
+    (d.username ? 'Benutzername: ' + d.username + '\n' : '') +
+    (d.email ? 'Login-E-Mail: ' + d.email + '\n' : '') +
     'Einmalpasswort: ' + d.password + '\n\n' +
+    (d.username && d.email ? 'Anmelden kannst du dich mit dem Benutzernamen oder der E-Mail.\n' : '') +
     'Bei der ersten Anmeldung legst du dein eigenes Passwort fest.\n\n' +
     'Viele Grüße\nMaik';
   card.hidden = false;
@@ -715,11 +769,12 @@ function showCredentials(d) {
     <h2>Zugangsdaten f&uuml;r ${esc(d.name)}</h2>
     <div class="cred-grid">
       <span>Adresse</span><b>${esc(appUrl)}</b>
-      <span>Login-E-Mail</span><b>${esc(d.email)}</b>
+      ${d.username ? `<span>Benutzername</span><b>${esc(d.username)}</b>` : ''}
+      ${d.email ? `<span>Login-E-Mail</span><b>${esc(d.email)}</b>` : ''}
       <span>Einmalpasswort</span><b class="cred-pw">${esc(d.password)}</b>
     </div>
     <form id="sendForm" class="inline-form" style="margin-top:14px;">
-      <label>Senden an (beliebige Adresse)<input type="email" id="sendTo" value="${esc(d.email)}" required></label>
+      <label>Senden an (beliebige Adresse)<input type="email" id="sendTo" value="${esc(d.email || '')}" required></label>
       <button type="submit" title="&Ouml;ffnet Gmail im Browser mit fertiger Nachricht">&#9993; Mit Gmail senden</button>
       <button type="button" class="secondary" id="sendWhatsApp">WhatsApp</button>
       <button type="button" class="secondary" id="sendMailApp" title="&Ouml;ffnet das E-Mail-Programm dieses Ger&auml;ts">E-Mail-Programm</button>
@@ -729,7 +784,7 @@ function showCredentials(d) {
       <p class="hint">QR-Code zur Anmeldeseite:</p>
       <canvas id="credQr"></canvas>
     </div>
-    <p class="hint">Das Einmalpasswort wird nur jetzt angezeigt. Angemeldet wird sich immer mit der Login-E-Mail &mdash; die Nachricht selbst kannst du an jede Adresse schicken.</p>
+    <p class="hint">Das Einmalpasswort wird nur jetzt angezeigt. Angemeldet wird sich mit Benutzername oder Login-E-Mail &mdash; die Nachricht selbst kannst du an jede Adresse schicken.</p>
   `;
   const subject = 'Dein Zugang zur Balance Movement Trainings-App';
   // Gmail im Browser (kostenlos, ohne mailto-Link – kein Zusatzprogramm nötig)
