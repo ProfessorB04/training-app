@@ -31,9 +31,39 @@ const CD_PHASES = [
 ];
 const cdPhaseLabel = (p) => L(p.de, p.en);
 // Sportart: gespeichert wird der deutsche Name (Schlüssel), angezeigt je Sprache
-const CD_MODALITIES = ['Laufen (Platz/Halle)', 'Laufband', 'Court (Basketball)', 'Rad-Ergometer', 'Air Bike', 'Rudern', 'SkiErg', 'Schwimmen', 'Seilspringen', 'Sonstiges'];
-const CD_MOD_EN = { 'Laufen (Platz/Halle)': 'Running (field/gym)', 'Laufband': 'Treadmill', 'Court (Basketball)': 'Court (basketball)', 'Rad-Ergometer': 'Bike ergometer', 'Air Bike': 'Air bike', 'Rudern': 'Rowing', 'SkiErg': 'SkiErg', 'Schwimmen': 'Swimming', 'Seilspringen': 'Jump rope', 'Sonstiges': 'Other' };
-const cdModLabel = (m) => CD_LANG === 'en' ? (CD_MOD_EN[m] || m) : m;
+// Sportarten / Geräte: gemeinsame, erweiterbare Liste (Cloud: tp_builder_store „cd_modalities“), gilt für alle Methoden und Phasen.
+// Im Block wird der deutsche Name gespeichert (+ englischer Name für die Athletenansicht), gelöschte Einträge bleiben in alten Einheiten lesbar.
+const CD_MOD_DEFAULT = [
+  { de: 'Laufen (Platz/Halle)', en: 'Running (field/gym)' }, { de: 'Laufband', en: 'Treadmill' }, { de: 'Court (Basketball)', en: 'Court (basketball)' },
+  { de: 'Rad-Ergometer', en: 'Bike ergometer' }, { de: 'Air Bike', en: 'Air bike' }, { de: 'Assault Bike', en: 'Assault bike' }, { de: 'Echo Bike', en: 'Echo bike' },
+  { de: 'Rudern', en: 'Rowing' }, { de: 'SkiErg', en: 'SkiErg' }, { de: 'Crosstrainer', en: 'Elliptical' }, { de: 'Stepper / StairMaster', en: 'Stair climber' },
+  { de: 'Schlitten (Sled Push/Pull)', en: 'Sled push/pull' }, { de: 'Schwimmen', en: 'Swimming' }, { de: 'Aqua-Jogging', en: 'Aqua jogging' },
+  { de: 'Seilspringen', en: 'Jump rope' }, { de: 'Sonstiges', en: 'Other' },
+];
+let CD_MODS = CD_MOD_DEFAULT.slice();
+let CD_MODS_LOADED = false;
+async function cdLoadModalities(force) {
+  if (CD_MODS_LOADED && !force) return CD_MODS;
+  try {
+    const r = await sb.from('tp_builder_store').select('data').eq('key', 'cd_modalities').maybeSingle();
+    if (!r.error && r.data && r.data.data && Array.isArray(r.data.data.items) && r.data.data.items.length) CD_MODS = r.data.data.items;
+    CD_MODS_LOADED = true;
+  } catch (e) {}
+  return CD_MODS;
+}
+async function cdSaveModalities(items) {
+  const { data: { user } } = await sb.auth.getUser();
+  const r = await sb.from('tp_builder_store').upsert({ key: 'cd_modalities', data: { items }, updated_at: new Date().toISOString(), updated_by: user.id });
+  if (!r.error) CD_MODS = items;
+  return r;
+}
+// Anzeige: im Block gespeicherter Name (DE) bzw. englischer Name aus Block oder Liste
+function cdModLabel(m, en) {
+  if (CD_LANG !== 'en') return m || '';
+  if (en) return en;
+  const x = CD_MODS.find(y => y.de === m) || CD_MOD_DEFAULT.find(y => y.de === m);
+  return x && x.en ? x.en : (m || '');
+}
 const CD_INT_TYPES = [
   { key: 'vift', de: '% vIFT (30-15)', en: '% vIFT (30-15)', unit: '%' },
   { key: 'hrmax', de: '% HFmax', en: '% HRmax', unit: '%' },
@@ -78,7 +108,7 @@ function cdDate(iso, opts) { return iso ? new Date(iso + 'T00:00:00').toLocaleDa
 function cdNewBlock(phase, methodKey) {
   const m = CD_METHOD[methodKey || (phase === 'main' ? 'hiit1515' : 'dauer')] || CD_METHODS[0];
   const d = m.d;
-  const b = { id: cdNewId(), phase, method: m.key, content: '', modality: CD_MODALITIES[0], sets: d.sets, reps: d.reps,
+  const b = { id: cdNewId(), phase, method: m.key, content: '', modality: (CD_MODS[0] || CD_MOD_DEFAULT[0]).de, modalityEn: (CD_MODS[0] || CD_MOD_DEFAULT[0]).en, sets: d.sets, reps: d.reps,
     work: { v: d.work[0], u: d.work[1] }, rest: { v: d.rest[0], u: d.rest[1] }, setRest: { v: d.setRest[0], u: d.setRest[1] },
     int: { type: d.int[0], min: d.int[1], max: d.int[2] }, hr: { min: '', max: '' }, note: '' };
   if (phase !== 'main') { b.work = { v: phase === 'warmup' ? 10 : 8, u: 'min' }; b.int = { type: 'hrmax', min: 60, max: 70 }; b.method = 'dauer'; b.sets = 1; b.reps = 1; }
@@ -232,6 +262,7 @@ async function renderConditionHub(profile) {
       <div class="ath-toolbar">
         <div><b>${L('Conditioning-Einheiten', 'Conditioning sessions')}</b> <span class="muted-inline">${L('Ausdauer &amp; Kondition planen, individuell nach vIFT (30-15 IFT) und Herzfrequenz', 'Plan endurance &amp; conditioning, individualised by vIFT (30-15 IFT) and heart rate')}</span></div>
         <span class="spacer"></span>
+        <button type="button" class="secondary" id="cdMods">&#128692; ${L('Sportarten / Ger&auml;te', 'Modalities / equipment')}</button>
         <button type="button" class="secondary" id="cdValues">&#128200; ${L('Leistungswerte (vIFT / HFmax)', 'Test values (vIFT / HRmax)')}</button>
         <button type="button" id="cdNew">+ ${L('Neue Einheit', 'New session')}</button>
       </div>
@@ -242,6 +273,7 @@ async function renderConditionHub(profile) {
   cdWireLang(() => renderConditionHub(profile));
   document.getElementById('cdNew').onclick = () => renderCdEditor(profile, null);
   document.getElementById('cdValues').onclick = () => renderCdValues(profile);
+  document.getElementById('cdMods').onclick = () => cdModalitiesDialog();
   appEl.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => renderCdEditor(profile, (sRes.data || []).find(s => s.id === b.dataset.edit)));
   appEl.querySelectorAll('[data-res]').forEach(b => b.onclick = () => renderCdResults(profile, (sRes.data || []).find(s => s.id === b.dataset.res), names));
   appEl.querySelectorAll('[data-dup]').forEach(b => b.onclick = () => {
@@ -369,7 +401,7 @@ async function renderCdEditor(profile, session) {
   if (!Array.isArray(S.content.blocks) || !S.content.blocks.length) S.content.blocks = [cdNewBlock('warmup'), cdNewBlock('main'), cdNewBlock('cooldown')];
   let dirty = false;
   const [mgmt, lib, asg, prof] = await Promise.all([
-    loadAthleteData().catch(() => null),
+    loadAthleteData().catch(() => null).then(async x => { await cdLoadModalities(); return x; }),
     sb.from('tp_builder_store').select('data').eq('key', 'tp_builder_db_v2').maybeSingle(),
     S.id ? sb.from('cd_assignments').select('user_id, active').eq('session_id', S.id) : Promise.resolve({ data: [] }),
     sb.from('profiles').select('id, name, role, permissions').eq('role', 'athlete').order('name'),
@@ -407,7 +439,7 @@ async function renderCdEditor(profile, session) {
       </div>
       <div class="cd-grid">
         <label class="w2">${L('Inhalt / &Uuml;bung', 'Content / exercise')}<input type="text" data-k="content" list="cdLib" value="${esc(b.content || '')}" placeholder="${L('z. B. Pendell&auml;ufe 20 m, lockeres Einlaufen &hellip;', 'e.g. 20 m shuttles, easy jog &hellip;')}"></label>
-        <label>${L('Sportart', 'Modality')}<select data-k="modality">${CD_MODALITIES.map(m => `<option value="${esc(m)}" ${m === b.modality ? 'selected' : ''}>${esc(cdModLabel(m))}</option>`).join('')}</select></label>
+        <label>${L('Sportart / Ger&auml;t', 'Modality / equipment')}<select data-k="modality">${(CD_MODS.some(m => m.de === b.modality) || !b.modality ? '' : `<option value="${esc(b.modality)}" selected>${esc(cdModLabel(b.modality, b.modalityEn))}</option>`) + CD_MODS.map(m => `<option value="${esc(m.de)}" ${m.de === b.modality ? 'selected' : ''}>${esc(CD_LANG === 'en' ? (m.en || m.de) : m.de)}</option>`).join('')}</select></label>
         <label>${L('Phase', 'Phase')}<select data-k="phase">${CD_PHASES.map(p => `<option value="${p.key}" ${p.key === b.phase ? 'selected' : ''}>${cdPhaseLabel(p)}</option>`).join('')}</select></label>
         <label>${L('Serien', 'Sets')}<input type="text" inputmode="numeric" data-k="sets" value="${esc(b.sets ?? '')}"></label>
         <label>${L('Wiederholungen', 'Reps')}<input type="text" inputmode="numeric" data-k="reps" value="${esc(b.reps ?? '')}"></label>
@@ -488,6 +520,7 @@ async function renderCdEditor(profile, session) {
             draw(); return;
           }
           setPath(b, k, el.value);
+          if (k === 'modality') { const m = CD_MODS.find(x => x.de === el.value); b.modalityEn = m ? (m.en || '') : ''; }
           if (k === 'int.type') { b.int.min = ''; b.int.max = ''; if (el.value === 'hrzone') { b.int.min = 2; b.int.max = 2; } }
           draw();
         };
@@ -659,7 +692,7 @@ function renderMyCondition(profile, x) {
         const d = data.blocks[b.id] || {};
         const pers = cdPersonalText(b, p);
         return `<div class="card cd-myblock${d.done ? ' done' : ''}" style="--cat:${ph.color}">
-          <div class="cd-mytitle"><b>${esc(b.content || cdMethodLabel(b.method))}</b><span class="muted-inline">${esc(cdModLabel(b.modality || ''))}</span></div>
+          <div class="cd-mytitle"><b>${esc(b.content || cdMethodLabel(b.method))}</b><span class="muted-inline">${esc(cdModLabel(b.modality || '', b.modalityEn))}</span></div>
           <div class="cd-mystruct">${esc(cdStructText(b))}</div>
           ${cdIntText(b) ? `<div class="cd-myint">${esc(cdIntText(b))}</div>` : ''}
           ${pers.text ? `<div class="cd-mypers">&#127919; ${L('Deine Vorgabe', 'Your target')}: <b>${esc(pers.text)}</b></div>` : ''}
@@ -848,4 +881,53 @@ function cdAthleteListHtml(CD, uid) {
       return `<tr class="tp-row" data-cds="${x.s.id}" data-cdu="${uid}"><td>${esc(x.s.title || 'Conditioning')}</td><td>${x.s.planned_date ? cdDate(x.s.planned_date) : '–'}</td><td>${cdStatusIcon(cdStatusOf(x.l))}</td>
         <td>${blocks.filter(b => bd[b.id] && bd[b.id].done).length}/${blocks.length}</td><td>${x.l && x.l.srpe ? `${x.l.srpe} &times; ${x.l.duration_min} min = ${cdAU(x.l)}` : '–'}</td><td><ul class="tp-ul">${notes}</ul></td></tr>`; }).join('')}</tbody>
   </table></div><p class="hint">Zeile anklicken f&uuml;r Vorgaben und Eintragungen je Block.</p></div>`;
+}
+
+// ---------- Sportarten / Geräte verwalten (hinzufügen, umbenennen DE/EN, sortieren, löschen) ----------
+async function cdModalitiesDialog() {
+  await cdLoadModalities(true);
+  let items = JSON.parse(JSON.stringify(CD_MODS));
+  const host = document.createElement('div');
+  const render = () => {
+    host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:620px;">
+      <h2>&#128692; ${L('Sportarten / Ger&auml;te', 'Modalities / equipment')}</h2>
+      <p class="hint" style="margin-top:0;">${L('Gilt f&uuml;r alle Methoden und Phasen, f&uuml;r alle Trainer:innen. Gel&ouml;schte Eintr&auml;ge bleiben in bestehenden Einheiten erhalten.', 'Applies to all methods and phases, for all coaches. Deleted entries stay in existing sessions.')}</p>
+      <div class="cd-modlist">${items.map((m, i) => `<div class="cd-modrow" data-i="${i}">
+        <input type="text" data-f="de" value="${esc(m.de)}" placeholder="Deutsch">
+        <input type="text" data-f="en" value="${esc(m.en || '')}" placeholder="English">
+        <button type="button" class="mini" data-a="up" title="${L('nach oben', 'up')}">&uarr;</button><button type="button" class="mini" data-a="down" title="${L('nach unten', 'down')}">&darr;</button>
+        <button type="button" class="mini danger" data-a="del" title="${L('l&ouml;schen', 'delete')}">&times;</button></div>`).join('')}</div>
+      <div class="cd-modrow cd-modnew"><input type="text" id="cdmDe" placeholder="${L('Neu, z. B. Assault Bike', 'New, e.g. assault bike')}"><input type="text" id="cdmEn" placeholder="English"><button type="button" class="secondary small-btn" id="cdmAdd">+ ${L('Hinzuf&uuml;gen', 'Add')}</button></div>
+      <div class="modal-actions"><button type="button" class="secondary small-btn" id="cdmReset" title="${L('Standardliste wiederherstellen', 'Restore default list')}">${L('Standard', 'Default')}</button><span class="spacer"></span>
+        <button type="button" class="secondary" id="cdmX">${L('Abbrechen', 'Cancel')}</button><button type="button" id="cdmSave">${L('Speichern', 'Save')}</button></div>
+    </div></div>`;
+    host.querySelectorAll('.cd-modrow[data-i]').forEach(row => {
+      const i = +row.dataset.i;
+      row.querySelectorAll('input').forEach(inp => inp.oninput = () => { items[i][inp.dataset.f] = inp.value; });
+      row.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
+        const a = b.dataset.a;
+        if (a === 'del') items.splice(i, 1);
+        else { const j = i + (a === 'up' ? -1 : 1); if (j < 0 || j >= items.length) return; [items[i], items[j]] = [items[j], items[i]]; }
+        render();
+      });
+    });
+    host.querySelector('#cdmAdd').onclick = () => {
+      const de = host.querySelector('#cdmDe').value.trim(), en = host.querySelector('#cdmEn').value.trim();
+      if (!de) return;
+      if (items.some(m => m.de.toLowerCase() === de.toLowerCase())) { toast(L('Gibt es schon.', 'Already exists.')); return; }
+      items.push({ de, en: en || de }); render();
+      host.querySelector('#cdmDe').focus();
+    };
+    host.querySelector('#cdmDe').onkeydown = e => { if (e.key === 'Enter') host.querySelector('#cdmAdd').click(); };
+    host.querySelector('#cdmReset').onclick = () => { if (confirm(L('Standardliste wiederherstellen? Eigene Einträge gehen verloren.', 'Restore the default list? Your own entries will be removed.'))) { items = JSON.parse(JSON.stringify(CD_MOD_DEFAULT)); render(); } };
+    host.querySelector('#cdmX').onclick = () => host.remove();
+    host.querySelector('#cdmSave').onclick = async () => {
+      const clean = items.map(m => ({ de: String(m.de || '').trim(), en: String(m.en || '').trim() })).filter(m => m.de);
+      if (!clean.length) { alert(L('Mindestens ein Eintrag nötig.', 'At least one entry is required.')); return; }
+      const r = await cdSaveModalities(clean);
+      if (r.error) { alert(L('Speichern fehlgeschlagen: ', 'Saving failed: ') + r.error.message); return; }
+      host.remove(); toast(L('Sportarten gespeichert.', 'Modalities saved.'));
+    };
+  };
+  document.body.appendChild(host); render();
 }
