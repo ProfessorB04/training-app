@@ -214,7 +214,7 @@ async function renderConditionHub(profile) {
     return `<div class="card cd-card${past ? ' past' : ''}">
       <div class="tpo-head">
         <div><div class="tpo-title">${esc(s.title || L('Conditioning-Einheit', 'Conditioning session'))}</div>
-          <div class="muted-inline">${s.planned_date ? cdDate(s.planned_date, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) : L('ohne Datum', 'no date')}${s.team ? ' &middot; ' + esc(s.team) : ''} &middot; ${(s.content.blocks || []).length} ${L('Bl&ouml;cke', 'blocks')} &middot; ${dur.sec ? '&asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}${dur.unknown ? ' +' : ''}</div></div>
+          <div class="muted-inline">${s.planned_date ? cdDate(s.planned_date, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) : L('ohne Datum', 'no date')}${s.content && s.content.forName ? ' &middot; ' + L('f&uuml;r ', 'for ') + '<b>' + esc(s.content.forName) + '</b>' : ''}${s.team ? ' &middot; ' + esc(s.team) : ''} &middot; ${(s.content.blocks || []).length} ${L('Bl&ouml;cke', 'blocks')} &middot; ${dur.sec ? '&asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}${dur.unknown ? ' +' : ''}</div></div>
         <span class="tpo-week">${as.length ? `${done}/${as.length} ${L('erledigt', 'done')}` : L('nicht ver&ouml;ffentlicht', 'not published')}</span>
       </div>
       ${as.length ? `<div class="tpo-people">${as.map(a => `<span class="tpo-chip static">${esc(names[a.user_id] || '?')}</span>`).join('')}</div>` : ''}
@@ -380,7 +380,11 @@ async function renderCdEditor(profile, session) {
   const users = (prof.data || []);
   const picked = new Set((asg.data || []).filter(a => a.active).map(a => a.user_id));
   const teamGroups = groups.map(g => g.name);
-  let previewGrp = '';
+  const athNames = athletes.map(a => `${a.first_name} ${a.last_name}`.trim()).filter(Boolean).sort((a, b) => a.localeCompare(b, 'de'));
+  const normN = t => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  // „Für wen?“ → passende:r Athlet:in mit App-Zugang (für Vorschau und Vorauswahl beim Veröffentlichen)
+  const forUser = () => { const n = normN(S.content.forName); if (!n) return null; const u = users.find(u => { const a = athByProfile[u.id]; return (a && normN(a.first_name + ' ' + a.last_name) === n) || normN(u.name) === n; }); return u || null; };
+  let previewGrp = forUser() ? '__for' : '';
 
   const intInputs = (b) => {
     const t = b.int.type;
@@ -418,7 +422,8 @@ async function renderCdEditor(profile, session) {
   };
   const previewHtml = () => {
     const mains = S.content.blocks.filter(b => ['vift', 'hrmax', 'hrzone', 'hrr'].includes(b.int.type) || cdNum(b.hr.min) || cdNum(b.hr.max));
-    const who = users.filter(u => previewGrp === '__pub' ? picked.has(u.id) : (!previewGrp || (athByProfile[u.id] && athByProfile[u.id].groupIds.includes(previewGrp))));
+    const fu = forUser();
+    const who = users.filter(u => previewGrp === '__for' ? (fu && u.id === fu.id) : previewGrp === '__pub' ? picked.has(u.id) : (!previewGrp || (athByProfile[u.id] && athByProfile[u.id].groupIds.includes(previewGrp))));
     if (!mains.length) return `<p class="hint">${L('Pers&ouml;nliche Werte entstehen bei Intensit&auml;t in % vIFT, % HFmax, HF-Zone oder Karvonen.', 'Personal targets are calculated for intensity in % vIFT, % HRmax, HR zone or Karvonen.')}</p>`;
     return `<div class="tablewrap"><table class="user-table cd-prev"><thead><tr><th>${L('Athlet:in', 'Athlete')}</th><th>vIFT</th><th>${L('HFmax', 'HRmax')}</th>${mains.map(b => `<th>${esc(cdMethodLabel(b.method, true))}<div class="hint" style="margin:0;">${esc(cdStructText(b))}</div></th>`).join('')}</tr></thead>
       <tbody>${who.map(u => { const a = athByProfile[u.id] || {}; const p = { vift: cdNum(a.vift_kmh), hr_max: a.hr_max, hr_rest: a.hr_rest, age: cdAge(a.birthdate) };
@@ -440,14 +445,15 @@ async function renderCdEditor(profile, session) {
           <label class="w2">${L('Titel', 'Title')}<input type="text" id="cdTitle" value="${esc(S.title || '')}" placeholder="${L('z. B. HIIT 15/15 &ndash; Vorbereitung', 'e.g. HIIT 15/15 &ndash; pre-season')}"></label>
           <label>${L('Datum', 'Date')}<input type="date" id="cdDate" value="${S.planned_date || ''}"></label>
           <label>${L('Team / Gruppe', 'Team / group')}<input type="text" id="cdTeam" list="cdTeams" value="${esc(S.team || '')}"><datalist id="cdTeams">${teamGroups.map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>
-          <label class="w4">${L('Hinweis f&uuml;r alle', 'Note for everyone')}<input type="text" id="cdNote" value="${esc(S.content.note || '')}" placeholder="${L('z. B. Pulsgurt anlegen, Trinkflasche mitbringen', 'e.g. wear HR strap, bring a water bottle')}"></label>
+          <label class="w2">${L('F&uuml;r wen?', 'For whom?')}<input type="text" id="cdFor" list="cdAthNames" value="${esc(S.content.forName || '')}" placeholder="${L('Name der Athletin / des Athleten (optional)', 'Athlete name (optional)')}"><datalist id="cdAthNames">${athNames.map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>
+          <label class="w2">${L('Hinweis f&uuml;r alle', 'Note for everyone')}<input type="text" id="cdNote" value="${esc(S.content.note || '')}" placeholder="${L('z. B. Pulsgurt anlegen, Trinkflasche mitbringen', 'e.g. wear HR strap, bring a water bottle')}"></label>
         </div>
         <div class="cd-total">${L('Gesamt', 'Total')} &asymp; <b>${tot.sec ? Math.round(tot.sec / 60) + ' min' : '–'}</b>${tot.unknown ? L(' (+ Bl&ouml;cke nach Strecke)', ' (+ distance-based blocks)') : ''} &middot; ${S.content.blocks.length} ${L('Bl&ouml;cke', 'blocks')}</div>
       </div>
       ${phaseHtml}
       <div class="card">
         <div class="ath-toolbar"><h2 style="margin:0;">${L('Pers&ouml;nliche Vorgaben (Vorschau)', 'Personal targets (preview)')}</h2><span class="spacer"></span>
-          <select id="cdPrevGrp" style="width:auto;"><option value="">${L('Alle mit App-Zugang', 'Everyone with an app account')}</option><option value="__pub" ${previewGrp === '__pub' ? 'selected' : ''}>${L('Nur ausgew&auml;hlte (Ver&ouml;ffentlichen)', 'Selected only (publish)')}</option>${groups.map(g => `<option value="${g.id}" ${g.id === previewGrp ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>
+          <select id="cdPrevGrp" style="width:auto;">${forUser() ? `<option value="__for" ${previewGrp === '__for' ? 'selected' : ''}>${L('Nur', 'Only')} ${esc(S.content.forName)}</option>` : ''}<option value="">${L('Alle mit App-Zugang', 'Everyone with an app account')}</option><option value="__pub" ${previewGrp === '__pub' ? 'selected' : ''}>${L('Nur ausgew&auml;hlte (Ver&ouml;ffentlichen)', 'Selected only (publish)')}</option>${groups.map(g => `<option value="${g.id}" ${g.id === previewGrp ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>
         ${previewHtml()}
         <p class="hint">${L('Fehlende vIFT/HFmax unter &bdquo;Conditioning &rarr; Leistungswerte&ldquo; eintragen oder aus dem 30-15 IFT &uuml;bernehmen. Ohne HFmax wird sie aus dem Alter gesch&auml;tzt (&asymp;), ohne jegliche Werte gilt der Richtwert nach Borg-Skala + Sprechtest (kursiv).',
           'Enter missing vIFT/HRmax under &ldquo;Conditioning &rarr; Test values&rdquo; or import them from the 30-15 IFT. Without HRmax it is estimated from age (&asymp;); without any values the Borg scale + talk test guide value applies (italic).')}</p>
@@ -465,6 +471,9 @@ async function renderCdEditor(profile, session) {
   const wire = () => {
     const top = (id, f) => { const el = document.getElementById(id); el.oninput = () => { f(el.value); dirty = true; }; };
     top('cdTitle', v => S.title = v); top('cdDate', v => S.planned_date = v || null); top('cdTeam', v => S.team = v); top('cdNote', v => S.content.note = v);
+    const fe = document.getElementById('cdFor');
+    fe.oninput = () => { S.content.forName = fe.value.trim(); dirty = true; };
+    fe.onchange = () => { S.content.forName = fe.value.trim(); previewGrp = forUser() ? '__for' : (previewGrp === '__for' ? '' : previewGrp); draw(); };
     document.getElementById('cdPrevGrp').onchange = e => { previewGrp = e.target.value; draw(); };
     appEl.querySelectorAll('[data-add]').forEach(b => b.onclick = () => { S.content.blocks.push(cdNewBlock(b.dataset.add)); dirty = true; draw(); });
     appEl.querySelectorAll('.cd-block').forEach(card => {
@@ -515,6 +524,8 @@ async function renderCdEditor(profile, session) {
   const publishDialog = () => {
     const host = document.createElement('div');
     const sel = new Set(picked);
+    const fu = forUser();
+    if (!sel.size && fu) sel.add(fu.id);   // „Für wen?“ vorauswählen
     const render = () => {
       host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:640px;">
         <h2>&#128242; ${L('In App ver&ouml;ffentlichen', 'Publish to app')}</h2>
@@ -668,6 +679,7 @@ function renderMyCondition(profile, x) {
       <div class="card mp-sesshead" style="--lay-main:#1f9d55;--lay-dark:#157a42;--lay-accent:#a1d7ff;">
         <div><div class="mp-kicker">Conditioning${s.planned_date ? ' &middot; ' + cdDate(s.planned_date, { weekday: 'long', day: '2-digit', month: '2-digit' }) : ''}</div>
         <div class="mp-big">${esc(s.title || 'Conditioning')}</div>
+        ${s.content && s.content.forName ? `<div class="muted-inline">${L('f&uuml;r', 'for')} ${esc(s.content.forName)}</div>` : ''}
         <div class="muted-inline">${dur.sec ? '&asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}${x.log && x.log.completed ? ' &middot; ' + L('abgeschlossen', 'completed') : ''}</div></div>
       </div>
       ${s.content && s.content.note ? `<div class="card mp-info">&#128221; ${esc(s.content.note)}</div>` : ''}
