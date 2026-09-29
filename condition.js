@@ -453,14 +453,14 @@ async function renderCdEditor(profile, session) {
     </div>`;
   };
   const previewHtml = () => {
-    const mains = S.content.blocks.filter(b => ['vift', 'hrmax', 'hrzone', 'hrr'].includes(b.int.type) || cdNum(b.hr.min) || cdNum(b.hr.max));
+    const mains = S.content.blocks.slice().sort((x, y) => CD_PHASES.findIndex(p => p.key === x.phase) - CD_PHASES.findIndex(p => p.key === y.phase));
     const fu = forUser();
     const who = users.filter(u => previewGrp === '__for' ? (fu && u.id === fu.id) : previewGrp === '__pub' ? picked.has(u.id) : (!previewGrp || (athByProfile[u.id] && athByProfile[u.id].groupIds.includes(previewGrp))));
-    if (!mains.length) return `<p class="hint">${L('Pers&ouml;nliche Werte entstehen bei Intensit&auml;t in % vIFT, % HFmax, HF-Zone oder Karvonen.', 'Personal targets are calculated for intensity in % vIFT, % HRmax, HR zone or Karvonen.')}</p>`;
-    return `<div class="tablewrap"><table class="user-table cd-prev"><thead><tr><th>${L('Athlet:in', 'Athlete')}</th><th>vIFT</th><th>${L('HFmax', 'HRmax')}</th>${mains.map(b => `<th>${esc(cdMethodLabel(b.method, true))}<div class="hint" style="margin:0;">${esc(cdStructText(b))}</div></th>`).join('')}</tr></thead>
+    if (!mains.length) return `<p class="hint">${L('Noch keine Bl&ouml;cke.', 'No blocks yet.')}</p>`;
+    return `<div class="tablewrap"><table class="user-table cd-prev"><thead><tr><th>${L('Athlet:in', 'Athlete')}</th><th>vIFT</th><th>${L('HFmax', 'HRmax')}</th>${mains.map(b => { const ph = CD_PHASES.find(p => p.key === b.phase) || CD_PHASES[1]; return `<th style="border-top:3px solid ${ph.color};"><span class="cd-prevph" style="color:${ph.color}">${cdPhaseLabel(ph)}</span><br>${esc(b.content || cdMethodLabel(b.method, true))}<div class="hint" style="margin:0;">${esc(cdStructText(b))}</div></th>`; }).join('')}<th></th></tr></thead>
       <tbody>${who.map(u => { const a = athByProfile[u.id] || {}; const p = { vift: cdNum(a.vift_kmh), hr_max: a.hr_max, hr_rest: a.hr_rest, age: cdAge(a.birthdate) };
         const hm = p.hr_max || (p.age ? `<span class="muted" title="${L('gesch&auml;tzt nach Tanaka (208 &minus; 0,7 &times; Alter)', 'estimated with Tanaka (208 &minus; 0.7 &times; age)')}">&asymp; ${cdHrMaxEst(p.age)}</span>` : '<span class="muted">–</span>');
-        return `<tr><td>${esc(u.name)}</td><td>${p.vift ? cdDec(p.vift) : '<span class="muted">–</span>'}</td><td>${hm}</td>${mains.map(b => { const r = cdPersonalText(b, p); return `<td class="${r.fallback ? 'cd-fb' : ''}">${esc(r.text) || '<span class="muted">–</span>'}</td>`; }).join('')}</tr>`; }).join('') || `<tr><td colspan="${3 + mains.length}" class="muted">${L('Keine Athlet:innen mit App-Zugang in der Auswahl.', 'No athletes with an app account in this selection.')}</td></tr>`}</tbody></table></div>`;
+        return `<tr><td>${esc(u.name)}</td><td>${p.vift ? cdDec(p.vift) : '<span class="muted">–</span>'}</td><td>${hm}</td>${mains.map(b => { const r = cdPersonalText(b, p); const t = r.text || cdIntText(b); return `<td class="${r.fallback ? 'cd-fb' : ''}">${esc(t) || '<span class="muted">–</span>'}</td>`; }).join('')}<td><button type="button" class="secondary small-btn" data-av="${u.id}">&#128065; ${L('Ansicht', 'View')}</button></td></tr>`; }).join('') || `<tr><td colspan="${4 + mains.length}" class="muted">${L('Keine Athlet:innen mit App-Zugang in der Auswahl.', 'No athletes with an app account in this selection.')}</td></tr>`}</tbody></table></div>`;
   };
   const draw = () => {
     const tot = cdSessionSec(S.content);
@@ -507,6 +507,10 @@ async function renderCdEditor(profile, session) {
     fe.oninput = () => { S.content.forName = fe.value.trim(); dirty = true; };
     fe.onchange = () => { S.content.forName = fe.value.trim(); previewGrp = forUser() ? '__for' : (previewGrp === '__for' ? '' : previewGrp); draw(); };
     document.getElementById('cdPrevGrp').onchange = e => { previewGrp = e.target.value; draw(); };
+    appEl.querySelectorAll('[data-av]').forEach(b => b.onclick = () => {
+      const u = users.find(x => x.id === b.dataset.av), a = athByProfile[u.id] || {};
+      cdAthletePreview(S, { vift: cdNum(a.vift_kmh), hr_max: a.hr_max, hr_rest: a.hr_rest, age: cdAge(a.birthdate) }, u.name);
+    });
     appEl.querySelectorAll('[data-add]').forEach(b => b.onclick = () => { S.content.blocks.push(cdNewBlock(b.dataset.add)); dirty = true; draw(); });
     appEl.querySelectorAll('.cd-block').forEach(card => {
       const i = +card.dataset.i, b = S.content.blocks[i];
@@ -930,4 +934,42 @@ async function cdModalitiesDialog() {
     };
   };
   document.body.appendChild(host); render();
+}
+
+// Vorschau: Einheit so, wie die Athletin sie in der App sieht (ohne Eingabefelder)
+function cdAthletePreview(S, p, name) {
+  const blocks = (S.content && S.content.blocks) || [];
+  const dur = cdSessionSec(S.content || {});
+  const body = CD_PHASES.map(ph => {
+    const list = blocks.filter(b => b.phase === ph.key);
+    if (!list.length) return '';
+    return `<div class="cd-phead" style="--cat:${ph.color}">${cdPhaseLabel(ph)}</div>` + list.map(b => {
+      const pers = cdPersonalText(b, p);
+      return `<div class="card cd-myblock" style="--cat:${ph.color}">
+        <div class="cd-mytitle"><b>${esc(b.content || cdMethodLabel(b.method))}</b><span class="muted-inline">${esc(cdModLabel(b.modality || '', b.modalityEn))}</span></div>
+        <div class="cd-mystruct">${esc(cdStructText(b))}</div>
+        ${cdIntText(b) ? `<div class="cd-myint">${esc(cdIntText(b))}</div>` : ''}
+        ${pers.text ? `<div class="cd-mypers">&#127919; ${L('Deine Vorgabe', 'Your target')}: <b>${esc(pers.text)}</b></div>` : ''}
+        ${b.note ? `<div class="tpo-note">&#128204; ${esc(b.note)}</div>` : ''}
+      </div>`;
+    }).join('');
+  }).join('');
+  const host = document.createElement('div');
+  host.innerHTML = `<div class="modal-scrim"><div class="modal cd-avmodal">
+    <div class="ath-toolbar"><h2 style="margin:0;">&#128065; ${L('Ansicht f&uuml;r', 'View for')} ${esc(name)}</h2><span class="spacer"></span><button type="button" class="secondary" id="cdavX">${L('Schlie&szlig;en', 'Close')}</button></div>
+    <div class="cd-avphone">
+      <div class="card mp-sesshead" style="--lay-main:#1f9d55;--lay-dark:#157a42;--lay-accent:#a1d7ff;">
+        <div><div class="mp-kicker">Conditioning${S.planned_date ? ' &middot; ' + cdDate(S.planned_date, { weekday: 'long', day: '2-digit', month: '2-digit' }) : ''}</div>
+        <div class="mp-big">${esc(S.title || 'Conditioning')}</div>
+        ${S.content && S.content.forName ? `<div class="muted-inline">${L('f&uuml;r', 'for')} ${esc(S.content.forName)}</div>` : ''}
+        <div class="muted-inline">${dur.sec ? '&asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}</div></div>
+      </div>
+      ${S.content && S.content.note ? `<div class="card mp-info">&#128221; ${esc(S.content.note)}</div>` : ''}
+      ${!p.vift && !p.hr_max ? `<p class="hint">${p.age ? L('Pulswerte aus dem Alter gesch&auml;tzt.', 'Heart-rate values estimated from age.') : L('Keine Testwerte &ndash; Richtwerte nach Borg-Skala und Sprechtest.', 'No test data &ndash; guide values from Borg scale and talk test.')}</p>` : ''}
+      ${body || `<p class="muted">${L('Keine Bl&ouml;cke.', 'No blocks.')}</p>`}
+    </div>
+  </div></div>`;
+  document.body.appendChild(host);
+  host.querySelector('#cdavX').onclick = () => host.remove();
+  host.querySelector('.modal-scrim').addEventListener('click', e => { if (e.target.classList.contains('modal-scrim')) host.remove(); });
 }
