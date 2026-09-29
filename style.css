@@ -527,3 +527,10 @@ tr.no-access a{ color:var(--brand-strong); }
   .cd-mylog .mp-check{ grid-column:span 2; }
   .cd-pick{ columns:1; }
 }
+.cd-fb{ font-style:italic; color:var(--ink-soft); }
+.cd-refs{ margin:14px 0 4px; }
+.cd-refs > summary{ cursor:pointer; list-style:none; display:inline-flex; gap:8px; align-items:center; padding:8px 14px; border:1px solid var(--line); border-radius:9px; background:#fff; font-weight:700; color:var(--ink-soft); font-size:.9rem; }
+.cd-refs > summary::-webkit-details-marker{ display:none; }
+.cd-refs > summary span{ font-weight:400; font-size:.8rem; }
+.cd-refs-body{ margin-top:10px; font-size:.9rem; line-height:1.5; }
+.cd-refs-body p{ margin:0 0 8px; }

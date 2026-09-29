@@ -1,5 +1,5 @@
 // ============================================================
-// Condition: Ausdauer-/Konditionseinheiten planen, individuell (vIFT aus 30-15 IFT, HFmax/HFrest)
+// Conditioning: Ausdauer-/Konditionseinheiten planen, individuell (vIFT aus 30-15 IFT, HFmax/HFrest)
 // in die App veröffentlichen; Athlet:innen sehen persönliche Vorgaben, haken ab, tragen sRPE ein.
 // Tabellen: cd_sessions, cd_assignments (personal = Werte beim Veröffentlichen), cd_logs; athletes.hr_max/hr_rest/vift_kmh
 // ============================================================
@@ -81,9 +81,31 @@ function cdIntText(b) {
   if (cdNum(h.min) || cdNum(h.max)) s += (s ? ' · ' : '') + 'HF ' + cdRange(h.min, h.max, '% HFmax');
   return s;
 }
-// Persönliche Vorgabe aus vIFT/HFmax/HFrest: { text, workSec }
+// ---------- Wissenschaftliche Standards / Rückfallwerte, wenn keine Messwerte vorliegen ----------
+// HFmax geschätzt nach Tanaka et al. 2001: 208 − 0,7 × Alter (Streuung ca. ± 10 Schläge; gemessene HFmax ist immer besser)
+function cdAge(birthdate) { if (!birthdate) return null; const b = new Date(birthdate + 'T00:00:00'), n = new Date(); let a = n.getFullYear() - b.getFullYear(); if (n < new Date(n.getFullYear(), b.getMonth(), b.getDate())) a--; return a > 5 && a < 100 ? a : null; }
+function cdHrMaxEst(age) { return age ? Math.round(208 - 0.7 * age) : null; }
+// Borg CR10 + Sprechtest als Ersatz, wenn keine persönlichen Werte berechnet werden können
+const CD_TALK = { 2: 'lockeres Gespräch möglich', 4: 'Unterhaltung möglich', 6: 'nur kurze Sätze', 8: 'nur einzelne Worte', 10: 'Sprechen nicht möglich' };
+function cdRpeEquiv(b) {
+  const i = b.int || {}, lo = cdNum(i.min), hi = cdNum(i.max) ?? lo, v = lo ?? hi;
+  if (v == null && i.type !== 'allout') return null;
+  const band = (x, t) => { for (const [lim, r] of t) if (x < lim) return r; return t[t.length - 1][1]; };
+  let r = null;
+  if (i.type === 'allout') r = [10, 10];
+  else if (i.type === 'vift') { const t = [[75, [3, 4]], [85, [5, 6]], [90, [7, 8]], [100, [8, 9]], [999, [9, 10]]]; r = [band(v, t)[0], band(hi, t)[1]]; }
+  else if (i.type === 'hrmax') { const t = [[60, [1, 2]], [70, [3, 4]], [80, [5, 6]], [90, [7, 8]], [999, [9, 10]]]; r = [band(v, t)[0], band(hi, t)[1]]; }
+  else if (i.type === 'hrzone') { const z = { 1: [1, 2], 2: [3, 4], 3: [5, 6], 4: [7, 8], 5: [9, 10] }; r = [(z[Math.round(v)] || [5])[0], (z[Math.round(hi)] || [6, 6])[1]]; }
+  else if (i.type === 'hrr') { const t = [[40, [1, 2]], [60, [3, 4]], [80, [5, 6]], [90, [7, 8]], [999, [9, 10]]]; r = [band(v, t)[0], band(hi, t)[1]]; }
+  if (!r) return null;
+  const talk = CD_TALK[Math.min(10, Math.max(2, Math.ceil(r[0] / 2) * 2))] || '';
+  return `≈ RPE ${r[0] === r[1] ? r[0] : r[0] + '–' + r[1]} (Borg CR10)${talk ? ' · Sprechtest: ' + talk : ''}`;
+}
+// Persönliche Vorgabe aus vIFT/HFmax/HFrest: { text, workSec, est }
 function cdPersonalText(b, p) {
-  p = p || {};
+  p = Object.assign({}, p || {});
+  let est = false;
+  if (!cdNum(p.hr_max) && cdNum(p.age)) { p.hr_max = cdHrMaxEst(cdNum(p.age)); est = true; }
   const i = b.int || {}, out = [];
   let workSec = null;
   const lo = cdNum(i.min), hi = cdNum(i.max) ?? lo, loV = lo ?? hi;
@@ -105,8 +127,21 @@ function cdPersonalText(b, p) {
     const a = cdNum(h.min) ?? cdNum(h.max), c = cdNum(h.max) ?? a;
     out.push(`Puls ${Math.round(p.hr_max * a / 100)}–${Math.round(p.hr_max * c / 100)}`);
   }
-  return { text: out.join(' · '), workSec };
+  const usedHr = out.some(t => t.startsWith('Puls'));
+  if (est && usedHr) out.push('HFmax geschätzt');
+  // keine persönliche Umrechnung möglich → Richtwert nach Borg-Skala + Sprechtest
+  if (!out.length && ['vift', 'hrmax', 'hrzone', 'hrr', 'allout'].includes(i.type)) { const r = cdRpeEquiv(b); if (r) return { text: r, workSec, est, fallback: true }; }
+  return { text: out.join(' · '), workSec, est };
 }
+const CD_SOURCES_HTML = `
+  <details class="lm-refs cd-refs"><summary>&#128218; Methodik &amp; Quellen <span>(Goldstandards &amp; Richtwerte ohne Messdaten)</span></summary>
+  <div class="cd-refs-body">
+    <p><b>Tempo: 30-15 Intermittent Fitness Test (vIFT)</b> &ndash; Intervalle werden in % der Endgeschwindigkeit vIFT vorgegeben; daraus ergeben sich pers&ouml;nliches Tempo und Strecke je Belastung (z.&nbsp;B. 15/15 bei 90&ndash;95&nbsp;% vIFT, 30/30 bei 85&ndash;90&nbsp;%). Goldstandard f&uuml;r intermittierende Teamsportarten, da Richtungswechsel und Erholungsf&auml;higkeit mit erfasst werden.</p>
+    <p><b>Herzfrequenz</b> &ndash; Goldstandard ist die <b>gemessene HFmax</b> (Brustgurt, h&ouml;chster Wert am Ende eines Maximaltests wie der 30-15-IFT-Endstufe). Ohne Messung wird sie nach <b>Tanaka: 208 &minus; 0,7 &times; Alter</b> gesch&auml;tzt (Streuung ca. &plusmn;&nbsp;10 Schl&auml;ge &ndash; daher als &bdquo;gesch&auml;tzt&ldquo; markiert). Die HF-Reserve-Methode (<b>Karvonen</b>) ber&uuml;cksichtigt zus&auml;tzlich den morgens gemessenen Ruhepuls und ist genauer als % HFmax.</p>
+    <p><b>Zonen</b> &ndash; 5 Zonen in % HFmax (Z1 50&ndash;60, Z2 60&ndash;70, Z3 70&ndash;80, Z4 80&ndash;90, Z5 90&ndash;100&nbsp;%); das 3-Zonen-Modell (Seiler) fasst sie um die Schwellen zusammen. HIIT lang nach Helgerud: 4&nbsp;&times;&nbsp;4&nbsp;min bei 90&ndash;95&nbsp;% HFmax, 3&nbsp;min aktive Pause.</p>
+    <p><b>Ohne Messwerte</b> (weder vIFT noch HFmax/Alter): Vorgabe &uuml;ber das subjektive Anstrengungsempfinden (<b>Borg CR10</b>) und den <b>Sprechtest</b> &ndash; z.&nbsp;B. HIIT &asymp; RPE 8&ndash;9, &bdquo;nur einzelne Worte&ldquo;; lockere Dauer &asymp; RPE 3&ndash;4, &bdquo;Unterhaltung m&ouml;glich&ldquo;. Die Belastung der ganzen Einheit wird als <b>Session-RPE</b> (RPE &times; Dauer) im Load Management erfasst.</p>
+    <p class="hint">Quellen: Buchheit M. (2008) The 30-15 Intermittent Fitness Test: accuracy for individualizing interval training of young intermittent sport players. J Strength Cond Res 22(2):365&ndash;374 &middot; Buchheit M, Laursen PB (2013) High-intensity interval training, solutions to the programming puzzle, Part I. Sports Med 43:313&ndash;338 &middot; Tanaka H, Monahan KD, Seals DR (2001) Age-predicted maximal heart rate revisited. J Am Coll Cardiol 37:153&ndash;156 &middot; Karvonen MJ, Kentala E, Mustala O (1957) The effects of training on heart rate. Ann Med Exp Biol Fenn 35:307&ndash;315 &middot; Helgerud J et al. (2007) Aerobic high-intensity intervals improve VO2max more than moderate training. Med Sci Sports Exerc 39:665&ndash;671 &middot; Seiler S (2010) What is best practice for training intensity and duration distribution in endurance athletes? Int J Sports Physiol Perform 5:276&ndash;291 &middot; Borg GA (1982) Psychophysical bases of perceived exertion. Med Sci Sports Exerc 14:377&ndash;381 &middot; Foster C et al. (2001) A new approach to monitoring exercise training. J Strength Cond Res 15:109&ndash;115.</p>
+  </div></details>`;
 function cdSessionSec(content) {
   let t = 0, unknown = false;
   (content.blocks || []).forEach(b => { const s = cdBlockSec(b); if (s == null) unknown = true; else t += s; });
@@ -117,7 +152,7 @@ function cdSessionSec(content) {
 // Admin/Trainer: Übersicht
 // ============================================================
 async function renderConditionHub(profile) {
-  const T = 'Condition';
+  const T = 'Conditioning';
   renderShell(profile, 'condition', T, `<p class="muted">Lade&hellip;</p>`);
   const [sRes, aRes, lRes, prRes] = await Promise.all([
     sb.from('cd_sessions').select('*').eq('archived', false).order('planned_date', { ascending: false, nullsFirst: true }).order('created_at', { ascending: false }),
@@ -126,7 +161,7 @@ async function renderConditionHub(profile) {
     sb.from('profiles').select('id, name'),
   ]);
   const err = [sRes, aRes, lRes, prRes].map(r => r.error).filter(Boolean)[0];
-  if (err) { renderShell(profile, 'condition', T, `<div class="card"><p class="error">Fehler: ${esc(err.message)}${/cd_sessions|relation/.test(err.message) ? '<br>Die Datenbank f&uuml;r Condition ist noch nicht eingerichtet (Migration supabase_migration_condition.sql).' : ''}</p></div>`); return; }
+  if (err) { renderShell(profile, 'condition', T, `<div class="card"><p class="error">Fehler: ${esc(err.message)}${/cd_sessions|relation/.test(err.message) ? '<br>Die Datenbank f&uuml;r Conditioning ist noch nicht eingerichtet (Migration supabase_migration_condition.sql).' : ''}</p></div>`); return; }
   const names = Object.fromEntries((prRes.data || []).map(p => [p.id, p.name]));
   const today = new Date().toISOString().slice(0, 10);
   const cards = (sRes.data || []).map(s => {
@@ -136,7 +171,7 @@ async function renderConditionHub(profile) {
     const past = s.planned_date && s.planned_date < today;
     return `<div class="card cd-card${past ? ' past' : ''}">
       <div class="tpo-head">
-        <div><div class="tpo-title">${esc(s.title || 'Condition-Einheit')}</div>
+        <div><div class="tpo-title">${esc(s.title || 'Conditioning-Einheit')}</div>
           <div class="muted-inline">${s.planned_date ? new Date(s.planned_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'ohne Datum'}${s.team ? ' &middot; ' + esc(s.team) : ''} &middot; ${(s.content.blocks || []).length} Bl&ouml;cke &middot; ${dur.sec ? '&asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}${dur.unknown ? ' +' : ''}</div></div>
         <span class="tpo-week">${as.length ? `${done}/${as.length} erledigt` : 'nicht ver&ouml;ffentlicht'}</span>
       </div>
@@ -152,13 +187,14 @@ async function renderConditionHub(profile) {
   const content = `
     <div class="card cd-intro">
       <div class="ath-toolbar">
-        <div><b>Condition-Einheiten</b> <span class="muted-inline">Ausdauer &amp; Kondition planen, individuell nach vIFT (30-15 IFT) und Herzfrequenz</span></div>
+        <div><b>Conditioning-Einheiten</b> <span class="muted-inline">Ausdauer &amp; Kondition planen, individuell nach vIFT (30-15 IFT) und Herzfrequenz</span></div>
         <span class="spacer"></span>
-        <button type="button" class="secondary" id="cdValues">&#10084;&#65039; Leistungswerte (vIFT / HFmax)</button>
+        <button type="button" class="secondary" id="cdValues">&#128200; Leistungswerte (vIFT / HFmax)</button>
         <button type="button" id="cdNew">+ Neue Einheit</button>
       </div>
     </div>
-    ${cards || '<div class="card"><p class="muted">Noch keine Condition-Einheiten. &bdquo;+ Neue Einheit&ldquo; anklicken.</p></div>'}`;
+    ${cards || '<div class="card"><p class="muted">Noch keine Conditioning-Einheiten. &bdquo;+ Neue Einheit&ldquo; anklicken.</p></div>'}
+    ${CD_SOURCES_HTML}`;
   renderShell(profile, 'condition', T, content);
   document.getElementById('cdNew').onclick = () => renderCdEditor(profile, null);
   document.getElementById('cdValues').onclick = () => renderCdValues(profile);
@@ -173,7 +209,7 @@ async function renderConditionHub(profile) {
   appEl.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     const s = (sRes.data || []).find(x => x.id === b.dataset.del);
     const n = (lRes.data || []).filter(l => l.session_id === s.id).length;
-    if (!confirm('Condition-Einheit „' + (s.title || '') + '“ löschen?' + (n ? '\n\n' + n + ' Eintragung(en) der Athlet:innen werden mitgelöscht (sRPE im Load Management bleibt).' : ''))) return;
+    if (!confirm('Conditioning-Einheit „' + (s.title || '') + '“ löschen?' + (n ? '\n\n' + n + ' Eintragung(en) der Athlet:innen werden mitgelöscht (sRPE im Load Management bleibt).' : ''))) return;
     const r = await sb.from('cd_sessions').delete().eq('id', s.id);
     if (r.error) { toast('Fehler: ' + r.error.message); return; }
     toast('Gelöscht.'); renderConditionHub(profile);
@@ -184,12 +220,38 @@ async function renderConditionHub(profile) {
 // Leistungswerte je Athlet:in (vIFT, HFmax, HFrest) + Übernahme aus dem 30-15-IFT-Tool
 // ============================================================
 async function renderCdValues(profile) {
-  const back = { label: 'Condition', go: () => renderConditionHub(profile) };
+  const back = { label: 'Conditioning', go: () => renderConditionHub(profile) };
   const T = 'Leistungswerte';
   renderShell(profile, 'condition', T, `<p class="muted">Lade&hellip;</p>`, back);
   let mgmt;
   try { mgmt = await loadAthleteData(); } catch (e) { renderShell(profile, 'condition', T, `<div class="card"><p class="error">Fehler: ${esc(e.message)}</p></div>`, back); return; }
   let grp = '';
+  // 30-15-IFT-Daten dieses Geräts (Tool „30-15 IFT“, gleicher Browser): je Name letzter vIFT + HFmax/Ruhepuls
+  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  const iftIdx = new Map();
+  try {
+    const d = JSON.parse(localStorage.getItem('ift3015_data_v1'));
+    if (d && Array.isArray(d.athletes)) {
+      const latest = {};
+      (d.sessions || []).slice().sort((x, y) => (x.date || '').localeCompare(y.date || '')).forEach(se => (se.results || []).forEach(r => { if (r.vift) latest[r.athleteId] = { vift: r.vift, date: se.date }; }));
+      d.athletes.forEach(ia => {
+        const rec = { vift: latest[ia.id] ? Math.round(latest[ia.id].vift * 10) / 10 : null, date: latest[ia.id] ? latest[ia.id].date : null, hr_max: ia.maxpuls ? Math.round(ia.maxpuls) : null, hr_rest: ia.ruhepuls ? Math.round(ia.ruhepuls) : null };
+        if (!rec.vift && !rec.hr_max && !rec.hr_rest) return;
+        [norm((ia.vorname || '') + ' ' + (ia.nachname || '')), norm(ia.name)].forEach(k => { if (k) iftIdx.set(k, rec); });
+      });
+    }
+  } catch (e) {}
+  const iftFor = a => iftIdx.get(norm(a.first_name + ' ' + a.last_name)) || null;
+  const applyIft = async (a) => {
+    const r = iftFor(a); if (!r) return false;
+    const patch = {};
+    if (r.vift) { patch.vift_kmh = r.vift; patch.vift_date = r.date || null; }
+    if (r.hr_max) patch.hr_max = r.hr_max;
+    if (r.hr_rest) patch.hr_rest = r.hr_rest;
+    const res = await sb.from('athletes').update(patch).eq('id', a.id);
+    if (res.error) { toast('Fehler: ' + res.error.message); return false; }
+    Object.assign(a, patch); return true;
+  };
   const draw = () => {
     const list = mgmt.athletes.filter(a => !grp || a.groupIds.includes(grp))
       .sort((x, y) => x.last_name.localeCompare(y.last_name, 'de') || x.first_name.localeCompare(y.first_name, 'de'));
@@ -198,21 +260,28 @@ async function renderCdValues(profile) {
         <div class="ath-toolbar">
           <select id="cdvGrp" style="width:auto;"><option value="">Alle Gruppen</option>${mgmt.groups.map(g => `<option value="${g.id}" ${g.id === grp ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select>
           <span class="spacer"></span>
-          <button type="button" class="secondary" id="cdvIft">&#8595; Aus 30-15 IFT &uuml;bernehmen</button>
+          <button type="button" class="secondary" id="cdvIft" ${iftIdx.size ? '' : 'disabled title="Auf diesem Ger&auml;t sind keine 30-15-IFT-Daten gespeichert"'}>&#8595; Alle aus 30-15 IFT &uuml;bernehmen</button>
         </div>
-        <p class="hint">vIFT = Endgeschwindigkeit im 30-15 Intermittent Fitness Test (km/h). HFmax und Ruhepuls f&uuml;r Pulsbereiche (% HFmax, Zonen, Karvonen). Werte werden beim Ver&ouml;ffentlichen einer Einheit f&uuml;r die pers&ouml;nlichen Vorgaben verwendet. &Auml;nderungen speichern automatisch.</p>
+        <p class="hint">Je Athlet:in <b>&bdquo;&#8595; 30-15&ldquo;</b> (letzter Test aus dem 30-15-IFT-Tool dieses Ger&auml;ts) oder Werte <b>manuell eintragen</b>. Ohne HFmax wird sie aus dem Alter gesch&auml;tzt (Tanaka) &ndash; grau als Vorschlag angezeigt. vIFT = Endgeschwindigkeit im 30-15 Intermittent Fitness Test (km/h). HFmax und Ruhepuls f&uuml;r Pulsbereiche (% HFmax, Zonen, Karvonen). Werte werden beim Ver&ouml;ffentlichen einer Einheit f&uuml;r die pers&ouml;nlichen Vorgaben verwendet. &Auml;nderungen speichern automatisch.</p>
         <div class="tablewrap"><table class="user-table cd-vals">
-          <thead><tr><th>Name</th><th>vIFT (km/h)</th><th>Test vom</th><th>HFmax</th><th>Ruhepuls</th><th>App</th></tr></thead>
+          <thead><tr><th>Name</th><th>Alter</th><th>vIFT (km/h)</th><th>Test vom</th><th>HFmax</th><th>Ruhepuls</th><th>30-15 IFT</th><th>App</th></tr></thead>
           <tbody>${list.map(a => `<tr data-id="${a.id}">
             <td>${esc(a.last_name)}, ${esc(a.first_name)}</td>
+            <td>${cdAge(a.birthdate) ?? '<span class="muted">–</span>'}</td>
             <td><input type="text" inputmode="decimal" data-f="vift_kmh" value="${a.vift_kmh ?? ''}" placeholder="z. B. 18,5"></td>
             <td><input type="date" data-f="vift_date" value="${a.vift_date || ''}"></td>
-            <td><input type="text" inputmode="numeric" data-f="hr_max" value="${a.hr_max ?? ''}" placeholder="z. B. 200"></td>
+            <td><input type="text" inputmode="numeric" data-f="hr_max" value="${a.hr_max ?? ''}" placeholder="${cdAge(a.birthdate) ? '≈ ' + cdHrMaxEst(cdAge(a.birthdate)) + ' geschätzt' : 'z. B. 200'}"></td>
             <td><input type="text" inputmode="numeric" data-f="hr_rest" value="${a.hr_rest ?? ''}" placeholder="z. B. 55"></td>
-            <td>${a.profile_id ? '&#10003;' : '<span class="muted" title="Kein App-Zugang verkn&uuml;pft">–</span>'}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Keine Athlet:innen.</td></tr>'}</tbody>
+            <td>${(r => r ? `<button type="button" class="secondary small-btn" data-ift="${a.id}" title="${[r.vift ? 'vIFT ' + String(r.vift).replace('.', ',') + ' km/h' + (r.date ? ' (' + new Date(r.date + 'T00:00:00').toLocaleDateString('de-DE') + ')' : '') : '', r.hr_max ? 'HFmax ' + r.hr_max : '', r.hr_rest ? 'Ruhepuls ' + r.hr_rest : ''].filter(Boolean).join(' · ')}">&#8595; 30-15</button>` : '<span class="muted">–</span>')(iftFor(a))}</td>
+            <td>${a.profile_id ? '&#10003;' : '<span class="muted" title="Kein App-Zugang verkn&uuml;pft">–</span>'}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Keine Athlet:innen.</td></tr>'}</tbody>
         </table></div>
+        ${CD_SOURCES_HTML}
       </div>`;
     renderShell(profile, 'condition', T, html, back);
+    appEl.querySelectorAll('[data-ift]').forEach(b => b.onclick = async () => {
+      const a = mgmt.athletes.find(x => x.id === b.dataset.ift);
+      if (await applyIft(a)) { toast('Aus 30-15 IFT übernommen: ' + a.first_name + ' ' + a.last_name); draw(); }
+    });
     document.getElementById('cdvGrp').onchange = e => { grp = e.target.value; draw(); };
     appEl.querySelectorAll('.cd-vals input[data-f]').forEach(inp => {
       inp.onchange = async () => {
@@ -229,29 +298,11 @@ async function renderCdValues(profile) {
       };
     });
     document.getElementById('cdvIft').onclick = async () => {
-      let d = null;
-      try { d = JSON.parse(localStorage.getItem('ift3015_data_v1')); } catch (e) {}
-      if (!d || !Array.isArray(d.athletes)) { alert('Auf diesem Gerät sind keine 30-15-IFT-Daten gespeichert.\n\nBitte am Gerät mit den IFT-Tests (Testungen → 30-15 IFT) öffnen oder die Werte hier eintragen.'); return; }
-      const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
-      const latest = {};   // athleteId -> { vift, date }
-      (d.sessions || []).slice().sort((x, y) => (x.date || '').localeCompare(y.date || '')).forEach(s => (s.results || []).forEach(r => { if (r.vift) latest[r.athleteId] = { vift: r.vift, date: s.date }; }));
-      const byName = new Map(mgmt.athletes.map(a => [norm(a.first_name + ' ' + a.last_name), a]));
-      let n = 0; const miss = [];
-      for (const ia of d.athletes) {
-        const key = norm((ia.vorname || '') + ' ' + (ia.nachname || '')) || norm(ia.name);
-        const a = byName.get(key) || byName.get(norm(ia.name));
-        const res = latest[ia.id];
-        const patch = {};
-        if (res && res.vift) { patch.vift_kmh = Math.round(res.vift * 10) / 10; patch.vift_date = res.date || null; }
-        if (ia.maxpuls) patch.hr_max = Math.round(ia.maxpuls);
-        if (ia.ruhepuls) patch.hr_rest = Math.round(ia.ruhepuls);
-        if (!Object.keys(patch).length) continue;
-        if (!a) { miss.push(ia.name || key); continue; }
-        const r = await sb.from('athletes').update(patch).eq('id', a.id);
-        if (!r.error) { Object.assign(a, patch); n++; }
-      }
+      if (!iftIdx.size) return;
+      const list = mgmt.athletes.filter(a => (!grp || a.groupIds.includes(grp)) && iftFor(a));
+      if (!confirm(list.length + ' Athlet:innen mit 30-15-IFT-Daten gefunden. Werte übernehmen (vorhandene werden überschrieben)?')) return;
+      let n = 0; for (const a of list) if (await applyIft(a)) n++;
       toast(n + ' Athlet:innen aktualisiert');
-      if (miss.length) alert('Übernommen: ' + n + '\n\nNicht gefunden in der Athletenverwaltung (Name abweichend?):\n• ' + miss.join('\n• '));
       draw();
     };
   };
@@ -262,8 +313,8 @@ async function renderCdValues(profile) {
 // Editor
 // ============================================================
 async function renderCdEditor(profile, session) {
-  const back = { label: 'Condition', go: () => { if (!dirty || confirm('Ungespeicherte Änderungen verwerfen?')) renderConditionHub(profile); } };
-  const T = session && session.id ? 'Condition bearbeiten' : 'Neue Condition-Einheit';
+  const back = { label: 'Conditioning', go: () => { if (!dirty || confirm('Ungespeicherte Änderungen verwerfen?')) renderConditionHub(profile); } };
+  const T = session && session.id ? 'Conditioning bearbeiten' : 'Neue Conditioning-Einheit';
   renderShell(profile, 'condition', T, `<p class="muted">Lade&hellip;</p>`, back);
   const S = session ? JSON.parse(JSON.stringify(session)) : { id: null, title: '', team: '', planned_date: new Date().toISOString().slice(0, 10), content: {} };
   S.content = S.content || {};
@@ -322,8 +373,9 @@ async function renderCdEditor(profile, session) {
     const who = users.filter(u => previewGrp === '__pub' ? picked.has(u.id) : (!previewGrp || (athByProfile[u.id] && athByProfile[u.id].groupIds.includes(previewGrp))));
     if (!mains.length) return '<p class="hint">Pers&ouml;nliche Werte entstehen bei Intensit&auml;t in % vIFT, % HFmax, HF-Zone oder Karvonen.</p>';
     return `<div class="tablewrap"><table class="user-table cd-prev"><thead><tr><th>Athlet:in</th><th>vIFT</th><th>HFmax</th>${mains.map((b, k) => `<th>${esc(CD_METHOD[b.method] ? CD_METHOD[b.method].label.split(' (')[0] : 'Block')}<div class="hint" style="margin:0;">${esc(cdStructText(b))}</div></th>`).join('')}</tr></thead>
-      <tbody>${who.map(u => { const a = athByProfile[u.id] || {}; const p = { vift: cdNum(a.vift_kmh), hr_max: a.hr_max, hr_rest: a.hr_rest };
-        return `<tr><td>${esc(u.name)}</td><td>${p.vift ? String(p.vift).replace('.', ',') : '<span class="muted">–</span>'}</td><td>${p.hr_max || '<span class="muted">–</span>'}</td>${mains.map(b => `<td>${esc(cdPersonalText(b, p).text) || '<span class="muted">Wert fehlt</span>'}</td>`).join('')}</tr>`; }).join('') || `<tr><td colspan="${3 + mains.length}" class="muted">Keine Athlet:innen mit App-Zugang in der Auswahl.</td></tr>`}</tbody></table></div>`;
+      <tbody>${who.map(u => { const a = athByProfile[u.id] || {}; const p = { vift: cdNum(a.vift_kmh), hr_max: a.hr_max, hr_rest: a.hr_rest, age: cdAge(a.birthdate) };
+        const hm = p.hr_max || (p.age ? `<span class="muted" title="gesch&auml;tzt nach Tanaka (208 &minus; 0,7 &times; Alter)">&asymp; ${cdHrMaxEst(p.age)}</span>` : '<span class="muted">–</span>');
+        return `<tr><td>${esc(u.name)}</td><td>${p.vift ? String(p.vift).replace('.', ',') : '<span class="muted">–</span>'}</td><td>${hm}</td>${mains.map(b => { const r = cdPersonalText(b, p); return `<td class="${r.fallback ? 'cd-fb' : ''}">${esc(r.text) || '<span class="muted">–</span>'}</td>`; }).join('')}</tr>`; }).join('') || `<tr><td colspan="${3 + mains.length}" class="muted">Keine Athlet:innen mit App-Zugang in der Auswahl.</td></tr>`}</tbody></table></div>`;
   };
   const draw = () => {
     const tot = cdSessionSec(S.content);
@@ -348,7 +400,8 @@ async function renderCdEditor(profile, session) {
         <div class="ath-toolbar"><h2 style="margin:0;">Pers&ouml;nliche Vorgaben (Vorschau)</h2><span class="spacer"></span>
           <select id="cdPrevGrp" style="width:auto;"><option value="">Alle mit App-Zugang</option><option value="__pub" ${previewGrp === '__pub' ? 'selected' : ''}>Nur ausgew&auml;hlte (Ver&ouml;ffentlichen)</option>${groups.map(g => `<option value="${g.id}" ${g.id === previewGrp ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>
         ${previewHtml()}
-        <p class="hint">Fehlende vIFT/HFmax unter &bdquo;Condition &rarr; Leistungswerte&ldquo; eintragen oder aus dem 30-15 IFT &uuml;bernehmen.</p>
+        <p class="hint">Fehlende vIFT/HFmax unter &bdquo;Conditioning &rarr; Leistungswerte&ldquo; eintragen oder aus dem 30-15 IFT &uuml;bernehmen. Ohne HFmax wird sie aus dem Alter gesch&auml;tzt (&asymp;), ohne jegliche Werte gilt der Richtwert nach Borg-Skala + Sprechtest (kursiv).</p>
+        ${CD_SOURCES_HTML}
       </div>
       <div class="cd-savebar">
         <button type="button" class="secondary" id="cdSave">&#128190; Speichern</button>
@@ -414,10 +467,10 @@ async function renderCdEditor(profile, session) {
     const render = () => {
       host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:640px;">
         <h2>&#128242; In App ver&ouml;ffentlichen</h2>
-        <p class="hint" style="margin-top:0;">Die Ausgew&auml;hlten sehen die Einheit im Men&uuml; unter &bdquo;Condition&ldquo; mit ihren pers&ouml;nlichen Vorgaben. Sp&auml;tere &Auml;nderungen an der Einheit sind sofort sichtbar.</p>
+        <p class="hint" style="margin-top:0;">Die Ausgew&auml;hlten sehen die Einheit im Men&uuml; unter &bdquo;Conditioning&ldquo; mit ihren pers&ouml;nlichen Vorgaben. Sp&auml;tere &Auml;nderungen an der Einheit sind sofort sichtbar.</p>
         <div class="chips" style="margin-bottom:8px;">${groups.map(g => `<button type="button" class="secondary small-btn" data-g="${g.id}">${esc(g.name)}</button>`).join('')}<button type="button" class="secondary small-btn" data-g="__all">Alle</button><button type="button" class="secondary small-btn" data-g="__none">Keine</button></div>
-        <div class="cd-pick">${users.map(u => { const a = athByProfile[u.id]; const miss = !a || !cdNum(a.vift_kmh) || !a.hr_max; const noPerm = !!u.permissions && u.permissions.condition === 'none';
-          return `<label><input type="checkbox" data-u="${u.id}" ${sel.has(u.id) ? 'checked' : ''}> ${esc(u.name)}${miss ? ' <span class="muted-inline" title="vIFT/HFmax fehlen – allgemeine Vorgaben">(Werte fehlen)</span>' : ''}${noPerm ? ' <b style="color:#b0281c;">Recht fehlt</b>' : ''}</label>`; }).join('') || '<p class="muted">Keine Athlet:innen mit App-Zugang.</p>'}</div>
+        <div class="cd-pick">${users.map(u => { const a = athByProfile[u.id]; const miss = !a || (!cdNum(a.vift_kmh) && !a.hr_max); const noPerm = !!u.permissions && u.permissions.condition === 'none';
+          return `<label><input type="checkbox" data-u="${u.id}" ${sel.has(u.id) ? 'checked' : ''}> ${esc(u.name)}${miss ? ' <span class="muted-inline" title="vIFT/HFmax fehlen – allgemeine Vorgaben">(ohne Messwerte &rarr; Richtwerte)</span>' : ''}${noPerm ? ' <b style="color:#b0281c;">Recht fehlt</b>' : ''}</label>`; }).join('') || '<p class="muted">Keine Athlet:innen mit App-Zugang.</p>'}</div>
         <div class="modal-actions"><span class="spacer">${sel.size} ausgew&auml;hlt</span>
           <button type="button" class="secondary" id="cdpX">Abbrechen</button>
           <button type="button" id="cdpGo">Ver&ouml;ffentlichen</button></div>
@@ -436,7 +489,7 @@ async function renderCdEditor(profile, session) {
         const btn = host.querySelector('#cdpGo'); btn.disabled = true; btn.textContent = 'Veröffentliche …';
         if (!(await save())) { btn.disabled = false; btn.textContent = 'Veröffentlichen'; return; }
         const rows = [...sel].map(uid => { const a = athByProfile[uid] || {}; return { session_id: S.id, user_id: uid, active: true,
-          personal: { vift: cdNum(a.vift_kmh), hr_max: a.hr_max || null, hr_rest: a.hr_rest || null } }; });
+          personal: { vift: cdNum(a.vift_kmh), hr_max: a.hr_max || null, hr_rest: a.hr_rest || null, age: cdAge(a.birthdate) } }; });
         let r = rows.length ? await sb.from('cd_assignments').upsert(rows, { onConflict: 'session_id,user_id' }) : { error: null };
         const removed = [...picked].filter(u => !sel.has(u));
         if (!r.error && removed.length) r = await sb.from('cd_assignments').update({ active: false }).eq('session_id', S.id).in('user_id', removed);
@@ -452,8 +505,8 @@ async function renderCdEditor(profile, session) {
 
 // ---------- Eintragungen einer Einheit (Admin/Trainer) ----------
 async function renderCdResults(profile, s, names) {
-  const back = { label: 'Condition', go: () => renderConditionHub(profile) };
-  const T = s.title || 'Condition-Einheit';
+  const back = { label: 'Conditioning', go: () => renderConditionHub(profile) };
+  const T = s.title || 'Conditioning-Einheit';
   renderShell(profile, 'condition', T, `<p class="muted">Lade&hellip;</p>`, back);
   const [aRes, lRes] = await Promise.all([
     sb.from('cd_assignments').select('*').eq('session_id', s.id).eq('active', true),
@@ -497,18 +550,18 @@ function cdMyListHtml(list) {
     const dur = cdSessionSec(x.s.content || {});
     const st = x.log && x.log.completed ? '&#10003;' : (x.log ? '&#9680;' : '');
     return `<button type="button" class="cd-mine${x.log && x.log.completed ? ' done' : ''}" data-cd="${x.s.id}">
-      <span><b>${esc(x.s.title || 'Condition')}</b><span class="muted-inline">${x.s.planned_date ? new Date(x.s.planned_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }) : ''}${dur.sec ? ' &middot; &asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}</span></span><span class="cd-st">${st}</span></button>`;
+      <span><b>${esc(x.s.title || 'Conditioning')}</b><span class="muted-inline">${x.s.planned_date ? new Date(x.s.planned_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }) : ''}${dur.sec ? ' &middot; &asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}</span></span><span class="cd-st">${st}</span></button>`;
   };
-  return `<div class="card"><h2>&#10084;&#65039; Condition</h2>
+  return `<div class="card"><h2>&#9201;&#65039; Conditioning</h2>
     <div class="cd-mylist">${open.map(item).join('')}</div>
     ${done.length ? `<details style="margin-top:8px;"><summary class="hint" style="cursor:pointer;">Erledigt (${done.length})</summary><div class="cd-mylist">${done.map(item).join('')}</div></details>` : ''}</div>`;
 }
-// eigener Menüpunkt „Condition“ für Athlet:innen (Recht „condition“)
+// eigener Menüpunkt „Conditioning“ für Athlet:innen (Recht „condition“)
 async function renderMyConditionList(profile) {
-  renderShell(profile, 'condition', 'Condition', `<p class="muted">Lade&hellip;</p>`);
+  renderShell(profile, 'condition', 'Conditioning', `<p class="muted">Lade&hellip;</p>`);
   const list = await cdLoadMine().catch(() => []);
-  renderShell(profile, 'condition', 'Condition', list.length ? cdMyListHtml(list)
-    : `<div class="card"><h2>Noch keine Condition-Einheit</h2><p class="muted">Sobald dein Trainer eine Ausdauer-/Konditionseinheit f&uuml;r dich ver&ouml;ffentlicht, erscheint sie hier &ndash; mit deinen pers&ouml;nlichen Tempo- und Pulsvorgaben.</p></div>`);
+  renderShell(profile, 'condition', 'Conditioning', list.length ? cdMyListHtml(list)
+    : `<div class="card"><h2>Noch keine Conditioning-Einheit</h2><p class="muted">Sobald dein Trainer eine Ausdauer-/Konditionseinheit f&uuml;r dich ver&ouml;ffentlicht, erscheint sie hier &ndash; mit deinen pers&ouml;nlichen Tempo- und Pulsvorgaben.</p></div>`);
   cdWireMyList(profile, list);
 }
 function cdWireMyList(profile, list) {
@@ -519,7 +572,7 @@ function renderMyCondition(profile, x) {
   const canEdit = perm(profile, 'condition') === 'edit';
   const s = x.s, p = x.personal || {}, blocks = (s.content && s.content.blocks) || [];
   const data = JSON.parse(JSON.stringify((x.log && x.log.data) || {})); data.blocks = data.blocks || {};
-  const back = { label: 'Condition', go: () => renderMyConditionList(profile) };
+  const back = { label: 'Conditioning', go: () => renderMyConditionList(profile) };
   let timer = null;
   const persist = async (completed, extra) => {
     if (!canEdit) return;
@@ -554,16 +607,16 @@ function renderMyCondition(profile, x) {
     const dur = cdSessionSec(s.content || {});
     const content = `
       <div class="card mp-sesshead" style="--lay-main:#1f9d55;--lay-dark:#157a42;--lay-accent:#a1d7ff;">
-        <div><div class="mp-kicker">Condition${s.planned_date ? ' &middot; ' + new Date(s.planned_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' }) : ''}</div>
-        <div class="mp-big">${esc(s.title || 'Condition')}</div>
+        <div><div class="mp-kicker">Conditioning${s.planned_date ? ' &middot; ' + new Date(s.planned_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' }) : ''}</div>
+        <div class="mp-big">${esc(s.title || 'Conditioning')}</div>
         <div class="muted-inline">${dur.sec ? '&asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}${x.log && x.log.completed ? ' &middot; abgeschlossen' : ''}</div></div>
       </div>
       ${s.content && s.content.note ? `<div class="card mp-info">&#128221; ${esc(s.content.note)}</div>` : ''}
-      ${!p.vift && !p.hr_max ? '<p class="hint">F&uuml;r pers&ouml;nliche Tempo- und Pulsvorgaben fehlen noch deine Testwerte (vIFT/HFmax) &ndash; sprich deinen Trainer an.</p>' : ''}
+      ${!p.vift && !p.hr_max ? `<p class="hint">${p.age ? 'Deine Pulswerte sind aus dem Alter gesch&auml;tzt' : 'Ohne Testwerte gelten Richtwerte nach Anstrengung (Borg-Skala 1&ndash;10) und Sprechtest'} &ndash; genauer wird es mit deinem 30-15-IFT-Ergebnis und gemessener HFmax.</p>` : ''}
       ${html}
       <input type="text" class="mp-anote" id="cdMyNote" value="${esc(data.note || '')}" placeholder="Notiz zur Einheit (optional)" ${canEdit ? '' : 'disabled'}>
       ${canEdit ? `<button type="button" id="cdFinish" class="mp-finish">Einheit abschlie&szlig;en</button>` : ''}`;
-    renderShell(profile, 'condition', 'Condition', content, back);
+    renderShell(profile, 'condition', 'Conditioning', content, back);
     appEl.querySelectorAll('[data-b]').forEach(el => {
       const d = () => (data.blocks[el.dataset.b] = data.blocks[el.dataset.b] || {});
       if (el.dataset.f === 'done') el.onchange = () => { d().done = el.checked; el.closest('.cd-myblock').classList.toggle('done', el.checked); soon(); };
@@ -596,7 +649,7 @@ function renderMyCondition(profile, x) {
       await persist(true, needRpe ? { srpe: rpe, duration_min: dur } : {});
       if (needRpe) {
         // wie „Mein Trainingsplan“: sRPE ins Load Management, bei vorhandenem Tages-Eintrag zusammenrechnen
-        const date = new Date().toISOString().slice(0, 10), tag = 'Condition: ' + (s.title || '');
+        const date = new Date().toISOString().slice(0, 10), tag = 'Conditioning: ' + (s.title || '');
         const { data: ex } = await sb.from('load_entries').select('*').eq('user_id', x.uid).eq('entry_date', date).maybeSingle();
         let row = { user_id: x.uid, entry_date: date, srpe: rpe, duration_min: dur, comment: tag };
         if (ex && !(ex.comment || '').includes(tag)) {
