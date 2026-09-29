@@ -2401,6 +2401,8 @@ async function openPublishDialog(){
   if(teamGroup) users.forEach(u => { if(userGroups(u.id).includes(teamGroup.id)) picked[u.id] = true; });
   let planSel = (state.publishedPlanId && plans.some(p=>p.id===state.publishedPlanId)) ? state.publishedPlanId : '__new';
   let mode = 'all';
+  // aus der Übersicht „Nur für <Person> ändern“ geöffnet: Variante nur für diese Person vorwählen
+  if(state.editingFromApp && state.editTargetUid && planSel === state.publishedPlanId){ Object.keys(picked).forEach(k=>delete picked[k]); picked[state.editTargetUid] = true; mode = 'variant'; }
 
   const curWeekOf = p => {
     if(!p || !p.start_date) return 1;
@@ -2498,7 +2500,7 @@ async function openPublishDialog(){
         const a = await sb.from('tp_assignments').upsert({ plan_id: planId, user_id: uid, active: true }, { onConflict: 'plan_id,user_id' });
         if(a.error) throw a.error;
       }
-      state.publishedPlanId = planId; state.editingFromApp = false; saveState(true);
+      state.publishedPlanId = planId; state.editingFromApp = false; state.editTargetUid = ''; state.editTargetName = ''; saveState(true);
       close();
       toast(!p ? 'Plan veröffentlicht für ' + ids.length + ' Athlet:innen' : (userIds ? 'Variante ab Woche ' + fromWeek + ' für ' + ids.length + ' Athlet:innen' : 'Änderung ab Woche ' + fromWeek + ' veröffentlicht'));
     } catch(e){
@@ -2518,29 +2520,46 @@ async function openPublishDialog(){
 })();
 /* Laufenden App-Plan zum Bearbeiten laden (Link „✎ Plan bearbeiten“ aus der Auswertung: trainingsplan.html#edit=<planId>) */
 (async function(){
-  const m = location.hash.match(/^#edit=([0-9a-f-]{36})$/i);
+  const m = location.hash.match(/^#edit=([0-9a-f-]{36})(?:&uid=([0-9a-f-]{36}))?$/i);
   if(!m) return;
   history.replaceState(null, '', location.pathname + location.search);
   for(let k=0; k<100 && !window.appSb; k++) await new Promise(r=>setTimeout(r,100));
   const sb = window.appSb;
   if(!sb){ alert('Keine Verbindung zur App – Plan konnte nicht geladen werden.'); return; }
-  const [p, v] = await Promise.all([
+  const uid = m[2] || '';
+  const [p, v, who] = await Promise.all([
     sb.from('tp_plans').select('*').eq('id', m[1]).single(),
-    sb.from('tp_plan_versions').select('*').eq('plan_id', m[1]).is('user_ids', null).order('from_week', {ascending:false}).order('id', {ascending:false}).limit(1),
+    uid ? sb.from('tp_plan_versions').select('*').eq('plan_id', m[1]).order('from_week')
+        : sb.from('tp_plan_versions').select('*').eq('plan_id', m[1]).is('user_ids', null).order('from_week', {ascending:false}).order('id', {ascending:false}).limit(1),
+    uid ? sb.from('profiles').select('id,name').eq('id', uid).maybeSingle() : Promise.resolve({ data: null }),
   ]);
   if(p.error || v.error || !(v.data||[]).length){ alert('Plan konnte nicht geladen werden: ' + ((p.error||v.error||{}).message || 'keine Version gefunden')); return; }
-  if(!confirm('Laufenden Plan „' + (p.data.title || 'Ohne Titel') + '“ zum Bearbeiten laden?\nDer aktuell geöffnete Stand in der Trainingsplanung wird dabei ersetzt.')) return;
-  const c = v.data[0].content || {};
+  const whoName = (who && who.data && who.data.name) || '';
+  // Stand für eine Person = gültige Version der aktuellen Woche (eigene Variante hat Vorrang)
+  let ver = v.data[0];
+  if(uid){
+    const d0 = p.data.start_date ? Math.floor((Date.now() - new Date(p.data.start_date + 'T00:00:00').getTime()) / 86400000) : 0;
+    const wk = d0 < 0 ? 1 : Math.min(p.data.weeks, Math.floor(d0 / 7) + 1);
+    ver = null;
+    v.data.forEach(x => {
+      const applies = !x.user_ids || x.user_ids.indexOf(uid) !== -1;
+      if(!applies || x.from_week > wk) return;
+      if(!ver || x.from_week > ver.from_week || (x.from_week === ver.from_week && x.user_ids && !ver.user_ids) || (x.from_week === ver.from_week && !!x.user_ids === !!ver.user_ids && x.id > ver.id)) ver = x;
+    });
+    if(!ver) ver = v.data[0];
+  }
+  if(!confirm('Laufenden Plan „' + (p.data.title || 'Ohne Titel') + '“' + (uid ? ' für ' + (whoName || 'diese Person') : ' (für alle)') + ' zum Bearbeiten laden?\nDer aktuell geöffnete Stand in der Trainingsplanung wird dabei ersetzt.')) return;
+  const c = ver.content || {};
   state = Object.assign(defaultState(), JSON.parse(JSON.stringify({ plan: c.plan || {}, prescription: c.prescription, cooldown: c.cooldown || {},
     prepNote: c.prepNote || {}, lang: c.lang || 'de', days: p.data.days, weeks: p.data.weeks, title: p.data.title || c.title || '',
     team: p.data.team || c.team || '', layout: c.layout || LAYOUTS[0].key, start: p.data.start_date || '' })));
   if(!state.prescription) state.prescription = JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION));
-  state.publishedPlanId = p.data.id; state.editingFromApp = true;
+  state.publishedPlanId = p.data.id; state.editingFromApp = true; state.editTargetUid = uid; state.editTargetName = whoName;
   ensurePrescription(); state.activeDay = 1;
   for(let d=1; d<=state.days; d++) ensureDayStructure(d);
   saveState(true);
   syncConfigInputs(); renderPrescriptionTable(); renderTabs(); renderPanels();
-  toast('Laufender Plan geladen – Übungen ändern, dann „📲 In App veröffentlichen“ (ab aktueller Woche)');
+  toast(uid ? 'Plan von ' + (whoName || 'der Person') + ' geladen – ändern, dann „📲 In App veröffentlichen“ (gilt nur für ' + (whoName || 'diese Person') + ')' : 'Laufender Plan geladen – Übungen ändern, dann „📲 In App veröffentlichen“ (gilt für alle, ab aktueller Woche)');
 })();
 /* ---------------------------------------------------------------------
    Plan-Bibliothek in der Cloud (tp_saved_plans, 2026-09-28) + übersichtlichere Plan-Konfiguration

@@ -224,13 +224,15 @@ async function renderTpOverview(profile) {
   const back = { label: 'Trainingsplanung', go: () => renderTpHub(profile) };
   const T = 'Aktuelle Trainingsübersicht';
   renderShell(profile, 'trainingsplan', T, `<p class="muted">Lade&hellip;</p>`, back);
-  const [pRes, aRes, vRes, prRes] = await Promise.all([
+  const [pRes, aRes, vRes, prRes, lRes] = await Promise.all([
     sb.from('tp_plans').select('*').eq('archived', false).order('created_at', { ascending: false }),
     sb.from('tp_assignments').select('plan_id, user_id, active').eq('active', true),
     sb.from('tp_plan_versions').select('id, plan_id, from_week, user_ids, created_at'),
     sb.from('profiles').select('id, name'),
+    sb.from('tp_logs').select('plan_id, user_id, completed'),
   ]);
   const err = [pRes, aRes, vRes, prRes].map(r => r.error).filter(Boolean)[0];
+  const doneOf = (pid, u) => (lRes.data || []).filter(l => l.plan_id === pid && l.user_id === u && l.completed).length;
   if (err) { renderShell(profile, 'trainingsplan', T, `<div class="card"><p class="error">Fehler: ${esc(err.message)}</p></div>`, back); return; }
   const names = Object.fromEntries((prRes.data || []).map(p => [p.id, p.name]));
   const plans = (pRes.data || []).map(p => {
@@ -254,7 +256,7 @@ async function renderTpOverview(profile) {
       ${x.changes ? `<div class="hint" style="margin:0 0 8px;">&#9998; ${x.changes} &Auml;nderung(en) ab einer sp&auml;teren Woche</div>` : ''}
       <div class="tpo-people">
         <button type="button" class="tpo-chip group" data-plan="${x.p.id}" data-uid="">&#128101; Gruppenplan</button>
-        ${x.members.map(u => `<button type="button" class="tpo-chip" data-plan="${x.p.id}" data-uid="${u}">${esc(names[u] || 'Unbekannt')}${x.variantUsers.has(u) ? ' <span class="tpo-var" title="Hat eine eigene Variante">Variante</span>' : ''}</button>`).join('')}
+        ${x.members.map(u => `<button type="button" class="tpo-chip" data-plan="${x.p.id}" data-uid="${u}">${esc(names[u] || 'Unbekannt')} <span class="tpo-cnt" title="erledigte Einheiten">${doneOf(x.p.id, u)}/${x.p.weeks * x.p.days}</span>${x.variantUsers.has(u) ? ' <span class="tpo-var" title="Hat eine eigene Variante">Variante</span>' : ''}</button>`).join('')}
       </div>
     </div>`).join('');
   const content = plans.length ? `
@@ -302,12 +304,22 @@ async function renderTpPlanDetail(profile, plan, uid, name, week) {
   const back = { label: 'Aktuelle Trainingsübersicht', go: () => renderTpOverview(profile) };
   const T = plan.title || 'Trainingsplan';
   renderShell(profile, 'trainingsplan', T, `<p class="muted">Lade&hellip;</p>`, back);
-  const { data: versions, error } = await sb.from('tp_plan_versions').select('*').eq('plan_id', plan.id).order('from_week');
-  if (error) { renderShell(profile, 'trainingsplan', T, `<div class="card"><p class="error">Fehler: ${esc(error.message)}</p></div>`, back); return; }
+  const [vRes, lRes] = await Promise.all([
+    sb.from('tp_plan_versions').select('*').eq('plan_id', plan.id).order('from_week'),
+    uid ? sb.from('tp_logs').select('week, day, completed, exercises').eq('plan_id', plan.id).eq('user_id', uid) : Promise.resolve({ data: [] }),
+  ]);
+  if (vRes.error) { renderShell(profile, 'trainingsplan', T, `<div class="card"><p class="error">Fehler: ${esc(vRes.error.message)}</p></div>`, back); return; }
+  const versions = vRes.data || [];
+  // Status je Einheit dieser Person: erledigt / angefangen (etwas eingetragen) / offen
+  const stBy = {};
+  (lRes.data || []).forEach(l => {
+    const any = (l.exercises || []).some(e => e.status !== 'open' || (e.sets || []).some(x => x.done));
+    stBy[l.week + '_' + l.day] = l.completed ? 'done' : (any ? 'part' : null);
+  });
   const cur = tpWeekOfDate(plan.start_date, plan.weeks) || 1;
   const draw = (w) => {
     const content = tpContentFor(versions, w, uid);
-    const isVar = !!uid && (versions || []).some(v => v.user_ids && v.user_ids.includes(uid) && v.from_week <= w);
+    const isVar = !!uid && versions.some(v => v.user_ids && v.user_ids.includes(uid) && v.from_week <= w);
     const LAY = tpLayoutOf(plan, content);
     const days = Array.from({ length: plan.days }, (_, i) => i + 1).map(d => {
       const items = tpDayItems(content, d);
@@ -324,8 +336,10 @@ async function renderTpPlanDetail(profile, plan, uid, name, week) {
         }
         html += `<div class="tpo-ex" style="--cat:${c.color}"><b>${esc(tpLabel(it))}</b>${it.note ? `<div class="tpo-note">&#128204; ${esc(it.note)}</div>` : ''}</div>`;
       });
+      const st = uid ? stBy[w + '_' + d] : null;
+      const badge = st === 'done' ? '<span class="tpo-st done">&#10003; erledigt – bleibt unver&auml;ndert</span>' : (st === 'part' ? '<span class="tpo-st part">angefangen</span>' : (uid ? '<span class="tpo-st open">offen</span>' : ''));
       return `<div class="card tpo-day">
-        <div class="tpo-dayhead" style="background:${LAY.main};">Tag ${d}</div>
+        <div class="tpo-dayhead" style="background:${LAY.main};">Tag ${d} ${badge}</div>
         ${prep ? `<div class="tpo-note" style="margin-bottom:6px;">&#128221; ${esc(prep)}</div>` : ''}
         ${html || '<p class="muted">Keine &Uuml;bungen.</p>'}
         ${cool ? `<div class="tpo-note" style="margin-top:8px;">&#10052; Cool-down: ${esc(cool)}</div>` : ''}
@@ -334,16 +348,20 @@ async function renderTpPlanDetail(profile, plan, uid, name, week) {
     const html = `
       <div class="card">
         <div class="ath-toolbar">
-          <div><b>${esc(name || 'Gruppenplan')}</b> <span class="muted-inline">${plan.team ? esc(plan.team) + ' · ' : ''}${isVar ? 'eigene Variante' : 'Gruppenplan'}</span></div>
+          <div><b class="tpo-name">${esc(name || 'Gruppenplan')}</b> <span class="muted-inline">${plan.team ? esc(plan.team) + ' · ' : ''}${uid ? (isVar ? 'eigene Variante' : 'folgt dem Gruppenplan') : 'gilt für alle ohne eigene Variante'}</span></div>
           <span class="spacer"></span>
           <label class="muted-inline">Woche <select id="tpoWeek" style="width:auto;">${Array.from({ length: plan.weeks }, (_, i) => `<option value="${i + 1}" ${i + 1 === w ? 'selected' : ''}>${i + 1}${i + 1 === cur ? ' (aktuell)' : ''}</option>`).join('')}</select></label>
-          <button type="button" class="secondary" id="tpoEdit">&#9998; Plan bearbeiten</button>
+          ${uid ? `<button type="button" id="tpoEditOne">&#9998; Nur f&uuml;r ${esc(name || 'diese Person')} &auml;ndern</button>` : ''}
+          <button type="button" class="${uid ? 'secondary' : ''}" id="tpoEditAll">&#9998; F&uuml;r alle &auml;ndern</button>
         </div>
+        <p class="hint" style="margin:8px 0 0;">&Auml;ndern &ouml;ffnet den Plan in der Trainingsplanung. Nach &bdquo;&#128242; In App ver&ouml;ffentlichen&ldquo; gilt die &Auml;nderung ab der gew&auml;hlten Woche f&uuml;r alle <b>noch nicht erledigten Einheiten</b>${uid ? ` &ndash; bei &bdquo;Nur f&uuml;r ${esc(name || 'diese Person')}&ldquo; als eigene Variante, die anderen behalten den Gruppenplan` : ''}. Erledigte Einheiten bleiben unver&auml;ndert, in angefangenen bleiben eingetragene S&auml;tze erhalten.</p>
       </div>
       <div class="tpo-days">${days}</div>`;
     renderShell(profile, 'trainingsplan', T, html, back);
     document.getElementById('tpoWeek').onchange = e => draw(+e.target.value);
-    document.getElementById('tpoEdit').onclick = () => { window.location.href = 'trainingsplan.html#edit=' + plan.id; };
+    document.getElementById('tpoEditAll').onclick = () => { window.location.href = 'trainingsplan.html#edit=' + plan.id; };
+    const one = document.getElementById('tpoEditOne');
+    if (one) one.onclick = () => { window.location.href = 'trainingsplan.html#edit=' + plan.id + '&uid=' + uid; };
   };
   draw(week || cur);
 }

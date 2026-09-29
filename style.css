@@ -460,11 +460,20 @@ tr.no-access a{ color:var(--brand-strong); }
 .tpo-chip:hover{ border-color:var(--brand-strong, #0042fc); }
 .tpo-chip.group{ background:var(--brand-pale); border-color:var(--brand); }
 .tpo-var{ font-size:.7rem; background:#fde9d9; color:#a0521b; border-radius:6px; padding:1px 5px; margin-left:4px; }
-.tpo-days{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; align-items:start; }
-.tpo-day{ padding-top:0; overflow:hidden; }
-.tpo-dayhead{ color:#fff; font-weight:800; margin:0 -22px 10px; padding:8px 22px; }
-.tpo-cat{ margin:10px 0 4px; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--cat); border-bottom:2px solid var(--cat); padding-bottom:2px; display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap; }
-.tpo-cat span{ text-transform:none; letter-spacing:0; font-weight:600; color:var(--ink-soft); }
-.tpo-ex{ border-left:3px solid var(--cat); padding:4px 8px; margin:3px 0; font-size:.92rem; }
-.tpo-note{ font-size:.8rem; color:var(--ink-soft); margin-top:2px; }
 .tpo-actions{ display:flex; gap:8px; justify-content:flex-end; margin:-4px 0 10px; }
+
+/* Trainingsübersicht – Detail je Person (wie Sportschul-App) */
+.tpo-name{ font-size:1.15rem; }
+.tpo-days{ display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px; align-items:start; }
+.tpo-day{ padding:0 0 12px; overflow:hidden; }
+.tpo-dayhead{ color:#fff; font-weight:800; font-size:1.05rem; padding:10px 14px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.tpo-day > :not(.tpo-dayhead){ margin-left:14px; margin-right:14px; }
+.tpo-cat{ border-left:4px solid var(--cat); padding:4px 8px; margin-top:10px; font-weight:800; font-size:.85rem; color:var(--cat); display:flex; flex-direction:column; }
+.tpo-cat span{ font-weight:500; color:var(--ink-soft); font-size:.78rem; }
+.tpo-ex{ border-left:4px solid var(--cat); padding:6px 8px 6px 10px; margin:4px 0; background:var(--paper); border-radius:0 8px 8px 0; }
+.tpo-ex b{ font-size:1rem; }
+.tpo-note{ font-size:.8rem; color:var(--ink-soft); margin-top:2px; }
+.tpo-st{ font-size:.72rem; font-weight:700; padding:2px 8px; border-radius:99px; background:rgba(255,255,255,.2); color:#fff; }
+.tpo-st.done{ background:#dcf5e7; color:#1c6b47; }
+.tpo-st.part{ background:#fdf1d6; color:#8a5a00; }
+.tpo-cnt{ font-size:.75rem; color:var(--ink-soft); font-weight:600; margin-left:4px; }
