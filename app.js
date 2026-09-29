@@ -79,6 +79,7 @@ const NAV_ITEMS = [
   { key: 'menu', label: 'Dashboard', icon: '&#127968;', show: () => true },
   { key: 'trainingsplan', label: 'Trainingsplanung', icon: '&#128203;', show: p => can(p, 'trainingsplan') },
   { key: 'meinplan', label: 'Mein Trainingsplan', icon: '&#127947;', show: p => !isStaff(p) && can(p, 'meinplan') },
+  { key: 'condition', label: 'Condition', icon: '&#10084;&#65039;', show: p => isStaff(p) },
   { key: 'loadmanagement', label: 'Load Management', icon: '&#128200;', show: p => isStaff(p) },
   { key: 'srpe', label: 'Session-RPE', icon: '&#128200;', show: p => !isStaff(p) && can(p, 'srpe') },
   { key: 'wellness', label: 'Wellness-Check', icon: '&#128154;', show: p => !isStaff(p) && can(p, 'wellness') },
@@ -98,6 +99,7 @@ function navigate(profile, key) {
   else if (key === 'meinplan') renderMyPlan(profile);
   else if (key === 'warmup') window.location.href = 'warmup.html';
   else if (key === 'loadmanagement') renderLoadHub(profile);
+  else if (key === 'condition') renderConditionHub(profile);
   else if (key === 'srpe') renderAthleteDashboard(profile);
   else if (key === 'wellness') renderWellnessPage(profile);
   else if (key === 'testungen') renderTestingPage(profile);
@@ -481,6 +483,7 @@ function renderTestingPage(profile) {
 const MENU_TILES = [
   { key: 'trainingsplan', tint: 'tint-plan', icon: '&#128203;', title: 'Trainingsplanung', sub: 'Pl&auml;ne erstellen, in der App ver&ouml;ffentlichen, Auswertung (bewegte Last, Ampel)' },
   { key: 'meinplan', tint: 'tint-plan', icon: '&#127947;', title: 'Mein Trainingsplan', sub: 'Dein Plan: S&auml;tze, Wiederholungen und Gewicht eintragen' },
+  { key: 'condition', tint: 'tint-cond', icon: '&#10084;&#65039;', title: 'Condition', sub: 'Ausdauer- &amp; Konditionseinheiten planen &mdash; individuell nach vIFT (30-15 IFT) und Herzfrequenz, direkt in die App' },
   { key: 'loadmanagement', tint: 'tint-load', icon: '&#128200;', title: 'Load Management', sub: 'Rohdaten-Import, Ampel, Wochensteuerung, sRPE &amp; Wellness aus der App' },
   { key: 'srpe', tint: 'tint-load', icon: '&#128200;', title: 'Session-RPE', sub: 'Einheit eintragen: Anstrengung (1&ndash;10) und Dauer' },
   { key: 'wellness', tint: 'tint-ath', icon: '&#128154;', title: 'Wellness-Check', sub: 'Morgens vor dem Training &ndash; 4 kurze Fragen' },

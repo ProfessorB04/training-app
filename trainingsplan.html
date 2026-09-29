@@ -1347,9 +1347,16 @@ function renderPanels(){
   }
 }
 
+// Conditioning hat eine eigene Kachel „Condition“ (2026-09-29): Sektion nur noch zeigen, wenn ältere Pläne dort Einträge haben
+function tpHasConditioning(){
+  for(let d=1; d<=state.days; d++){ if(state.plan[d] && (state.plan[d].conditioning||[]).length) return true; }
+  return false;
+}
 function buildDayPanel(d){
   const frag = document.createDocumentFragment();
+  const showCond = tpHasConditioning();
   CATS.forEach(cat=>{
+    if(cat.key === 'conditioning' && !showCond) return;
     frag.appendChild(buildCategorySection(d, cat));
     if(cat.key === 'dynamic') frag.appendChild(buildPrepNoteBox(d));
   });
@@ -2828,6 +2835,7 @@ function renderPrescriptionTable(){
   table.innerHTML = `<thead><tr><th>Kategorie</th><th>Tempo</th><th>Sätze</th><th>Wdh.</th><th>Pause</th></tr></thead>`;
   const tbody = document.createElement('tbody');
   PRESCRIPTION_CATS.forEach(key=>{
+    if(key === 'conditioning' && !tpHasConditioning()) return;
     const cat = CAT_MAP[key];
     const presc = state.prescription[key];
     const tr = document.createElement('tr');

@@ -119,11 +119,12 @@ async function tpLoadMine() {
 // ---------- Übersicht „Mein Trainingsplan“ ----------
 async function renderMyPlan(profile) {
   renderShell(profile, 'meinplan', 'Mein Trainingsplan', `<p class="muted">Lade&hellip;</p>`);
-  let D;
-  try { D = await tpLoadMine(); }
+  let D, CDL = [];
+  try { [D, CDL] = await Promise.all([tpLoadMine(), (typeof cdLoadMine === 'function' ? cdLoadMine() : Promise.resolve([])).catch(() => [])]); }
   catch (e) { renderShell(profile, 'meinplan', 'Mein Trainingsplan', `<div class="card"><p class="error">Plan konnte nicht geladen werden: ${esc(e.message)}</p></div>`); return; }
   if (!D.plan) {
-    renderShell(profile, 'meinplan', 'Mein Trainingsplan', `<div class="card"><h2>Noch kein Trainingsplan</h2><p class="muted">Sobald dein Trainer einen Plan f&uuml;r dich ver&ouml;ffentlicht, erscheint er hier.</p></div>`);
+    renderShell(profile, 'meinplan', 'Mein Trainingsplan', (typeof cdMyListHtml === 'function' ? cdMyListHtml(CDL) : '') + (CDL.length ? '' : `<div class="card"><h2>Noch kein Trainingsplan</h2><p class="muted">Sobald dein Trainer einen Plan f&uuml;r dich ver&ouml;ffentlicht, erscheint er hier.</p></div>`));
+    if (CDL.length) cdWireMyList(profile, CDL);
     return;
   }
   const P = D.plan;
@@ -156,6 +157,7 @@ async function renderMyPlan(profile) {
       <div class="muted-inline">${esc(P.title || 'Trainingsplan')}${P.team ? ' &middot; ' + esc(P.team) : ''}</div></div>
       <button type="button" id="mpStart">${canEdit ? 'Training starten' : 'Ansehen'} &rarr;</button>
     </div>` : `<div class="card"><h2>&#127881; Alle Einheiten erledigt</h2><p class="muted">Stark! Dein Trainer stellt den n&auml;chsten Block ein.</p></div>`}
+    ${typeof cdMyListHtml === 'function' ? cdMyListHtml(CDL) : ''}
     <div class="card">
       <h2>${esc(P.title || 'Trainingsplan')}</h2>
       <p class="hint" style="margin-top:0;">${P.weeks} Wochen &middot; ${P.days} Einheiten pro Woche${P.start_date ? ' &middot; ab ' + wDate(P.start_date) : ''}. Tippe auf eine Einheit zum &Ouml;ffnen.</p>
@@ -163,6 +165,7 @@ async function renderMyPlan(profile) {
       <p class="hint">&#10003; erledigt &middot; &#9680; angefangen</p>
     </div>`;
   renderShell(profile, 'meinplan', 'Mein Trainingsplan', content);
+  if (CDL.length) cdWireMyList(profile, CDL);
   // beim Öffnen einer Einheit den aktuellen Planstand holen (Trainer kann laufende Pläne ändern)
   const open = async (w, d) => {
     const [v, l] = await Promise.all([

@@ -477,3 +477,53 @@ tr.no-access a{ color:var(--brand-strong); }
 .tpo-st.done{ background:#dcf5e7; color:#1c6b47; }
 .tpo-st.part{ background:#fdf1d6; color:#8a5a00; }
 .tpo-cnt{ font-size:.75rem; color:var(--ink-soft); font-weight:600; margin-left:4px; }
+
+/* ---------- Condition ---------- */
+.menu-card.tint-cond{ background:#fde6e6; border-color:#f3a9a9; }
+.menu-card.tint-cond:hover{ background:#fde6e6; border-color:#c62828; }
+.cd-card.past{ opacity:.8; }
+.tpo-chip.static{ cursor:default; }
+.cd-top{ display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; }
+.cd-top label, .cd-grid label{ display:flex; flex-direction:column; gap:4px; font-size:.78rem; color:var(--ink-soft); font-weight:600; }
+.cd-top input, .cd-grid input, .cd-grid select{ padding:8px 9px; border:1px solid var(--line); border-radius:8px; font-size:.92rem; width:100%; box-sizing:border-box; background:#fff; }
+.cd-top .w2, .cd-grid .w2{ grid-column:span 2; } .cd-top .w4{ grid-column:span 4; } .cd-grid .w3{ grid-column:span 3; }
+.cd-total{ margin-top:12px; font-size:.9rem; color:var(--ink-soft); }
+.cd-phase{ margin-bottom:18px; }
+.cd-phead{ display:flex; justify-content:space-between; align-items:center; gap:8px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; font-size:.85rem; color:var(--cat); border-bottom:2px solid var(--cat); padding-bottom:4px; margin:6px 0 10px; }
+.cd-phead button{ text-transform:none; letter-spacing:0; }
+.cd-block{ background:var(--card); border:1px solid var(--line); border-left:5px solid var(--cat); border-radius:12px; padding:12px 14px; margin-bottom:10px; }
+.cd-bhead{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+.cd-method{ font-weight:700; padding:7px 9px; border:1px solid var(--line); border-radius:8px; max-width:280px; }
+.cd-bsum{ font-size:.85rem; color:var(--ink-soft); flex:1; min-width:200px; }
+.cd-btools{ display:flex; gap:4px; }
+.cd-btools .mini{ width:30px; height:30px; padding:0; border-radius:7px; border:1px solid var(--line); background:#fff; color:var(--ink); cursor:pointer; }
+.cd-btools .mini.danger{ color:#b0281c; }
+.cd-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; }
+.cd-pair{ display:flex; gap:6px; align-items:center; }
+.cd-pair select{ width:auto; min-width:64px; }
+.cd-savebar{ position:sticky; bottom:0; display:flex; gap:10px; justify-content:flex-end; padding:12px 0; background:linear-gradient(transparent, var(--paper) 30%); }
+.cd-pick{ columns:2; column-gap:18px; max-height:300px; overflow:auto; border:1px solid var(--line); border-radius:10px; padding:8px 10px; }
+.cd-pick label{ display:block; padding:3px 0; font-size:.9rem; break-inside:avoid; }
+.cd-vals input{ width:110px; padding:6px 8px; border:1px solid var(--line); border-radius:7px; }
+.cd-vals input.err{ border-color:#b0281c; }
+.cd-prev td, .cd-prev th{ font-size:.85rem; }
+.cd-mylist{ display:flex; flex-direction:column; gap:8px; }
+.cd-mine{ display:flex; justify-content:space-between; align-items:center; gap:10px; width:100%; text-align:left; background:#fff; color:var(--ink); border:1.5px solid var(--line); border-left:5px solid #1f9d55; border-radius:12px; padding:10px 14px; cursor:pointer; }
+.cd-mine > span:first-child{ display:flex; flex-direction:column; gap:2px; }
+.cd-mine.done{ opacity:.7; }
+.cd-st{ font-weight:800; color:#1f9d55; font-size:1.1rem; }
+.cd-myblock{ border-left:5px solid var(--cat); }
+.cd-myblock.done{ background:#eefaf3; }
+.cd-mytitle{ display:flex; justify-content:space-between; gap:8px; align-items:baseline; font-size:1.05rem; }
+.cd-mystruct{ font-weight:700; margin-top:4px; }
+.cd-myint{ color:var(--ink-soft); font-size:.9rem; }
+.cd-mypers{ margin-top:6px; background:#eaf5ff; border-radius:8px; padding:6px 10px; font-size:.95rem; }
+.cd-mylog{ display:grid; grid-template-columns:auto 90px 90px 1fr; gap:8px; align-items:center; margin-top:10px; }
+.cd-mylog input[type=text]{ padding:8px; border:1px solid var(--line); border-radius:8px; font-size:.95rem; min-width:0; }
+@media (max-width:760px){
+  .cd-top, .cd-grid{ grid-template-columns:1fr 1fr; }
+  .cd-top .w4, .cd-grid .w3, .cd-top .w2, .cd-grid .w2{ grid-column:span 2; }
+  .cd-mylog{ grid-template-columns:1fr 1fr; }
+  .cd-mylog .mp-check{ grid-column:span 2; }
+  .cd-pick{ columns:1; }
+}
