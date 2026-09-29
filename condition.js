@@ -566,8 +566,8 @@ async function renderCdEditor(profile, session) {
 }
 
 // ---------- Eintragungen einer Einheit (Admin/Trainer) ----------
-async function renderCdResults(profile, s, names) {
-  const back = { label: 'Conditioning', go: () => renderConditionHub(profile) };
+async function renderCdResults(profile, s, names, backOverride) {
+  const back = backOverride || { label: 'Conditioning', go: () => renderConditionHub(profile) };
   const T = s.title || L('Conditioning-Einheit', 'Conditioning session');
   renderShell(profile, 'trainingsplan', T, `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`, back);
   const [aRes, lRes] = await Promise.all([
@@ -736,4 +736,116 @@ function renderMyCondition(profile, x) {
     };
   };
   draw();
+}
+
+// ============================================================
+// Einbindung in Trainingsübersicht & Auswertung (Admin/Trainer)
+// ============================================================
+// alle aktiven Conditioning-Einheiten mit Zuordnungen und Eintragungen
+async function cdLoadAll() {
+  const [s, a, l] = await Promise.all([
+    sb.from('cd_sessions').select('*').eq('archived', false),
+    sb.from('cd_assignments').select('session_id, user_id, personal, active').eq('active', true),
+    sb.from('cd_logs').select('*'),
+  ]);
+  if (s.error || a.error) return { sessions: [], asg: [], logs: [] };
+  return { sessions: s.data || [], asg: a.data || [], logs: l.data || [] };
+}
+const cdAU = (l) => l && l.srpe && l.duration_min ? l.srpe * l.duration_min : 0;
+function cdStatusOf(log) { return log && log.completed ? 'done' : (log ? 'part' : 'open'); }
+function cdStatusIcon(st) { return st === 'done' ? '&#10003;' : (st === 'part' ? '&#9680;' : '&#9675;'); }
+
+// Abschnitt „Conditioning“ in der Aktuellen Trainingsübersicht
+function cdOverviewHtml(CD, names) {
+  const list = CD.sessions.filter(s => CD.asg.some(a => a.session_id === s.id))
+    .sort((x, y) => (y.planned_date || '').localeCompare(x.planned_date || ''));
+  if (!list.length) return '';
+  return `<h2 class="cd-ov-h">&#9201;&#65039; Conditioning</h2>` + list.map(s => {
+    const as = CD.asg.filter(a => a.session_id === s.id).sort((x, y) => (names[x.user_id] || '').localeCompare(names[y.user_id] || '', 'de'));
+    const logOf = u => CD.logs.find(l => l.session_id === s.id && l.user_id === u);
+    const done = as.filter(a => (logOf(a.user_id) || {}).completed).length;
+    const dur = cdSessionSec(s.content || {});
+    return `<div class="card tpo-card cd-ov">
+      <div class="tpo-head">
+        <div><div class="tpo-title">${esc(s.title || 'Conditioning')}</div>
+          <div class="muted-inline">${s.planned_date ? cdDate(s.planned_date, { weekday: 'short', day: '2-digit', month: '2-digit' }) : 'ohne Datum'}${s.content && s.content.forName ? ' &middot; f&uuml;r ' + esc(s.content.forName) : ''}${s.team ? ' &middot; ' + esc(s.team) : ''}${dur.sec ? ' &middot; &asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}</div></div>
+        <span class="tpo-week">${done}/${as.length} erledigt</span>
+      </div>
+      <div class="tpo-people">
+        <button type="button" class="tpo-chip group" data-cdres="${s.id}">&#128202; Alle Eintragungen</button>
+        ${as.map(a => { const l = logOf(a.user_id), st = cdStatusOf(l); return `<button type="button" class="tpo-chip cd-st-${st}" data-cds="${s.id}" data-cdu="${a.user_id}">${cdStatusIcon(st)} ${esc(names[a.user_id] || '?')}${l && l.srpe ? ` <span class="tpo-cnt">RPE ${l.srpe}</span>` : ''}</button>`; }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+function cdWireOverview(profile, CD, names, back) {
+  appEl.querySelectorAll('[data-cdres]').forEach(b => b.onclick = () => renderCdResults(profile, CD.sessions.find(s => s.id === b.dataset.cdres), names, back));
+  appEl.querySelectorAll('[data-cds]').forEach(b => b.onclick = () => {
+    const s = CD.sessions.find(x => x.id === b.dataset.cds);
+    renderCdAthleteDetail(profile, s, b.dataset.cdu, names[b.dataset.cdu] || '', CD, back);
+  });
+}
+
+// Einheit einer Person mit Vorgaben und Eintragungen (Ansicht für Admin/Trainer)
+function renderCdAthleteDetail(profile, s, uid, name, CD, back) {
+  const a = CD.asg.find(x => x.session_id === s.id && x.user_id === uid) || {};
+  const l = CD.logs.find(x => x.session_id === s.id && x.user_id === uid) || null;
+  const p = a.personal || {}, bd = (l && l.data && l.data.blocks) || {};
+  const draw = () => {
+    const blocks = (s.content && s.content.blocks) || [];
+    const html = CD_PHASES.map(ph => {
+      const list = blocks.filter(b => b.phase === ph.key);
+      if (!list.length) return '';
+      return `<div class="cd-phead" style="--cat:${ph.color}">${cdPhaseLabel(ph)}</div>` + list.map(b => {
+        const d = bd[b.id] || {}, pers = cdPersonalText(b, p);
+        const got = [d.hr ? L('&Oslash; Puls ', 'avg HR ') + esc(d.hr) : '', d.dist ? esc(d.dist) + ' m' : '', d.note ? '&#128221; ' + esc(d.note) : ''].filter(Boolean).join(' &middot; ');
+        return `<div class="card cd-myblock${d.done ? ' done' : ''}" style="--cat:${ph.color}">
+          <div class="cd-mytitle"><b>${esc(b.content || cdMethodLabel(b.method))}</b><span class="muted-inline">${d.done ? '&#10003; ' + L('erledigt', 'done') : L('nicht abgehakt', 'not ticked')}</span></div>
+          <div class="cd-mystruct">${esc(cdStructText(b))}</div>
+          ${cdIntText(b) ? `<div class="cd-myint">${esc(cdIntText(b))}</div>` : ''}
+          ${pers.text ? `<div class="cd-mypers">&#127919; ${L('Vorgabe', 'Target')}: <b>${esc(pers.text)}</b></div>` : ''}
+          ${got ? `<div class="cd-got">${L('Eingetragen', 'Entered')}: ${got}</div>` : ''}
+        </div>`;
+      }).join('');
+    }).join('');
+    const st = cdStatusOf(l);
+    const content = `${cdLangBar()}
+      <div class="card"><div class="ath-toolbar">
+        <div><b class="tpo-name">${esc(name)}</b> <span class="muted-inline">${esc(s.title || 'Conditioning')}${s.planned_date ? ' &middot; ' + cdDate(s.planned_date, { weekday: 'short', day: '2-digit', month: '2-digit' }) : ''}</span></div>
+        <span class="spacer"></span>
+        <span class="tpo-week">${cdStatusIcon(st)} ${st === 'done' ? L('erledigt', 'done') : st === 'part' ? L('angefangen', 'started') : L('offen', 'open')}${l && l.srpe ? ` &middot; RPE ${l.srpe} &times; ${l.duration_min} min = ${cdAU(l)} AU` : ''}</span>
+      </div>
+      <p class="hint" style="margin:6px 0 0;">vIFT ${p.vift ? cdDec(p.vift) + ' km/h' : '–'} &middot; ${L('HFmax', 'HRmax')} ${p.hr_max || (p.age ? '&asymp; ' + cdHrMaxEst(p.age) + ' ' + L('(gesch&auml;tzt)', '(estimated)') : '–')}${p.hr_rest ? ' &middot; ' + L('Ruhepuls', 'resting HR') + ' ' + p.hr_rest : ''}${l && l.data && l.data.note ? ' &middot; &#128221; ' + esc(l.data.note) : ''}</p></div>
+      ${html}`;
+    renderShell(profile, 'trainingsplan', s.title || 'Conditioning', content, back);
+    cdWireLang(draw);
+  };
+  draw();
+}
+
+// Conditioning je Plan-Woche einer Person (für die Auswertung): { week -> { n, au } }
+function cdWeeksFor(CD, uid, plan) {
+  const out = {};
+  if (!plan.start_date) return out;
+  const start = new Date(plan.start_date + 'T00:00:00').getTime();
+  CD.logs.filter(l => l.user_id === uid && l.completed).forEach(l => {
+    const w = Math.floor((new Date(l.entry_date + 'T00:00:00').getTime() - start) / 604800000) + 1;
+    if (w < 1 || w > plan.weeks) return;
+    const o = out[w] = out[w] || { n: 0, au: 0 };
+    o.n++; o.au += cdAU(l);
+  });
+  return out;
+}
+// Liste der Conditioning-Einheiten einer Person (Auswertung → Detail)
+function cdAthleteListHtml(CD, uid) {
+  const rows = CD.asg.filter(a => a.user_id === uid).map(a => ({ s: CD.sessions.find(s => s.id === a.session_id), l: CD.logs.find(l => l.session_id === a.session_id && l.user_id === uid) }))
+    .filter(x => x.s).sort((x, y) => (y.s.planned_date || '').localeCompare(x.s.planned_date || ''));
+  if (!rows.length) return '';
+  return `<div class="card"><h2>&#9201;&#65039; Conditioning</h2><div class="tablewrap"><table class="tp-table">
+    <thead><tr><th>Einheit</th><th>Datum</th><th></th><th>Bl&ouml;cke</th><th>sRPE</th><th>Notizen</th></tr></thead>
+    <tbody>${rows.map(x => { const blocks = (x.s.content && x.s.content.blocks) || [], bd = (x.l && x.l.data && x.l.data.blocks) || {};
+      const notes = blocks.map(b => { const d = bd[b.id]; return d && (d.hr || d.dist || d.note) ? `<li><b>${esc(cdMethodLabel(b.method, true))}:</b> ${[d.hr ? '&Oslash; ' + esc(d.hr) + ' bpm' : '', d.dist ? esc(d.dist) + ' m' : '', d.note ? esc(d.note) : ''].filter(Boolean).join(' · ')}</li>` : ''; }).join('') + (x.l && x.l.data && x.l.data.note ? `<li>&#128221; ${esc(x.l.data.note)}</li>` : '');
+      return `<tr class="tp-row" data-cds="${x.s.id}" data-cdu="${uid}"><td>${esc(x.s.title || 'Conditioning')}</td><td>${x.s.planned_date ? cdDate(x.s.planned_date) : '–'}</td><td>${cdStatusIcon(cdStatusOf(x.l))}</td>
+        <td>${blocks.filter(b => bd[b.id] && bd[b.id].done).length}/${blocks.length}</td><td>${x.l && x.l.srpe ? `${x.l.srpe} &times; ${x.l.duration_min} min = ${cdAU(x.l)}` : '–'}</td><td><ul class="tp-ul">${notes}</ul></td></tr>`; }).join('')}</tbody>
+  </table></div><p class="hint">Zeile anklicken f&uuml;r Vorgaben und Eintragungen je Block.</p></div>`;
 }

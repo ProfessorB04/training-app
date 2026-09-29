@@ -49,14 +49,20 @@ async function renderTpEval(profile) {
   }
   const plans = pRes.data || [];
   if (!plans.length) {
-    renderShell(profile, 'trainingsplan', 'Auswertung Trainingspläne', `<div class="card"><h2>Noch keine Pl&auml;ne ver&ouml;ffentlicht</h2><p class="muted">In der Trainingsplanung einen Plan zusammenstellen und &bdquo;&#128242; In App ver&ouml;ffentlichen&ldquo; klicken.</p></div>`, back);
+    const CD0 = typeof cdLoadAll === 'function' ? await cdLoadAll().catch(() => ({ sessions: [], asg: [], logs: [] })) : { sessions: [], asg: [], logs: [] };
+    const names0 = Object.fromEntries((prRes.data || []).map(p => [p.id, p.name]));
+    renderShell(profile, 'trainingsplan', 'Auswertung Trainingspläne', `<div class="card"><h2>Noch keine Kraft-Pl&auml;ne ver&ouml;ffentlicht</h2><p class="muted">In der Trainingsplanung einen Plan zusammenstellen und &bdquo;&#128242; In App ver&ouml;ffentlichen&ldquo; klicken.</p></div>${cdEvalHtml(CD0, names0)}`, back);
+    appEl.querySelectorAll('[data-cdres]').forEach(b => b.onclick = () => renderCdResults(profile, CD0.sessions.find(s => s.id === b.dataset.cdres), names0, { label: 'Auswertung', go: () => renderTpEval(profile) }));
     return;
   }
   if (!plans.some(p => p.id === TP_EVAL_PLAN)) TP_EVAL_PLAN = plans[0].id;
   const plan = plans.find(p => p.id === TP_EVAL_PLAN);
   const names = Object.fromEntries((prRes.data || []).map(p => [p.id, p.name]));
   const members = (aRes.data || []).filter(a => a.plan_id === plan.id);
-  const { data: logs } = await sb.from('tp_logs').select('*').eq('plan_id', plan.id);
+  const [{ data: logs }, CD] = await Promise.all([
+    sb.from('tp_logs').select('*').eq('plan_id', plan.id),
+    typeof cdLoadAll === 'function' ? cdLoadAll().catch(() => ({ sessions: [], asg: [], logs: [] })) : { sessions: [], asg: [], logs: [] },
+  ]);
   const byUser = {};
   (logs || []).forEach(l => { (byUser[l.user_id] = byUser[l.user_id] || []).push(l); });
 
@@ -67,15 +73,18 @@ async function renderTpEval(profile) {
     const notes = ls.reduce((n, l) => n + (l.exercises || []).filter(e => e.athleteNote).length, 0);
     const lastAct = ls.map(l => l.updated_at).sort().pop();
     let prev = null;
+    const cdw = typeof cdWeeksFor === 'function' ? cdWeeksFor(CD, m.user_id, plan) : {};
     const cells = weeks.map(w => {
       const done = ls.filter(l => l.week === w && l.completed).length;
       const load = weekLoad(ls, w);
       const tr = tpTrend(load || null, prev);
       if (load) prev = load;
       const cls = done >= plan.days ? 'load-ok' : (done > 0 ? 'well-mid' : 'load-empty');
-      return `<td><span class="${cls}">${done}/${plan.days}</span>${load ? `<div class="tp-wl">${tpFmt(load)} kg ${tr ? `<span class="tp-tr ${tr.cls}">${tr.cls === 'up' ? '&#9650;' : tr.cls === 'down' ? '&#9660;' : '&#9644;'}</span>` : ''}</div>` : ''}</td>`;
+      const c = cdw[w];
+      return `<td><span class="${cls}">${done}/${plan.days}</span>${load ? `<div class="tp-wl">${tpFmt(load)} kg ${tr ? `<span class="tp-tr ${tr.cls}">${tr.cls === 'up' ? '&#9650;' : tr.cls === 'down' ? '&#9660;' : '&#9644;'}</span>` : ''}</div>` : ''}${c ? `<div class="tp-cdw" title="Conditioning: erledigte Einheiten &middot; Session-Load (sRPE &times; Minuten)">&#9201;&#65039; ${c.n}${c.au ? ' &middot; ' + c.au + ' AU' : ''}</div>` : ''}</td>`;
     }).join('');
-    return `<tr class="tp-row" data-u="${m.user_id}"><td><b>${esc(names[m.user_id] || '–')}</b>${m.active ? '' : ' <span class="muted">(anderer Plan aktiv)</span>'}</td>${cells}
+    const cdAll = CD.asg.filter(a => a.user_id === m.user_id), cdDone = cdAll.filter(a => CD.logs.some(l => l.session_id === a.session_id && l.user_id === m.user_id && l.completed)).length;
+    return `<tr class="tp-row" data-u="${m.user_id}"><td><b>${esc(names[m.user_id] || '–')}</b>${m.active ? '' : ' <span class="muted">(anderer Plan aktiv)</span>'}${cdAll.length ? `<div class="tp-cdw">&#9201;&#65039; Conditioning ${cdDone}/${cdAll.length}</div>` : ''}</td>${cells}
       <td>${notes ? `&#128172; ${notes}` : ''}</td><td class="muted">${lastAct ? new Date(lastAct).toLocaleDateString('de-DE') : '–'}</td></tr>`;
   }).join('') || `<tr><td colspan="${weeks.length + 3}" class="muted">Noch niemand zugeordnet.</td></tr>`;
 
@@ -91,8 +100,9 @@ async function renderTpEval(profile) {
         <thead><tr><th>Athlet:in</th>${weeks.map(w => `<th>Woche ${w}</th>`).join('')}<th>Notizen</th><th>Zuletzt</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
-      <p class="hint">Je Woche: erledigte Einheiten / geplante Einheiten und bewegte Last (&Sigma; Wdh &times; kg). Ampel gegen&uuml;ber der Vorwoche: &#9650; Steigerung (&gt; +2 %) &middot; &#9644; gleich &middot; &#9660; R&uuml;ckschritt (&lt; &minus;2 %). Zeile anklicken f&uuml;r die Details je &Uuml;bung.</p>
-    </div>`;
+      <p class="hint">Je Woche: erledigte Einheiten / geplante Einheiten und bewegte Last (&Sigma; Wdh &times; kg). Ampel gegen&uuml;ber der Vorwoche: &#9650; Steigerung (&gt; +2 %) &middot; &#9644; gleich &middot; &#9660; R&uuml;ckschritt (&lt; &minus;2 %). &#9201;&#65039; = Conditioning-Einheiten der Woche (nach Datum) mit Session-Load in AU (sRPE &times; Minuten). Zeile anklicken f&uuml;r die Details je &Uuml;bung und Conditioning-Einheit.</p>
+    </div>
+    ${cdEvalHtml(CD, names)}`;
   renderShell(profile, 'trainingsplan', 'Auswertung Trainingspläne', content, back);
   document.getElementById('tpPlanSel').onchange = (e) => { TP_EVAL_PLAN = e.target.value; renderTpEval(profile); };
   document.getElementById('tpEdit').onclick = () => { window.location.href = 'trainingsplan.html#edit=' + plan.id; };
@@ -102,6 +112,22 @@ async function renderTpEval(profile) {
     TP_EVAL_PLAN = ''; renderTpEval(profile);
   };
   appEl.querySelectorAll('.tp-row').forEach(r => { r.onclick = () => renderTpAthlete(profile, plan, r.dataset.u, names[r.dataset.u] || ''); });
+  appEl.querySelectorAll('[data-cdres]').forEach(b => b.onclick = () => renderCdResults(profile, CD.sessions.find(s => s.id === b.dataset.cdres), names, { label: 'Auswertung', go: () => renderTpEval(profile) }));
+}
+// Tabelle aller Conditioning-Einheiten in der Auswertung
+function cdEvalHtml(CD, names) {
+  if (!CD || !CD.sessions.length || typeof cdSessionSec !== 'function') return '';
+  const rows = CD.sessions.filter(s => CD.asg.some(a => a.session_id === s.id)).sort((x, y) => (y.planned_date || '').localeCompare(x.planned_date || '')).map(s => {
+    const as = CD.asg.filter(a => a.session_id === s.id), ls = CD.logs.filter(l => l.session_id === s.id && l.completed);
+    const rpe = ls.filter(l => l.srpe), avg = rpe.length ? (rpe.reduce((n, l) => n + l.srpe, 0) / rpe.length) : null;
+    const au = ls.reduce((n, l) => n + cdAU(l), 0);
+    return `<tr class="tp-row" data-cdres="${s.id}"><td><b>${esc(s.title || 'Conditioning')}</b>${s.content && s.content.forName ? `<div class="muted-inline">f&uuml;r ${esc(s.content.forName)}</div>` : ''}</td><td>${s.planned_date ? new Date(s.planned_date + 'T00:00:00').toLocaleDateString('de-DE') : '–'}</td>
+      <td>${ls.length}/${as.length}</td><td>${avg != null ? tpFmt(avg) : '–'}</td><td>${au ? au + ' AU' : '–'}</td></tr>`;
+  }).join('');
+  if (!rows) return '';
+  return `<div class="card"><h2>&#9201;&#65039; Conditioning &mdash; Auswertung</h2><div class="tablewrap"><table class="tp-table">
+    <thead><tr><th>Einheit</th><th>Datum</th><th>erledigt</th><th>&Oslash; sRPE</th><th>Session-Load gesamt</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="hint">Zeile anklicken f&uuml;r die Eintragungen je Athlet:in (Bl&ouml;cke, Puls, Strecke, Notizen).</p></div>`;
 }
 
 // Übungs-Last je Woche aus Protokollen
@@ -152,9 +178,10 @@ async function renderTpAthlete(profile, plan, uid, name, weekSel) {
   const back = { label: 'Auswertung', go: () => renderTpEval(profile) };
   renderShell(profile, 'trainingsplan', name, `<p class="muted">Lade&hellip;</p>`, back);
   // aktueller Block + vorheriger Block (zuletzt zugeordneter anderer Plan) für den Vergleich
-  const [{ data: logs }, { data: asg }] = await Promise.all([
+  const [{ data: logs }, { data: asg }, CD] = await Promise.all([
     sb.from('tp_logs').select('*').eq('plan_id', plan.id).eq('user_id', uid).order('week').order('day'),
     sb.from('tp_assignments').select('plan_id, assigned_at').eq('user_id', uid).order('assigned_at', { ascending: false }),
+    typeof cdLoadAll === 'function' ? cdLoadAll().catch(() => ({ sessions: [], asg: [], logs: [] })) : { sessions: [], asg: [], logs: [] },
   ]);
   const cur = (asg || []).find(a => a.plan_id === plan.id);
   const prevAsg = (asg || []).filter(a => a.plan_id !== plan.id && (!cur || a.assigned_at < cur.assigned_at))[0];
@@ -219,8 +246,10 @@ async function renderTpAthlete(profile, plan, uid, name, weekSel) {
         <thead><tr><th>Einheit</th><th>Datum</th><th></th><th>sRPE</th><th>Getauscht / weggelassen / extra &middot; Notizen</th></tr></thead>
         <tbody>${sessions}</tbody>
       </table></div>
-    </div>`;
+    </div>
+    ${typeof cdAthleteListHtml === 'function' ? cdAthleteListHtml(CD, uid) : ''}`;
   renderShell(profile, 'trainingsplan', name, content, back);
+  appEl.querySelectorAll('tr[data-cds]').forEach(r => { r.onclick = () => renderCdAthleteDetail(profile, CD.sessions.find(s => s.id === r.dataset.cds), uid, name, CD, { label: name, go: () => renderTpAthlete(profile, plan, uid, name, weekSel) }); });
   document.getElementById('tpWeekSel').onchange = (e) => renderTpAthlete(profile, plan, uid, name, +e.target.value);
   appEl.querySelectorAll('tr.tp-row[data-w]').forEach(r => { r.onclick = () => { renderTpAthlete(profile, plan, uid, name, +r.dataset.w); window.scrollTo(0, 0); }; });
 }
@@ -230,12 +259,13 @@ async function renderTpOverview(profile) {
   const back = { label: 'Trainingsplanung', go: () => renderTpHub(profile) };
   const T = 'Aktuelle Trainingsübersicht';
   renderShell(profile, 'trainingsplan', T, `<p class="muted">Lade&hellip;</p>`, back);
-  const [pRes, aRes, vRes, prRes, lRes] = await Promise.all([
+  const [pRes, aRes, vRes, prRes, lRes, CD] = await Promise.all([
     sb.from('tp_plans').select('*').eq('archived', false).order('created_at', { ascending: false }),
     sb.from('tp_assignments').select('plan_id, user_id, active').eq('active', true),
     sb.from('tp_plan_versions').select('id, plan_id, from_week, user_ids, created_at'),
     sb.from('profiles').select('id, name'),
     sb.from('tp_logs').select('plan_id, user_id, completed'),
+    typeof cdLoadAll === 'function' ? cdLoadAll().catch(() => ({ sessions: [], asg: [], logs: [] })) : { sessions: [], asg: [], logs: [] },
   ]);
   const err = [pRes, aRes, vRes, prRes].map(r => r.error).filter(Boolean)[0];
   const doneOf = (pid, u) => (lRes.data || []).filter(l => l.plan_id === pid && l.user_id === u && l.completed).length;
@@ -265,10 +295,12 @@ async function renderTpOverview(profile) {
         ${x.members.map(u => `<button type="button" class="tpo-chip" data-plan="${x.p.id}" data-uid="${u}">${esc(names[u] || 'Unbekannt')} <span class="tpo-cnt" title="erledigte Einheiten">${doneOf(x.p.id, u)}/${x.p.weeks * x.p.days}</span>${x.variantUsers.has(u) ? ' <span class="tpo-var" title="Hat eine eigene Variante">Variante</span>' : ''}</button>`).join('')}
       </div>
     </div>`).join('');
-  const content = plans.length ? `
-    <p class="hint" style="margin-top:0;">Alle Pl&auml;ne, die Athlet:innen gerade unter &bdquo;Mein Trainingsplan&ldquo; sehen. Auf eine Person (oder &bdquo;Gruppenplan&ldquo;) klicken, um alle &Uuml;bungen zu sehen.</p>${cards}`
-    : `<div class="card"><h2>Keine aktiven Pl&auml;ne</h2><p class="muted">In der Trainingsplanung einen Plan erstellen und &bdquo;&#128242; In App ver&ouml;ffentlichen&ldquo;.</p></div>`;
+  const cdHtml = typeof cdOverviewHtml === 'function' ? cdOverviewHtml(CD, names) : '';
+  const content = (plans.length ? `
+    <p class="hint" style="margin-top:0;">Alle Pl&auml;ne, die Athlet:innen gerade unter &bdquo;Mein Trainingsplan&ldquo; (Kraft) und &bdquo;Conditioning&ldquo; sehen. Auf eine Person (oder &bdquo;Gruppenplan&ldquo;) klicken, um alle &Uuml;bungen bzw. Eintragungen zu sehen.</p>${cards}`
+    : `<div class="card"><h2>Keine aktiven Kraft-Pl&auml;ne</h2><p class="muted">In der Trainingsplanung einen Plan erstellen und &bdquo;&#128242; In App ver&ouml;ffentlichen&ldquo;.</p></div>`) + cdHtml;
   renderShell(profile, 'trainingsplan', T, content, back);
+  if (cdHtml) cdWireOverview(profile, CD, names, { label: 'Aktuelle Trainingsübersicht', go: () => renderTpOverview(profile) });
   // Plan beenden: Zuordnungen aus + archivieren (Einträge bleiben) · Löschen: alles inkl. Einträge
   appEl.querySelectorAll('[data-end]').forEach(b => {
     b.onclick = async () => {
@@ -298,7 +330,7 @@ async function renderTpOverview(profile) {
       toast('Plan gelöscht.'); renderTpOverview(profile);
     };
   });
-  appEl.querySelectorAll('.tpo-chip').forEach(b => {
+  appEl.querySelectorAll('.tpo-chip[data-plan]').forEach(b => {
     b.onclick = () => {
       const x = plans.find(y => y.p.id === b.dataset.plan);
       renderTpPlanDetail(profile, x.p, b.dataset.uid || null, b.dataset.uid ? names[b.dataset.uid] : null, x.cur);
