@@ -79,7 +79,7 @@ const NAV_ITEMS = [
   { key: 'menu', label: 'Dashboard', icon: '&#127968;', show: () => true },
   { key: 'trainingsplan', label: 'Trainingsplanung', icon: '&#128203;', show: p => can(p, 'trainingsplan') },
   { key: 'meinplan', label: 'Mein Trainingsplan', icon: '&#127947;', show: p => !isStaff(p) && can(p, 'meinplan') },
-  { key: 'condition', label: 'Conditioning', icon: '&#9201;&#65039;', show: p => isStaff(p) || can(p, 'condition') },
+  { key: 'condition', label: 'Conditioning', icon: '&#9201;&#65039;', show: p => !isStaff(p) && can(p, 'condition') },
   { key: 'loadmanagement', label: 'Load Management', icon: '&#128200;', show: p => isStaff(p) },
   { key: 'srpe', label: 'Session-RPE', icon: '&#128200;', show: p => !isStaff(p) && can(p, 'srpe') },
   { key: 'wellness', label: 'Wellness-Check', icon: '&#128154;', show: p => !isStaff(p) && can(p, 'wellness') },
@@ -93,6 +93,7 @@ const NAV_ITEMS = [
 // Zentrale Navigation (Seitenleiste, Kacheln, Sprungziele #…)
 function navigate(profile, key) {
   const item = NAV_ITEMS.find(x => x.key === key);
+  if (key === 'condition' && isStaff(profile)) { renderConditionHub(profile); return; }   // Staff: Conditioning liegt in der Trainingsplanung
   if (!item || !item.show(profile)) { renderMenu(profile); return; }
   if (key === 'menu') renderMenu(profile);
   else if (key === 'trainingsplan') { if (isStaff(profile)) renderTpHub(profile); else window.location.href = 'trainingsplan.html'; }

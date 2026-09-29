@@ -16,6 +16,11 @@ function renderTpHub(profile) {
         <span class="mc-title">Aktuelle Trainings&uuml;bersicht</span>
         <span class="mc-sub">Welche Pl&auml;ne die Athlet:innen gerade in der App sehen &mdash; anklicken f&uuml;r alle &Uuml;bungen je Tag und Woche</span>
       </button>
+      <button class="menu-card tint-cond" type="button" id="tpCondBtn">
+        <span class="mc-icon">&#9201;&#65039;</span>
+        <span class="mc-title">Conditioning</span>
+        <span class="mc-sub">Ausdauer- &amp; Konditionseinheiten planen &mdash; individuell nach Tempo (vIFT) und Herzfrequenz, direkt in die App</span>
+      </button>
       <button class="menu-card tint-load" type="button" id="tpEvalBtn">
         <span class="mc-icon">&#128202;</span>
         <span class="mc-title">Auswertung Trainingspl&auml;ne</span>
@@ -26,6 +31,7 @@ function renderTpHub(profile) {
   renderShell(profile, 'trainingsplan', 'Trainingsplanung', content);
   document.getElementById('tpEvalBtn').onclick = () => renderTpEval(profile);
   document.getElementById('tpOverBtn').onclick = () => renderTpOverview(profile);
+  document.getElementById('tpCondBtn').onclick = () => renderConditionHub(profile);
 }
 
 let TP_EVAL_PLAN = '';

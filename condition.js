@@ -195,7 +195,7 @@ function cdSessionSec(content) {
 // ============================================================
 async function renderConditionHub(profile) {
   const T = 'Conditioning';
-  renderShell(profile, 'condition', T, `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`);
+  renderShell(profile, 'trainingsplan', T, `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`, { label: 'Trainingsplanung', go: () => renderTpHub(profile) });
   const [sRes, aRes, lRes, prRes] = await Promise.all([
     sb.from('cd_sessions').select('*').eq('archived', false).order('planned_date', { ascending: false, nullsFirst: true }).order('created_at', { ascending: false }),
     sb.from('cd_assignments').select('session_id, user_id, active').eq('active', true),
@@ -203,7 +203,7 @@ async function renderConditionHub(profile) {
     sb.from('profiles').select('id, name'),
   ]);
   const err = [sRes, aRes, lRes, prRes].map(r => r.error).filter(Boolean)[0];
-  if (err) { renderShell(profile, 'condition', T, `<div class="card"><p class="error">${L('Fehler', 'Error')}: ${esc(err.message)}${/cd_sessions|relation/.test(err.message) ? '<br>' + L('Die Datenbank f&uuml;r Conditioning ist noch nicht eingerichtet (Migration supabase_migration_condition.sql).', 'The Conditioning database is not set up yet (migration supabase_migration_condition.sql).') : ''}</p></div>`); return; }
+  if (err) { renderShell(profile, 'trainingsplan', T, `<div class="card"><p class="error">${L('Fehler', 'Error')}: ${esc(err.message)}${/cd_sessions|relation/.test(err.message) ? '<br>' + L('Die Datenbank f&uuml;r Conditioning ist noch nicht eingerichtet (Migration supabase_migration_condition.sql).', 'The Conditioning database is not set up yet (migration supabase_migration_condition.sql).') : ''}</p></div>`); return; }
   const names = Object.fromEntries((prRes.data || []).map(p => [p.id, p.name]));
   const today = new Date().toISOString().slice(0, 10);
   const cards = (sRes.data || []).map(s => {
@@ -238,7 +238,7 @@ async function renderConditionHub(profile) {
     </div>
     ${cards || `<div class="card"><p class="muted">${L('Noch keine Conditioning-Einheiten. &bdquo;+ Neue Einheit&ldquo; anklicken.', 'No conditioning sessions yet. Click &ldquo;+ New session&rdquo;.')}</p></div>`}
     ${cdSourcesHtml()}`;
-  renderShell(profile, 'condition', T, content);
+  renderShell(profile, 'trainingsplan', T, content, { label: 'Trainingsplanung', go: () => renderTpHub(profile) });
   cdWireLang(() => renderConditionHub(profile));
   document.getElementById('cdNew').onclick = () => renderCdEditor(profile, null);
   document.getElementById('cdValues').onclick = () => renderCdValues(profile);
@@ -266,9 +266,9 @@ async function renderConditionHub(profile) {
 async function renderCdValues(profile) {
   const back = { label: 'Conditioning', go: () => renderConditionHub(profile) };
   const T = () => L('Leistungswerte', 'Test values');
-  renderShell(profile, 'condition', T(), `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`, back);
+  renderShell(profile, 'trainingsplan', T(), `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`, back);
   let mgmt;
-  try { mgmt = await loadAthleteData(); } catch (e) { renderShell(profile, 'condition', T(), `<div class="card"><p class="error">${L('Fehler', 'Error')}: ${esc(e.message)}</p></div>`, back); return; }
+  try { mgmt = await loadAthleteData(); } catch (e) { renderShell(profile, 'trainingsplan', T(), `<div class="card"><p class="error">${L('Fehler', 'Error')}: ${esc(e.message)}</p></div>`, back); return; }
   let grp = '';
   // 30-15-IFT-Daten dieses Geräts (Tool „30-15 IFT“, gleicher Browser): je Name letzter vIFT + HFmax/Ruhepuls
   const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
@@ -324,7 +324,7 @@ async function renderCdValues(profile) {
         </table></div>
         ${cdSourcesHtml()}
       </div>`;
-    renderShell(profile, 'condition', T(), html, back);
+    renderShell(profile, 'trainingsplan', T(), html, back);
     cdWireLang(draw);
     appEl.querySelectorAll('[data-ift]').forEach(b => b.onclick = async () => {
       const a = mgmt.athletes.find(x => x.id === b.dataset.ift);
@@ -363,7 +363,7 @@ async function renderCdValues(profile) {
 async function renderCdEditor(profile, session) {
   const back = { label: 'Conditioning', go: () => { if (!dirty || confirm(L('Ungespeicherte Änderungen verwerfen?', 'Discard unsaved changes?'))) renderConditionHub(profile); } };
   const T = () => session && session.id ? L('Conditioning bearbeiten', 'Edit conditioning') : L('Neue Conditioning-Einheit', 'New conditioning session');
-  renderShell(profile, 'condition', T(), `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`, back);
+  renderShell(profile, 'trainingsplan', T(), `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`, back);
   const S = session ? JSON.parse(JSON.stringify(session)) : { id: null, title: '', team: '', planned_date: new Date().toISOString().slice(0, 10), content: {} };
   S.content = S.content || {};
   if (!Array.isArray(S.content.blocks) || !S.content.blocks.length) S.content.blocks = [cdNewBlock('warmup'), cdNewBlock('main'), cdNewBlock('cooldown')];
@@ -463,7 +463,7 @@ async function renderCdEditor(profile, session) {
         <button type="button" class="secondary" id="cdSave">&#128190; ${L('Speichern', 'Save')}</button>
         <button type="button" id="cdPub">&#128242; ${L('In App ver&ouml;ffentlichen', 'Publish to app')}${picked.size ? ' (' + picked.size + ')' : ''}</button>
       </div>`;
-    renderShell(profile, 'condition', T(), html, back);
+    renderShell(profile, 'trainingsplan', T(), html, back);
     cdWireLang(draw);
     wire();
   };
@@ -569,7 +569,7 @@ async function renderCdEditor(profile, session) {
 async function renderCdResults(profile, s, names) {
   const back = { label: 'Conditioning', go: () => renderConditionHub(profile) };
   const T = s.title || L('Conditioning-Einheit', 'Conditioning session');
-  renderShell(profile, 'condition', T, `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`, back);
+  renderShell(profile, 'trainingsplan', T, `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`, back);
   const [aRes, lRes] = await Promise.all([
     sb.from('cd_assignments').select('*').eq('session_id', s.id).eq('active', true),
     sb.from('cd_logs').select('*').eq('session_id', s.id),
@@ -586,7 +586,7 @@ async function renderCdResults(profile, s, names) {
         <td>${done}/${blocks.length}</td><td>${l && l.srpe ? l.srpe : '–'}</td><td>${l && l.duration_min ? l.duration_min + ' min' : '–'}</td>
         <td>${extras}${l && l.data && l.data.note ? `<div class="hint" style="margin:0;">&#128221; ${esc(l.data.note)}</div>` : ''}</td></tr>`;
     }).join('');
-    renderShell(profile, 'condition', T, `${cdLangBar()}<div class="card"><div class="tablewrap"><table class="user-table">
+    renderShell(profile, 'trainingsplan', T, `${cdLangBar()}<div class="card"><div class="tablewrap"><table class="user-table">
       <thead><tr><th>${L('Athlet:in', 'Athlete')}</th><th>Status</th><th>${L('Bl&ouml;cke', 'Blocks')}</th><th>sRPE</th><th>${L('Dauer', 'Duration')}</th><th>${L('Eintr&auml;ge', 'Entries')}</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="6" class="muted">${L('Noch nicht ver&ouml;ffentlicht.', 'Not published yet.')}</td></tr>`}</tbody></table></div></div>`, back);
     cdWireLang(draw);
