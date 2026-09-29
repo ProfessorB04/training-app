@@ -414,9 +414,9 @@ async function renderCdEditor(profile, session) {
     const render = () => {
       host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:640px;">
         <h2>&#128242; In App ver&ouml;ffentlichen</h2>
-        <p class="hint" style="margin-top:0;">Die Ausgew&auml;hlten sehen die Einheit unter &bdquo;Mein Trainingsplan&ldquo; mit ihren pers&ouml;nlichen Vorgaben. Sp&auml;tere &Auml;nderungen an der Einheit sind sofort sichtbar.</p>
+        <p class="hint" style="margin-top:0;">Die Ausgew&auml;hlten sehen die Einheit im Men&uuml; unter &bdquo;Condition&ldquo; mit ihren pers&ouml;nlichen Vorgaben. Sp&auml;tere &Auml;nderungen an der Einheit sind sofort sichtbar.</p>
         <div class="chips" style="margin-bottom:8px;">${groups.map(g => `<button type="button" class="secondary small-btn" data-g="${g.id}">${esc(g.name)}</button>`).join('')}<button type="button" class="secondary small-btn" data-g="__all">Alle</button><button type="button" class="secondary small-btn" data-g="__none">Keine</button></div>
-        <div class="cd-pick">${users.map(u => { const a = athByProfile[u.id]; const miss = !a || !cdNum(a.vift_kmh) || !a.hr_max; const noPerm = !u.permissions || !u.permissions.meinplan || u.permissions.meinplan === 'none';
+        <div class="cd-pick">${users.map(u => { const a = athByProfile[u.id]; const miss = !a || !cdNum(a.vift_kmh) || !a.hr_max; const noPerm = !!u.permissions && u.permissions.condition === 'none';
           return `<label><input type="checkbox" data-u="${u.id}" ${sel.has(u.id) ? 'checked' : ''}> ${esc(u.name)}${miss ? ' <span class="muted-inline" title="vIFT/HFmax fehlen – allgemeine Vorgaben">(Werte fehlen)</span>' : ''}${noPerm ? ' <b style="color:#b0281c;">Recht fehlt</b>' : ''}</label>`; }).join('') || '<p class="muted">Keine Athlet:innen mit App-Zugang.</p>'}</div>
         <div class="modal-actions"><span class="spacer">${sel.size} ausgew&auml;hlt</span>
           <button type="button" class="secondary" id="cdpX">Abbrechen</button>
@@ -503,15 +503,23 @@ function cdMyListHtml(list) {
     <div class="cd-mylist">${open.map(item).join('')}</div>
     ${done.length ? `<details style="margin-top:8px;"><summary class="hint" style="cursor:pointer;">Erledigt (${done.length})</summary><div class="cd-mylist">${done.map(item).join('')}</div></details>` : ''}</div>`;
 }
+// eigener Menüpunkt „Condition“ für Athlet:innen (Recht „condition“)
+async function renderMyConditionList(profile) {
+  renderShell(profile, 'condition', 'Condition', `<p class="muted">Lade&hellip;</p>`);
+  const list = await cdLoadMine().catch(() => []);
+  renderShell(profile, 'condition', 'Condition', list.length ? cdMyListHtml(list)
+    : `<div class="card"><h2>Noch keine Condition-Einheit</h2><p class="muted">Sobald dein Trainer eine Ausdauer-/Konditionseinheit f&uuml;r dich ver&ouml;ffentlicht, erscheint sie hier &ndash; mit deinen pers&ouml;nlichen Tempo- und Pulsvorgaben.</p></div>`);
+  cdWireMyList(profile, list);
+}
 function cdWireMyList(profile, list) {
   appEl.querySelectorAll('[data-cd]').forEach(b => b.onclick = () => renderMyCondition(profile, list.find(x => x.s.id === b.dataset.cd)));
 }
 
 function renderMyCondition(profile, x) {
-  const canEdit = perm(profile, 'meinplan') === 'edit';
+  const canEdit = perm(profile, 'condition') === 'edit';
   const s = x.s, p = x.personal || {}, blocks = (s.content && s.content.blocks) || [];
   const data = JSON.parse(JSON.stringify((x.log && x.log.data) || {})); data.blocks = data.blocks || {};
-  const back = { label: 'Mein Trainingsplan', go: () => renderMyPlan(profile) };
+  const back = { label: 'Condition', go: () => renderMyConditionList(profile) };
   let timer = null;
   const persist = async (completed, extra) => {
     if (!canEdit) return;
@@ -555,7 +563,7 @@ function renderMyCondition(profile, x) {
       ${html}
       <input type="text" class="mp-anote" id="cdMyNote" value="${esc(data.note || '')}" placeholder="Notiz zur Einheit (optional)" ${canEdit ? '' : 'disabled'}>
       ${canEdit ? `<button type="button" id="cdFinish" class="mp-finish">Einheit abschlie&szlig;en</button>` : ''}`;
-    renderShell(profile, 'meinplan', 'Condition', content, back);
+    renderShell(profile, 'condition', 'Condition', content, back);
     appEl.querySelectorAll('[data-b]').forEach(el => {
       const d = () => (data.blocks[el.dataset.b] = data.blocks[el.dataset.b] || {});
       if (el.dataset.f === 'done') el.onchange = () => { d().done = el.checked; el.closest('.cd-myblock').classList.toggle('done', el.checked); soon(); };
@@ -599,7 +607,7 @@ function renderMyCondition(profile, x) {
         }
         await sb.from('load_entries').upsert(row, { onConflict: 'user_id,entry_date' });
       }
-      host.remove(); toast('Einheit gespeichert – stark! 💪'); renderMyPlan(profile);
+      host.remove(); toast('Einheit gespeichert – stark! 💪'); renderMyConditionList(profile);
     };
   };
   draw();

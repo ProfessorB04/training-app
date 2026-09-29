@@ -8,6 +8,7 @@
     { href: "index.html", icon: "&#127968;", label: "Dashboard", match: [], show: "all" },
     { href: "index.html#trainingsplan", icon: "&#128203;", label: "Trainingsplanung", match: ["trainingsplan.html"], perm: "trainingsplan" },
     { href: "index.html#meinplan", icon: "&#127947;", label: "Mein Trainingsplan", match: [], perm: "meinplan", athleteOnly: true },
+    { href: "index.html#condition", icon: "&#10084;&#65039;", label: "Condition", match: [], perm: "condition" },
     { href: "index.html#loadmanagement", icon: "&#128200;", label: "Load Management", match: ["loadmanagement.html"], show: "staff" },
     { href: "index.html#srpe", icon: "&#128200;", label: "Session-RPE", match: [], perm: "srpe", athleteOnly: true },
     { href: "index.html#wellness", icon: "&#128154;", label: "Wellness-Check", match: [], perm: "wellness", athleteOnly: true },

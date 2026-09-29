@@ -146,6 +146,7 @@ const PERM_TOOLS = [
   { key: 'trainingsplan', label: 'Trainingsplanung', levels: [['none', 'kein Zugriff'], ['edit', 'Zugriff']] },
   { key: 'warmup', label: 'Warm-Up', levels: [['none', 'kein Zugriff'], ['edit', 'Zugriff']] },
   { key: 'meinplan', label: 'Mein Trainingsplan', levels: [['none', 'kein Zugriff'], ['view', 'nur ansehen'], ['edit', 'eintragen']] },
+  { key: 'condition', label: 'Condition', levels: [['none', 'kein Zugriff'], ['view', 'nur ansehen'], ['edit', 'eintragen']] },
 ];
 function permSummary(perms) {
   const p = Object.assign({}, PERM_DEFAULT, perms || {});
