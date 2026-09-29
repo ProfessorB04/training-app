@@ -467,3 +467,4 @@ tr.no-access a{ color:var(--brand-strong); }
 .tpo-cat span{ text-transform:none; letter-spacing:0; font-weight:600; color:var(--ink-soft); }
 .tpo-ex{ border-left:3px solid var(--cat); padding:4px 8px; margin:3px 0; font-size:.92rem; }
 .tpo-note{ font-size:.8rem; color:var(--ink-soft); margin-top:2px; }
+.tpo-actions{ display:flex; gap:8px; justify-content:flex-end; margin:-4px 0 10px; }

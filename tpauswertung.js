@@ -247,6 +247,10 @@ async function renderTpOverview(profile) {
           <div class="muted-inline">${x.p.team ? esc(x.p.team) + ' &middot; ' : ''}${x.p.weeks} Wochen &middot; ${x.p.days} Einheiten/Woche${x.p.start_date ? ' &middot; ab ' + new Date(x.p.start_date + 'T00:00:00').toLocaleDateString('de-DE') : ''}</div></div>
         <span class="tpo-week">Woche ${x.cur} von ${x.p.weeks}</span>
       </div>
+      <div class="tpo-actions">
+        <button type="button" class="secondary small-btn" data-end="${x.p.id}" title="Athlet:innen sehen den Plan nicht mehr; Eintr&auml;ge bleiben f&uuml;r die Auswertung erhalten">&#9209; Beenden</button>
+        <button type="button" class="danger small-btn" data-del="${x.p.id}" title="Plan inkl. aller Eintr&auml;ge der Athlet:innen endg&uuml;ltig l&ouml;schen">&#128465; L&ouml;schen</button>
+      </div>
       ${x.changes ? `<div class="hint" style="margin:0 0 8px;">&#9998; ${x.changes} &Auml;nderung(en) ab einer sp&auml;teren Woche</div>` : ''}
       <div class="tpo-people">
         <button type="button" class="tpo-chip group" data-plan="${x.p.id}" data-uid="">&#128101; Gruppenplan</button>
@@ -257,6 +261,35 @@ async function renderTpOverview(profile) {
     <p class="hint" style="margin-top:0;">Alle Pl&auml;ne, die Athlet:innen gerade unter &bdquo;Mein Trainingsplan&ldquo; sehen. Auf eine Person (oder &bdquo;Gruppenplan&ldquo;) klicken, um alle &Uuml;bungen zu sehen.</p>${cards}`
     : `<div class="card"><h2>Keine aktiven Pl&auml;ne</h2><p class="muted">In der Trainingsplanung einen Plan erstellen und &bdquo;&#128242; In App ver&ouml;ffentlichen&ldquo;.</p></div>`;
   renderShell(profile, 'trainingsplan', T, content, back);
+  // Plan beenden: Zuordnungen aus + archivieren (Einträge bleiben) · Löschen: alles inkl. Einträge
+  appEl.querySelectorAll('[data-end]').forEach(b => {
+    b.onclick = async () => {
+      const x = plans.find(y => y.p.id === b.dataset.end);
+      if (!confirm('Plan „' + (x.p.title || 'Ohne Titel') + '“ beenden?\n\nDie ' + x.members.length + ' Athlet:innen sehen ihn nicht mehr unter „Mein Trainingsplan“. Ihre Einträge bleiben für Auswertung und Block-Vergleich erhalten.')) return;
+      b.disabled = true;
+      let r = await sb.from('tp_assignments').update({ active: false }).eq('plan_id', x.p.id);
+      if (!r.error) r = await sb.from('tp_plans').update({ archived: true }).eq('id', x.p.id);
+      if (r.error) { b.disabled = false; toast('Fehler: ' + r.error.message); return; }
+      toast('Plan beendet.'); renderTpOverview(profile);
+    };
+  });
+  appEl.querySelectorAll('[data-del]').forEach(b => {
+    b.onclick = async () => {
+      const x = plans.find(y => y.p.id === b.dataset.del);
+      const { count } = await sb.from('tp_logs').select('id', { count: 'exact', head: true }).eq('plan_id', x.p.id);
+      const msg = 'Plan „' + (x.p.title || 'Ohne Titel') + '“ ENDGÜLTIG löschen?\n\n' +
+        '• ' + x.members.length + ' Athlet:innen sehen ihn nicht mehr\n' +
+        '• ' + (count || 0) + ' eingetragene Einheiten (Sätze, Gewichte, Notizen) werden mitgelöscht\n' +
+        '• sRPE-Werte im Load Management bleiben erhalten\n\n' +
+        'Tipp: „Beenden“ blendet den Plan nur aus und behält die Einträge.';
+      if (!confirm(msg)) return;
+      if ((count || 0) > 0 && prompt('Zur Sicherheit bitte LÖSCHEN eintippen:') !== 'LÖSCHEN') { toast('Nicht gelöscht.'); return; }
+      b.disabled = true;
+      const r = await sb.from('tp_plans').delete().eq('id', x.p.id);
+      if (r.error) { b.disabled = false; toast('Fehler: ' + r.error.message); return; }
+      toast('Plan gelöscht.'); renderTpOverview(profile);
+    };
+  });
   appEl.querySelectorAll('.tpo-chip').forEach(b => {
     b.onclick = () => {
       const x = plans.find(y => y.p.id === b.dataset.plan);
