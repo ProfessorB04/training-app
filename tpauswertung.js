@@ -11,6 +11,11 @@ function renderTpHub(profile) {
         <span class="mc-title">Pl&auml;ne erstellen</span>
         <span class="mc-sub">&Uuml;bungen zusammenstellen, Excel/Serien-Export &mdash; und <b>&bdquo;&#128242; In App ver&ouml;ffentlichen&ldquo;</b> f&uuml;r Gruppen oder einzelne Athlet:innen</span>
       </a>
+      <button class="menu-card tint-ath" type="button" id="tpOverBtn">
+        <span class="mc-icon">&#128064;</span>
+        <span class="mc-title">Aktuelle Trainings&uuml;bersicht</span>
+        <span class="mc-sub">Welche Pl&auml;ne die Athlet:innen gerade in der App sehen &mdash; anklicken f&uuml;r alle &Uuml;bungen je Tag und Woche</span>
+      </button>
       <button class="menu-card tint-load" type="button" id="tpEvalBtn">
         <span class="mc-icon">&#128202;</span>
         <span class="mc-title">Auswertung Trainingspl&auml;ne</span>
@@ -20,6 +25,7 @@ function renderTpHub(profile) {
     <p class="hint">Athlet:innen sehen ihren Plan unter &bdquo;Mein Trainingsplan&ldquo;, sobald das Recht in der Nutzerverwaltung auf &bdquo;eintragen&ldquo; steht.</p>`;
   renderShell(profile, 'trainingsplan', 'Trainingsplanung', content);
   document.getElementById('tpEvalBtn').onclick = () => renderTpEval(profile);
+  document.getElementById('tpOverBtn').onclick = () => renderTpOverview(profile);
 }
 
 let TP_EVAL_PLAN = '';
@@ -211,4 +217,100 @@ async function renderTpAthlete(profile, plan, uid, name, weekSel) {
   renderShell(profile, 'trainingsplan', name, content, back);
   document.getElementById('tpWeekSel').onchange = (e) => renderTpAthlete(profile, plan, uid, name, +e.target.value);
   appEl.querySelectorAll('tr.tp-row[data-w]').forEach(r => { r.onclick = () => { renderTpAthlete(profile, plan, uid, name, +r.dataset.w); window.scrollTo(0, 0); }; });
+}
+
+// ---------- Aktuelle Trainingsübersicht: sichtbare Pläne der Athlet:innen ----------
+async function renderTpOverview(profile) {
+  const back = { label: 'Trainingsplanung', go: () => renderTpHub(profile) };
+  const T = 'Aktuelle Trainingsübersicht';
+  renderShell(profile, 'trainingsplan', T, `<p class="muted">Lade&hellip;</p>`, back);
+  const [pRes, aRes, vRes, prRes] = await Promise.all([
+    sb.from('tp_plans').select('*').eq('archived', false).order('created_at', { ascending: false }),
+    sb.from('tp_assignments').select('plan_id, user_id, active').eq('active', true),
+    sb.from('tp_plan_versions').select('id, plan_id, from_week, user_ids, created_at'),
+    sb.from('profiles').select('id, name'),
+  ]);
+  const err = [pRes, aRes, vRes, prRes].map(r => r.error).filter(Boolean)[0];
+  if (err) { renderShell(profile, 'trainingsplan', T, `<div class="card"><p class="error">Fehler: ${esc(err.message)}</p></div>`, back); return; }
+  const names = Object.fromEntries((prRes.data || []).map(p => [p.id, p.name]));
+  const plans = (pRes.data || []).map(p => {
+    const members = (aRes.data || []).filter(a => a.plan_id === p.id).map(a => a.user_id)
+      .sort((x, y) => (names[x] || '').localeCompare(names[y] || '', 'de'));
+    const vers = (vRes.data || []).filter(v => v.plan_id === p.id);
+    const variantUsers = new Set(); vers.forEach(v => (v.user_ids || []).forEach(u => variantUsers.add(u)));
+    return { p, members, cur: tpWeekOfDate(p.start_date, p.weeks) || 1, variantUsers, changes: vers.filter(v => !v.user_ids && v.from_week > 1).length };
+  }).filter(x => x.members.length);
+  const cards = plans.map(x => `
+    <div class="card tpo-card">
+      <div class="tpo-head">
+        <div><div class="tpo-title">${esc(x.p.title || 'Ohne Titel')}</div>
+          <div class="muted-inline">${x.p.team ? esc(x.p.team) + ' &middot; ' : ''}${x.p.weeks} Wochen &middot; ${x.p.days} Einheiten/Woche${x.p.start_date ? ' &middot; ab ' + new Date(x.p.start_date + 'T00:00:00').toLocaleDateString('de-DE') : ''}</div></div>
+        <span class="tpo-week">Woche ${x.cur} von ${x.p.weeks}</span>
+      </div>
+      ${x.changes ? `<div class="hint" style="margin:0 0 8px;">&#9998; ${x.changes} &Auml;nderung(en) ab einer sp&auml;teren Woche</div>` : ''}
+      <div class="tpo-people">
+        <button type="button" class="tpo-chip group" data-plan="${x.p.id}" data-uid="">&#128101; Gruppenplan</button>
+        ${x.members.map(u => `<button type="button" class="tpo-chip" data-plan="${x.p.id}" data-uid="${u}">${esc(names[u] || 'Unbekannt')}${x.variantUsers.has(u) ? ' <span class="tpo-var" title="Hat eine eigene Variante">Variante</span>' : ''}</button>`).join('')}
+      </div>
+    </div>`).join('');
+  const content = plans.length ? `
+    <p class="hint" style="margin-top:0;">Alle Pl&auml;ne, die Athlet:innen gerade unter &bdquo;Mein Trainingsplan&ldquo; sehen. Auf eine Person (oder &bdquo;Gruppenplan&ldquo;) klicken, um alle &Uuml;bungen zu sehen.</p>${cards}`
+    : `<div class="card"><h2>Keine aktiven Pl&auml;ne</h2><p class="muted">In der Trainingsplanung einen Plan erstellen und &bdquo;&#128242; In App ver&ouml;ffentlichen&ldquo;.</p></div>`;
+  renderShell(profile, 'trainingsplan', T, content, back);
+  appEl.querySelectorAll('.tpo-chip').forEach(b => {
+    b.onclick = () => {
+      const x = plans.find(y => y.p.id === b.dataset.plan);
+      renderTpPlanDetail(profile, x.p, b.dataset.uid || null, b.dataset.uid ? names[b.dataset.uid] : null, x.cur);
+    };
+  });
+}
+
+async function renderTpPlanDetail(profile, plan, uid, name, week) {
+  const back = { label: 'Aktuelle Trainingsübersicht', go: () => renderTpOverview(profile) };
+  const T = plan.title || 'Trainingsplan';
+  renderShell(profile, 'trainingsplan', T, `<p class="muted">Lade&hellip;</p>`, back);
+  const { data: versions, error } = await sb.from('tp_plan_versions').select('*').eq('plan_id', plan.id).order('from_week');
+  if (error) { renderShell(profile, 'trainingsplan', T, `<div class="card"><p class="error">Fehler: ${esc(error.message)}</p></div>`, back); return; }
+  const cur = tpWeekOfDate(plan.start_date, plan.weeks) || 1;
+  const draw = (w) => {
+    const content = tpContentFor(versions, w, uid);
+    const isVar = !!uid && (versions || []).some(v => v.user_ids && v.user_ids.includes(uid) && v.from_week <= w);
+    const LAY = tpLayoutOf(plan, content);
+    const days = Array.from({ length: plan.days }, (_, i) => i + 1).map(d => {
+      const items = tpDayItems(content, d);
+      const prep = content && content.prepNote ? (content.prepNote[d] || content.prepNote[String(d)] || '') : '';
+      const cool = content && content.cooldown ? (content.cooldown[d] || content.cooldown[String(d)] || '') : '';
+      let lastCat = null, html = '';
+      items.forEach(it => {
+        const c = TP_CAT[it.cat] || { label: it.cat, color: TP_EXTRA_COLOR };
+        if (it.cat !== lastCat) {
+          const pr = it.presc || {};
+          const pt = [pr.sets ? pr.sets + ' Sätze' : '', pr.reps ? pr.reps + ' Wdh.' : '', pr.tempo ? 'Tempo ' + pr.tempo : '', pr.pause ? 'Pause ' + pr.pause : ''].filter(Boolean).join(' · ');
+          html += `<div class="tpo-cat" style="--cat:${c.color}">${esc(c.label)}${pt ? `<span>${esc(pt)}</span>` : ''}</div>`;
+          lastCat = it.cat;
+        }
+        html += `<div class="tpo-ex" style="--cat:${c.color}"><b>${esc(tpLabel(it))}</b>${it.note ? `<div class="tpo-note">&#128204; ${esc(it.note)}</div>` : ''}</div>`;
+      });
+      return `<div class="card tpo-day">
+        <div class="tpo-dayhead" style="background:${LAY.main};">Tag ${d}</div>
+        ${prep ? `<div class="tpo-note" style="margin-bottom:6px;">&#128221; ${esc(prep)}</div>` : ''}
+        ${html || '<p class="muted">Keine &Uuml;bungen.</p>'}
+        ${cool ? `<div class="tpo-note" style="margin-top:8px;">&#10052; Cool-down: ${esc(cool)}</div>` : ''}
+      </div>`;
+    }).join('');
+    const html = `
+      <div class="card">
+        <div class="ath-toolbar">
+          <div><b>${esc(name || 'Gruppenplan')}</b> <span class="muted-inline">${plan.team ? esc(plan.team) + ' · ' : ''}${isVar ? 'eigene Variante' : 'Gruppenplan'}</span></div>
+          <span class="spacer"></span>
+          <label class="muted-inline">Woche <select id="tpoWeek" style="width:auto;">${Array.from({ length: plan.weeks }, (_, i) => `<option value="${i + 1}" ${i + 1 === w ? 'selected' : ''}>${i + 1}${i + 1 === cur ? ' (aktuell)' : ''}</option>`).join('')}</select></label>
+          <button type="button" class="secondary" id="tpoEdit">&#9998; Plan bearbeiten</button>
+        </div>
+      </div>
+      <div class="tpo-days">${days}</div>`;
+    renderShell(profile, 'trainingsplan', T, html, back);
+    document.getElementById('tpoWeek').onchange = e => draw(+e.target.value);
+    document.getElementById('tpoEdit').onclick = () => { window.location.href = 'trainingsplan.html#edit=' + plan.id; };
+  };
+  draw(week || cur);
 }

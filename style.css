@@ -450,3 +450,20 @@ tr.no-access a{ color:var(--brand-strong); }
 .uname-name{ font-weight:600; }
 .uname{ font-size:.8rem; color:var(--ink-soft); margin-top:2px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 .link-btn{ background:none; border:0; padding:0; color:var(--brand-strong, #0042fc); text-decoration:underline; font-size:.78rem; cursor:pointer; width:auto; }
+
+/* Trainingsplanung: Aktuelle Trainingsübersicht */
+.tpo-head{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:10px; }
+.tpo-title{ font-weight:800; font-size:1.05rem; }
+.tpo-week{ background:var(--brand-pale); color:var(--brand-dark); font-weight:700; font-size:.8rem; padding:4px 10px; border-radius:999px; white-space:nowrap; }
+.tpo-people{ display:flex; flex-wrap:wrap; gap:6px; }
+.tpo-chip{ width:auto; background:#fff; color:var(--ink); border:1.5px solid var(--line); border-radius:999px; padding:6px 12px; font-size:.88rem; font-weight:600; cursor:pointer; }
+.tpo-chip:hover{ border-color:var(--brand-strong, #0042fc); }
+.tpo-chip.group{ background:var(--brand-pale); border-color:var(--brand); }
+.tpo-var{ font-size:.7rem; background:#fde9d9; color:#a0521b; border-radius:6px; padding:1px 5px; margin-left:4px; }
+.tpo-days{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; align-items:start; }
+.tpo-day{ padding-top:0; overflow:hidden; }
+.tpo-dayhead{ color:#fff; font-weight:800; margin:0 -22px 10px; padding:8px 22px; }
+.tpo-cat{ margin:10px 0 4px; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--cat); border-bottom:2px solid var(--cat); padding-bottom:2px; display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap; }
+.tpo-cat span{ text-transform:none; letter-spacing:0; font-weight:600; color:var(--ink-soft); }
+.tpo-ex{ border-left:3px solid var(--cat); padding:4px 8px; margin:3px 0; font-size:.92rem; }
+.tpo-note{ font-size:.8rem; color:var(--ink-soft); margin-top:2px; }
