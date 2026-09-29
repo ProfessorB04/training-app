@@ -2602,16 +2602,21 @@ async function tpSavePlanDialog(){
   const sb = window.appSb;
   if(!sb){ alert('Keine Verbindung zur App.'); return; }
   const who = tpAthleteName();
-  const def = state.savedPlanName || [state.title || 'Plan', who || state.team].filter(Boolean).join(' – ');
+  // Name immer aus aktuellem Titel + „Für wen?“ (bzw. Team) bilden
+  const def = [state.title || 'Plan', who || state.team].filter(Boolean).join(' – ');
+  // anderes Ziel als der geöffnete Plan → „Als neuen Plan speichern“ ist die Hauptaktion
+  const openedFor = state.savedPlanAthlete != null ? state.savedPlanAthlete : (who && (state.savedPlanName || '').includes(who) ? who : '?');
+  const otherTarget = !!state.savedPlanId && openedFor !== (who || '');
   const host = tpOpenModal(`
     <h2 style="margin-bottom:6px;">💾 Plan speichern</h2>
     <p class="hint" style="margin:0 0 12px;">Gespeicherte Pl&auml;ne sind auf allen Ger&auml;ten (Mac, iPad, Handy) und f&uuml;r alle Trainer:innen unter &bdquo;📂 Pl&auml;ne &ouml;ffnen&ldquo; verf&uuml;gbar.</p>
     <div class="field"><label>Name des Plans</label><input type="text" id="tpSaveName" value="${escapeHtml(def)}" style="width:100%;"></div>
+    ${otherTarget ? `<p class="hint" style="color:#8a5a00;">Ge&ouml;ffnet ist der Plan &bdquo;${escapeHtml(state.savedPlanName || 'Plan')}&ldquo;, gespeichert wird f&uuml;r <b>${escapeHtml(who || 'die ganze Gruppe')}</b> &rarr; am besten &bdquo;Als neuen Plan speichern&ldquo;.</p>` : ''}
     <p class="hint">Team: <b>${escapeHtml(state.team || '–')}</b> &middot; F&uuml;r: <b>${escapeHtml(who || 'ganze Gruppe')}</b> &middot; ${state.weeks} Wochen &times; ${state.days} Tage</p>
     <div class="actions" style="justify-content:flex-end;">
       <button type="button" id="tpSaveCancel">Abbrechen</button>
-      ${state.savedPlanId ? `<button type="button" id="tpSaveNew">Als neuen Plan speichern</button>
-      <button type="button" class="primary" id="tpSaveUpd">&Auml;nderungen speichern</button>` : `<button type="button" class="primary" id="tpSaveNew">Speichern</button>`}
+      ${state.savedPlanId ? `<button type="button" id="tpSaveUpd" class="${otherTarget ? '' : 'primary'}">&Auml;nderungen in &bdquo;${escapeHtml(state.savedPlanName || 'Plan')}&ldquo; speichern</button>
+      <button type="button" class="${otherTarget ? 'primary' : ''}" id="tpSaveNew">Als neuen Plan speichern</button>` : `<button type="button" class="primary" id="tpSaveNew">Speichern</button>`}
     </div>`);
   const q = s => host.querySelector(s);
   q('#tpSaveName').focus(); q('#tpSaveName').select();
@@ -2620,14 +2625,14 @@ async function tpSavePlanDialog(){
     const name = q('#tpSaveName').value.trim() || def;
     const { data: { user } } = await sb.auth.getUser();
     const content = JSON.parse(JSON.stringify(state));
-    delete content.savedPlanId; delete content.savedPlanName;
+    delete content.savedPlanId; delete content.savedPlanName; delete content.savedPlanAthlete;
     const row = { title: name, team: state.team || null, athlete: who || null, weeks: state.weeks, days: state.days,
       content, updated_by: user.id, updated_at: new Date().toISOString() };
     let r;
     if(!asNew && state.savedPlanId) r = await sb.from('tp_saved_plans').update(row).eq('id', state.savedPlanId).select('id').single();
     else r = await sb.from('tp_saved_plans').insert(Object.assign({ created_by: user.id }, row)).select('id').single();
     if(r.error){ alert('Speichern fehlgeschlagen: ' + r.error.message); return; }
-    state.savedPlanId = r.data.id; state.savedPlanName = name;
+    state.savedPlanId = r.data.id; state.savedPlanName = name; state.savedPlanAthlete = who || '';
     saveState(true); snapshotCurrentPlan();
     host.remove(); tpUpdateOpenInfo();
     toast('„' + name + '“ gespeichert – auf allen Geräten verfügbar');
@@ -2716,7 +2721,7 @@ async function tpOpenPlansDialog(){
       if(!confirm('Aktuellen Entwurf durch diesen Plan ersetzen?')) return;
       const r = await sb.from('tp_saved_plans').select('*').eq('id', b.dataset.open).single();
       if(r.error){ alert('Öffnen fehlgeschlagen: ' + r.error.message); return; }
-      tpApplyLoadedState(r.data.content, { savedPlanId: r.data.id, savedPlanName: r.data.title });
+      tpApplyLoadedState(r.data.content, { savedPlanId: r.data.id, savedPlanName: r.data.title, savedPlanAthlete: r.data.athlete || '' });
       host.remove(); toast('„' + r.data.title + '“ geöffnet');
     });
     box.querySelectorAll('[data-del]').forEach(b=>b.onclick = async ()=>{
