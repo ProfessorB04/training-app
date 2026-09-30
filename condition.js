@@ -226,17 +226,36 @@ function cdSessionSec(content) {
 async function renderConditionHub(profile) {
   const T = 'Conditioning';
   renderShell(profile, 'trainingsplan', T, `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`, { label: 'Trainingsplanung', go: () => renderTpHub(profile) });
-  const [sRes, aRes, lRes, prRes] = await Promise.all([
+  const [sRes, aRes, lRes, prRes, plRes] = await Promise.all([
     sb.from('cd_sessions').select('*').eq('archived', false).order('planned_date', { ascending: false, nullsFirst: true }).order('created_at', { ascending: false }),
     sb.from('cd_assignments').select('session_id, user_id, active').eq('active', true),
     sb.from('cd_logs').select('session_id, user_id, completed, srpe, duration_min'),
     sb.from('profiles').select('id, name'),
+    sb.from('cd_plans').select('*').eq('archived', false).order('created_at', { ascending: false }),
   ]);
   const err = [sRes, aRes, lRes, prRes].map(r => r.error).filter(Boolean)[0];
   if (err) { renderShell(profile, 'trainingsplan', T, `<div class="card"><p class="error">${L('Fehler', 'Error')}: ${esc(err.message)}${/cd_sessions|relation/.test(err.message) ? '<br>' + L('Die Datenbank f&uuml;r Conditioning ist noch nicht eingerichtet (Migration supabase_migration_condition.sql).', 'The Conditioning database is not set up yet (migration supabase_migration_condition.sql).') : ''}</p></div>`); return; }
   const names = Object.fromEntries((prRes.data || []).map(p => [p.id, p.name]));
   const today = new Date().toISOString().slice(0, 10);
-  const cards = (sRes.data || []).map(s => {
+  const plans = plRes.error ? null : (plRes.data || []);
+  const planCards = (plans || []).map(pl => {
+    const ss = (sRes.data || []).filter(s => s.plan_id === pl.id);
+    const as = (aRes.data || []).filter(a => ss.some(s => s.id === a.session_id));
+    const done = (lRes.data || []).filter(l => l.completed && ss.some(s => s.id === l.session_id)).length;
+    const cw = cdPlanWeekNow(pl);
+    return `<div class="card cd-card cd-plancard">
+      <div class="tpo-head">
+        <div><div class="tpo-title">&#128197; ${esc(pl.title || L('Conditioning-Plan', 'Conditioning plan'))}</div>
+          <div class="muted-inline">${pl.for_name ? L('f&uuml;r ', 'for ') + '<b>' + esc(pl.for_name) + '</b> &middot; ' : ''}${pl.weeks} ${L('Wochen', 'weeks')} &times; ${pl.per_week} ${L('Einheiten', 'sessions')}${pl.start_date ? ' &middot; ' + L('ab ', 'from ') + cdDate(pl.start_date) : ''} &middot; ${ss.length}/${pl.weeks * pl.per_week} ${L('geplant', 'planned')}</div></div>
+        <span class="tpo-week">${(pl.members || []).length ? `${L('Woche', 'Week')} ${cw} &middot; ${done} ${L('erledigt', 'done')}` : L('nicht ver&ouml;ffentlicht', 'not published')}</span>
+      </div>
+      ${(pl.members || []).length ? `<div class="tpo-people">${pl.members.map(u => `<span class="tpo-chip static">${esc(names[u] || '?')}</span>`).join('')}</div>` : ''}
+      <div class="tpo-actions">
+        <button type="button" class="small-btn" data-plan="${pl.id}">&#128197; ${L('&Ouml;ffnen', 'Open')}</button>
+        <button type="button" class="danger small-btn" data-pldel="${pl.id}">&#128465; ${L('L&ouml;schen', 'Delete')}</button>
+      </div></div>`;
+  }).join('');
+  const cards = (sRes.data || []).filter(s => !s.plan_id).map(s => {
     const as = (aRes.data || []).filter(a => a.session_id === s.id);
     const done = (lRes.data || []).filter(l => l.session_id === s.id && l.completed).length;
     const dur = cdSessionSec(s.content || {});
@@ -264,14 +283,27 @@ async function renderConditionHub(profile) {
         <span class="spacer"></span>
         <button type="button" class="secondary" id="cdMods">&#128692; ${L('Sportarten / Ger&auml;te', 'Modalities / equipment')}</button>
         <button type="button" class="secondary" id="cdValues">&#128200; ${L('Leistungswerte (vIFT / HFmax)', 'Test values (vIFT / HRmax)')}</button>
+        <button type="button" class="secondary" id="cdNewPlan">&#128197; ${L('Neuer Plan', 'New plan')}</button>
         <button type="button" id="cdNew">+ ${L('Neue Einheit', 'New session')}</button>
       </div>
     </div>
+    ${plans === null ? `<p class="hint">${L('Conditioning-Pl&auml;ne: Datenbank-Erweiterung fehlt noch (supabase_migration_condition_plan.sql).', 'Conditioning plans: database extension missing (supabase_migration_condition_plan.sql).')}</p>` : ''}
+    ${planCards ? `<h2 class="cd-ov-h">&#128197; ${L('Pl&auml;ne (Wochen &times; Einheiten)', 'Plans (weeks &times; sessions)')}</h2>${planCards}<h2 class="cd-ov-h">${L('Einzelne Einheiten', 'Single sessions')}</h2>` : ''}
     ${cards || `<div class="card"><p class="muted">${L('Noch keine Conditioning-Einheiten. &bdquo;+ Neue Einheit&ldquo; anklicken.', 'No conditioning sessions yet. Click &ldquo;+ New session&rdquo;.')}</p></div>`}
     ${cdSourcesHtml()}`;
   renderShell(profile, 'trainingsplan', T, content, { label: 'Trainingsplanung', go: () => renderTpHub(profile) });
   cdWireLang(() => renderConditionHub(profile));
   document.getElementById('cdNew').onclick = () => renderCdEditor(profile, null);
+  document.getElementById('cdNewPlan').onclick = () => { if (plans === null) { alert(L('Bitte zuerst die Datenbank-Erweiterung ausführen (supabase_migration_condition_plan.sql).', 'Please run the database extension first (supabase_migration_condition_plan.sql).')); return; } renderCdPlan(profile, null); };
+  appEl.querySelectorAll('[data-plan]').forEach(b => b.onclick = () => renderCdPlan(profile, b.dataset.plan));
+  appEl.querySelectorAll('[data-pldel]').forEach(b => b.onclick = async () => {
+    const pl = plans.find(x => x.id === b.dataset.pldel);
+    const n = (sRes.data || []).filter(s => s.plan_id === pl.id).length;
+    if (!confirm(L('Plan „' + (pl.title || '') + '“ mit ' + n + ' Einheit(en) löschen?\n\nEintragungen der Athlet:innen zu diesen Einheiten werden mitgelöscht (sRPE im Load Management bleibt).', 'Delete plan “' + (pl.title || '') + '” with ' + n + ' session(s)?\n\nAthlete entries for these sessions are deleted as well (sRPE in Load Management is kept).'))) return;
+    const r = await sb.from('cd_plans').delete().eq('id', pl.id);
+    if (r.error) { toast(L('Fehler: ', 'Error: ') + r.error.message); return; }
+    toast(L('Plan gelöscht.', 'Plan deleted.')); renderConditionHub(profile);
+  });
   document.getElementById('cdValues').onclick = () => renderCdValues(profile);
   document.getElementById('cdMods').onclick = () => cdModalitiesDialog();
   appEl.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => renderCdEditor(profile, (sRes.data || []).find(s => s.id === b.dataset.edit)));
@@ -392,8 +424,9 @@ async function renderCdValues(profile) {
 // ============================================================
 // Editor
 // ============================================================
-async function renderCdEditor(profile, session) {
-  const back = { label: 'Conditioning', go: () => { if (!dirty || confirm(L('Ungespeicherte Änderungen verwerfen?', 'Discard unsaved changes?'))) renderConditionHub(profile); } };
+async function renderCdEditor(profile, session, ctx) {
+  // ctx (Einheit in einem Plan): { plan, back }
+  const back = { label: ctx ? L('Plan', 'Plan') : 'Conditioning', go: () => { if (!dirty || confirm(L('Ungespeicherte Änderungen verwerfen?', 'Discard unsaved changes?'))) (ctx ? ctx.back() : renderConditionHub(profile)); } };
   const T = () => session && session.id ? L('Conditioning bearbeiten', 'Edit conditioning') : L('Neue Conditioning-Einheit', 'New conditioning session');
   renderShell(profile, 'trainingsplan', T(), `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`, back);
   const S = session ? JSON.parse(JSON.stringify(session)) : { id: null, title: '', team: '', planned_date: new Date().toISOString().slice(0, 10), content: {} };
@@ -493,7 +526,7 @@ async function renderCdEditor(profile, session) {
       </div>
       <div class="cd-savebar">
         <button type="button" class="secondary" id="cdSave">&#128190; ${L('Speichern', 'Save')}</button>
-        <button type="button" id="cdPub">&#128242; ${L('In App ver&ouml;ffentlichen', 'Publish to app')}${picked.size ? ' (' + picked.size + ')' : ''}</button>
+        ${ctx ? `<span class="hint" style="align-self:center;margin:0;">${L('Teil des Plans', 'Part of plan')} &bdquo;${esc(ctx.plan.title || '')}&ldquo; &middot; ${L('Woche', 'Week')} ${S.plan_week} &middot; ${L('Einheit', 'Session')} ${S.plan_slot}${(ctx.plan.members || []).length ? ' &middot; ' + L('automatisch f&uuml;r die Plan-Teilnehmer:innen sichtbar', 'automatically visible to plan members') : ''}</span>` : `<button type="button" id="cdPub">&#128242; ${L('In App ver&ouml;ffentlichen', 'Publish to app')}${picked.size ? ' (' + picked.size + ')' : ''}</button>`}
       </div>`;
     renderShell(profile, 'trainingsplan', T(), html, back);
     cdWireLang(draw);
@@ -545,17 +578,20 @@ async function renderCdEditor(profile, session) {
       });
     });
     document.getElementById('cdSave').onclick = async () => { if (await save()) { toast(L('Gespeichert.', 'Saved.')); draw(); } };
-    document.getElementById('cdPub').onclick = () => publishDialog();
+    const pub = document.getElementById('cdPub'); if (pub) pub.onclick = () => publishDialog();
   };
   const save = async () => {
     if (!(S.title || '').trim()) { alert(L('Bitte einen Titel eingeben.', 'Please enter a title.')); return false; }
     const { data: { user } } = await sb.auth.getUser();
     const row = { title: S.title.trim(), team: (S.team || '').trim() || null, planned_date: S.planned_date || null, content: S.content, updated_at: new Date().toISOString() };
+    if (S.plan_id) Object.assign(row, { plan_id: S.plan_id, plan_week: S.plan_week, plan_slot: S.plan_slot });
     let r;
     if (S.id) r = await sb.from('cd_sessions').update(row).eq('id', S.id).select('id').single();
     else r = await sb.from('cd_sessions').insert(Object.assign({ created_by: user.id }, row)).select('id').single();
     if (r.error) { alert(L('Speichern fehlgeschlagen: ', 'Saving failed: ') + r.error.message); return false; }
     S.id = r.data.id; dirty = false;
+    // Plan-Einheit: automatisch den Plan-Teilnehmer:innen zuordnen
+    if (ctx && (ctx.plan.members || []).length) await cdAssignSessions([S.id], ctx.plan.members, athByProfile);
     return true;
   };
   const publishDialog = () => {
@@ -643,19 +679,46 @@ async function cdLoadMine() {
     sb.from('cd_sessions').select('*').in('id', ids),
     sb.from('cd_logs').select('*').eq('user_id', user.id).in('session_id', ids),
   ]);
-  return (sRes.data || []).map(s => ({ s, personal: (asg.find(a => a.session_id === s.id) || {}).personal || {}, log: (lRes.data || []).find(l => l.session_id === s.id) || null, uid: user.id }))
+  const planIds = [...new Set((sRes.data || []).map(s => s.plan_id).filter(Boolean))];
+  const plRes = planIds.length ? await sb.from('cd_plans').select('*').in('id', planIds) : { data: [] };
+  const plans = plRes.data || [];
+  return (sRes.data || []).map(s => ({ s, plan: plans.find(p => p.id === s.plan_id) || null, personal: (asg.find(a => a.session_id === s.id) || {}).personal || {}, log: (lRes.data || []).find(l => l.session_id === s.id) || null, uid: user.id }))
     .sort((x, y) => (x.log && x.log.completed ? 1 : 0) - (y.log && y.log.completed ? 1 : 0) || (x.s.planned_date || '9999').localeCompare(y.s.planned_date || '9999'));
 }
 function cdMyListHtml(list) {
   if (!list || !list.length) return '';
-  const open = list.filter(x => !(x.log && x.log.completed)), done = list.filter(x => x.log && x.log.completed);
+  // Pläne: aktuelle Woche oben, alle Wochen aufklappbar
+  const plans = [...new Map(list.filter(x => x.plan).map(x => [x.plan.id, x.plan])).values()];
+  const planHtml = plans.map(pl => {
+    const mine = list.filter(x => x.plan && x.plan.id === pl.id).sort((a, b) => a.s.plan_week - b.s.plan_week || a.s.plan_slot - b.s.plan_slot);
+    const cw = cdPlanWeekNow(pl, mine.map(x => x.s), mine.filter(x => x.log).map(x => Object.assign({ session_id: x.s.id }, x.log)));
+    const pItem = x => {
+      const dur = cdSessionSec(x.s.content || {});
+      const st = x.log && x.log.completed ? '&#10003;' : (x.log ? '&#9680;' : '');
+      const main = ((x.s.content || {}).blocks || []).filter(b => b.phase === 'main').map(b => b.content || cdMethodLabel(b.method, true)).join(' + ');
+      return `<button type="button" class="cd-mine${x.log && x.log.completed ? ' done' : ''}" data-cd="${x.s.id}">
+        <span><b>${L('Einheit', 'Session')} ${x.s.plan_slot}${main ? ' &middot; ' + esc(main) : ''}</b><span class="muted-inline">${dur.sec ? '&asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}</span></span><span class="cd-st">${st}</span></button>`;
+    };
+    const weekList = w => mine.filter(x => x.s.plan_week === w);
+    const thisW = weekList(cw), doneW = thisW.filter(x => x.log && x.log.completed).length;
+    const others = Array.from({ length: pl.weeks }, (_, i) => i + 1).filter(w => w !== cw && weekList(w).length);
+    return `<div class="card"><h2>&#128197; ${esc(pl.title || 'Conditioning')}</h2>
+      ${pl.note ? `<p class="hint" style="margin-top:-6px;">${esc(pl.note)}</p>` : ''}
+      <div class="cd-weekhead">${L('Diese Woche', 'This week')}: ${L('Woche', 'Week')} ${cw} ${L('von', 'of')} ${pl.weeks} <span class="muted-inline">&middot; ${doneW}/${thisW.length} ${L('erledigt', 'done')} &middot; ${L('Reihenfolge frei', 'any order')}</span></div>
+      <div class="cd-mylist">${thisW.map(pItem).join('') || `<p class="muted">${L('Keine Einheiten in dieser Woche.', 'No sessions this week.')}</p>`}</div>
+      ${others.length ? `<details style="margin-top:10px;"><summary class="hint" style="cursor:pointer;">${L('Alle Wochen', 'All weeks')}</summary>${others.map(w => `<div class="cd-weekhead small">${L('Woche', 'Week')} ${w}</div><div class="cd-mylist">${weekList(w).map(pItem).join('')}</div>`).join('')}</details>` : ''}
+    </div>`;
+  }).join('');
+  const single = list.filter(x => !x.plan);
+  if (!single.length) return planHtml;
+  const open = single.filter(x => !(x.log && x.log.completed)), done = single.filter(x => x.log && x.log.completed);
   const item = x => {
     const dur = cdSessionSec(x.s.content || {});
     const st = x.log && x.log.completed ? '&#10003;' : (x.log ? '&#9680;' : '');
     return `<button type="button" class="cd-mine${x.log && x.log.completed ? ' done' : ''}" data-cd="${x.s.id}">
       <span><b>${esc(x.s.title || 'Conditioning')}</b><span class="muted-inline">${x.s.planned_date ? cdDate(x.s.planned_date, { weekday: 'short', day: '2-digit', month: '2-digit' }) : ''}${dur.sec ? ' &middot; &asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}</span></span><span class="cd-st">${st}</span></button>`;
   };
-  return `<div class="card"><h2>&#9201;&#65039; Conditioning</h2>
+  return planHtml + `<div class="card"><h2>&#9201;&#65039; ${plans.length ? L('Einzelne Einheiten', 'Single sessions') : 'Conditioning'}</h2>
     <div class="cd-mylist">${open.map(item).join('')}</div>
     ${done.length ? `<details style="margin-top:8px;"><summary class="hint" style="cursor:pointer;">${L('Erledigt', 'Done')} (${done.length})</summary><div class="cd-mylist">${done.map(item).join('')}</div></details>` : ''}</div>`;
 }
@@ -715,7 +778,7 @@ function renderMyCondition(profile, x) {
       ${cdLangBar()}
       <div class="card mp-sesshead" style="--lay-main:#1f9d55;--lay-dark:#157a42;--lay-accent:#a1d7ff;">
         <div><div class="mp-kicker">Conditioning${s.planned_date ? ' &middot; ' + cdDate(s.planned_date, { weekday: 'long', day: '2-digit', month: '2-digit' }) : ''}</div>
-        <div class="mp-big">${esc(s.title || 'Conditioning')}</div>
+        <div class="mp-big">${esc(x.plan ? `${x.plan.title} · ${L('Woche', 'Week')} ${s.plan_week} · ${L('Einheit', 'Session')} ${s.plan_slot}` : (s.title || 'Conditioning'))}</div>
         ${s.content && s.content.forName ? `<div class="muted-inline">${L('f&uuml;r', 'for')} ${esc(s.content.forName)}</div>` : ''}
         <div class="muted-inline">${dur.sec ? '&asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}${x.log && x.log.completed ? ' &middot; ' + L('abgeschlossen', 'completed') : ''}</div></div>
       </div>
@@ -780,13 +843,14 @@ function renderMyCondition(profile, x) {
 // ============================================================
 // alle aktiven Conditioning-Einheiten mit Zuordnungen und Eintragungen
 async function cdLoadAll() {
-  const [s, a, l] = await Promise.all([
+  const [s, a, l, p] = await Promise.all([
     sb.from('cd_sessions').select('*').eq('archived', false),
     sb.from('cd_assignments').select('session_id, user_id, personal, active').eq('active', true),
     sb.from('cd_logs').select('*'),
+    sb.from('cd_plans').select('*').eq('archived', false),
   ]);
-  if (s.error || a.error) return { sessions: [], asg: [], logs: [] };
-  return { sessions: s.data || [], asg: a.data || [], logs: l.data || [] };
+  if (s.error || a.error) return { sessions: [], asg: [], logs: [], plans: [] };
+  return { sessions: s.data || [], asg: a.data || [], logs: l.data || [], plans: p.error ? [] : (p.data || []) };
 }
 const cdAU = (l) => l && l.srpe && l.duration_min ? l.srpe * l.duration_min : 0;
 function cdStatusOf(log) { return log && log.completed ? 'done' : (log ? 'part' : 'open'); }
@@ -794,8 +858,10 @@ function cdStatusIcon(st) { return st === 'done' ? '&#10003;' : (st === 'part' ?
 
 // Abschnitt „Conditioning“ in der Aktuellen Trainingsübersicht
 function cdOverviewHtml(CD, names) {
+  // Plan-Einheiten: nur die der aktuellen Plan-Woche
   const list = CD.sessions.filter(s => CD.asg.some(a => a.session_id === s.id))
-    .sort((x, y) => (y.planned_date || '').localeCompare(x.planned_date || ''));
+    .filter(s => { if (!s.plan_id) return true; const pl = (CD.plans || []).find(p => p.id === s.plan_id); return !pl || s.plan_week === cdPlanWeekNow(pl, CD.sessions, CD.logs); })
+    .sort((x, y) => (x.plan_id || '').localeCompare(y.plan_id || '') || (x.plan_slot || 0) - (y.plan_slot || 0) || (y.planned_date || '').localeCompare(x.planned_date || ''));
   if (!list.length) return '';
   return `<h2 class="cd-ov-h">&#9201;&#65039; Conditioning</h2>` + list.map(s => {
     const as = CD.asg.filter(a => a.session_id === s.id).sort((x, y) => (names[x.user_id] || '').localeCompare(names[y.user_id] || '', 'de'));
@@ -804,8 +870,8 @@ function cdOverviewHtml(CD, names) {
     const dur = cdSessionSec(s.content || {});
     return `<div class="card tpo-card cd-ov">
       <div class="tpo-head">
-        <div><div class="tpo-title">${esc(s.title || 'Conditioning')}</div>
-          <div class="muted-inline">${s.planned_date ? cdDate(s.planned_date, { weekday: 'short', day: '2-digit', month: '2-digit' }) : 'ohne Datum'}${s.content && s.content.forName ? ' &middot; f&uuml;r ' + esc(s.content.forName) : ''}${s.team ? ' &middot; ' + esc(s.team) : ''}${dur.sec ? ' &middot; &asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}</div></div>
+        <div><div class="tpo-title">${s.plan_id ? '&#128197; ' : ''}${esc(cdSessLabel(s, CD.plans))}</div>
+          <div class="muted-inline">${s.plan_id ? L('aktuelle Plan-Woche', 'current plan week') : (s.planned_date ? cdDate(s.planned_date, { weekday: 'short', day: '2-digit', month: '2-digit' }) : 'ohne Datum')}${s.content && s.content.forName ? ' &middot; f&uuml;r ' + esc(s.content.forName) : ''}${s.team ? ' &middot; ' + esc(s.team) : ''}${dur.sec ? ' &middot; &asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}</div></div>
         <span class="tpo-week">${done}/${as.length} erledigt</span>
       </div>
       <div class="tpo-people">
@@ -882,7 +948,7 @@ function cdAthleteListHtml(CD, uid) {
     <thead><tr><th>Einheit</th><th>Datum</th><th></th><th>Bl&ouml;cke</th><th>sRPE</th><th>Notizen</th></tr></thead>
     <tbody>${rows.map(x => { const blocks = (x.s.content && x.s.content.blocks) || [], bd = (x.l && x.l.data && x.l.data.blocks) || {};
       const notes = blocks.map(b => { const d = bd[b.id]; return d && (d.hr || d.dist || d.note) ? `<li><b>${esc(cdMethodLabel(b.method, true))}:</b> ${[d.hr ? '&Oslash; ' + esc(d.hr) + ' bpm' : '', d.dist ? esc(d.dist) + ' m' : '', d.note ? esc(d.note) : ''].filter(Boolean).join(' · ')}</li>` : ''; }).join('') + (x.l && x.l.data && x.l.data.note ? `<li>&#128221; ${esc(x.l.data.note)}</li>` : '');
-      return `<tr class="tp-row" data-cds="${x.s.id}" data-cdu="${uid}"><td>${esc(x.s.title || 'Conditioning')}</td><td>${x.s.planned_date ? cdDate(x.s.planned_date) : '–'}</td><td>${cdStatusIcon(cdStatusOf(x.l))}</td>
+      return `<tr class="tp-row" data-cds="${x.s.id}" data-cdu="${uid}"><td>${esc(cdSessLabel(x.s, CD.plans))}</td><td>${x.s.planned_date ? cdDate(x.s.planned_date) : '–'}</td><td>${cdStatusIcon(cdStatusOf(x.l))}</td>
         <td>${blocks.filter(b => bd[b.id] && bd[b.id].done).length}/${blocks.length}</td><td>${x.l && x.l.srpe ? `${x.l.srpe} &times; ${x.l.duration_min} min = ${cdAU(x.l)}` : '–'}</td><td><ul class="tp-ul">${notes}</ul></td></tr>`; }).join('')}</tbody>
   </table></div><p class="hint">Zeile anklicken f&uuml;r Vorgaben und Eintragungen je Block.</p></div>`;
 }
@@ -972,4 +1038,290 @@ function cdAthletePreview(S, p, name) {
   document.body.appendChild(host);
   host.querySelector('#cdavX').onclick = () => host.remove();
   host.querySelector('.modal-scrim').addEventListener('click', e => { if (e.target.classList.contains('modal-scrim')) host.remove(); });
+}
+
+// ============================================================
+// Conditioning-Pläne: Wochen × Einheit 1, 2, 3 … (Reihenfolge innerhalb der Woche frei)
+// ============================================================
+// aktuelle Plan-Woche: nach Startdatum, sonst erste Woche mit offenen Einheiten (logs optional)
+function cdPlanWeekNow(pl, sessions, logs) {
+  if (pl.start_date) {
+    const d = Math.floor((Date.now() - new Date(pl.start_date + 'T00:00:00').getTime()) / 86400000);
+    return d < 0 ? 1 : Math.min(pl.weeks, Math.floor(d / 7) + 1);
+  }
+  if (sessions && logs) {
+    for (let w = 1; w <= pl.weeks; w++) {
+      const ss = sessions.filter(s => s.plan_id === pl.id && s.plan_week === w);
+      if (ss.some(s => !logs.some(l => l.session_id === s.id && l.completed))) return w;
+    }
+  }
+  return 1;
+}
+// Einheiten Athlet:innen zuordnen (mit persönlichen Werten zum Zeitpunkt der Zuordnung)
+async function cdAssignSessions(sessionIds, userIds, athByProfile) {
+  if (!sessionIds.length || !userIds.length) return { error: null };
+  const rows = [];
+  sessionIds.forEach(sid => userIds.forEach(uid => { const a = (athByProfile || {})[uid] || {};
+    rows.push({ session_id: sid, user_id: uid, active: true, personal: { vift: cdNum(a.vift_kmh), hr_max: a.hr_max || null, hr_rest: a.hr_rest || null, age: cdAge(a.birthdate) } }); }));
+  return sb.from('cd_assignments').upsert(rows, { onConflict: 'session_id,user_id' });
+}
+// Anzeigename einer Einheit (mit Plan, Woche, Einheit)
+function cdSessLabel(s, plans) {
+  if (!s || !s.plan_id) return (s && s.title) || 'Conditioning';
+  const pl = (plans || []).find(p => p.id === s.plan_id);
+  return `${pl ? pl.title + ' · ' : ''}${L('W', 'W')}${s.plan_week} · ${L('E', 'S')}${s.plan_slot}${s.title && !/^(Woche|Week) \d+ · (Einheit|Session) \d+$/.test(s.title) ? ' – ' + s.title : ''}`;
+}
+// Progression beim Kopieren einer Woche
+const CD_PROG = [
+  { key: 'none', de: 'unverändert kopieren', en: 'copy unchanged' },
+  { key: 'rep', de: '+1 Wiederholung je Block', en: '+1 rep per block' },
+  { key: 'set', de: '+1 Serie je Block', en: '+1 set per block' },
+  { key: 'work', de: '+10 % Belastungsdauer', en: '+10 % work duration' },
+  { key: 'int', de: '+2,5 % Intensität (vIFT, HF, Watt, km/h)', en: '+2.5 % intensity (vIFT, HR, watts, km/h)' },
+  { key: 'deload', de: 'Deload: −30 % Wiederholungen', en: 'Deload: −30 % reps' },
+];
+function cdProgress(content, key) {
+  const c = JSON.parse(JSON.stringify(content || {}));
+  (c.blocks || []).forEach(b => {
+    b.id = cdNewId();
+    if (b.phase !== 'main' && key !== 'deload') return;           // Warm-Up/Cool-down bleiben gleich
+    const n = v => cdNum(v);
+    if (key === 'rep' && n(b.reps)) b.reps = n(b.reps) + 1;
+    if (key === 'set' && n(b.sets)) b.sets = n(b.sets) + 1;
+    if (key === 'work' && n(b.work.v)) b.work.v = Math.round(n(b.work.v) * 1.1 * 10) / 10;
+    if (key === 'int' && ['vift', 'hrmax', 'hrr', 'watt', 'speed'].includes(b.int.type)) {
+      ['min', 'max'].forEach(k => { if (n(b.int[k])) b.int[k] = Math.round(n(b.int[k]) * 1.025 * 10) / 10; });
+    }
+    if (key === 'deload' && b.phase === 'main' && n(b.reps)) b.reps = Math.max(1, Math.round(n(b.reps) * 0.7));
+  });
+  return c;
+}
+
+async function renderCdPlan(profile, planId) {
+  const back = { label: 'Conditioning', go: () => renderConditionHub(profile) };
+  renderShell(profile, 'trainingsplan', L('Conditioning-Plan', 'Conditioning plan'), `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`, back);
+  let P = { id: null, title: '', team: '', for_name: '', start_date: null, weeks: 4, per_week: 2, members: [], note: '' };
+  let sessions = [], logs = [];
+  const [mgmt, prof, lib] = await Promise.all([
+    loadAthleteData().catch(() => null),
+    sb.from('profiles').select('id, name, role, permissions').eq('role', 'athlete').order('name'),
+    sb.from('cd_sessions').select('id, title, plan_id, plan_week, plan_slot, content, planned_date').eq('archived', false).order('created_at', { ascending: false }),
+    cdLoadModalities(),
+  ]);
+  const reload = async () => {
+    if (!P.id) return;
+    const [p, s, l] = await Promise.all([
+      sb.from('cd_plans').select('*').eq('id', P.id).single(),
+      sb.from('cd_sessions').select('*').eq('plan_id', P.id),
+      sb.from('cd_logs').select('session_id, user_id, completed, srpe, duration_min'),
+    ]);
+    if (!p.error) P = p.data;
+    sessions = s.data || [];
+    logs = (l.data || []).filter(x => sessions.some(y => y.id === x.session_id));
+  };
+  if (planId) { P.id = planId; await reload(); }
+  const athletes = mgmt ? mgmt.athletes : [], groups = mgmt ? mgmt.groups : [];
+  const athByProfile = {}; athletes.forEach(a => { if (a.profile_id) athByProfile[a.profile_id] = a; });
+  const users = prof.data || [];
+  const athNames = athletes.map(a => `${a.first_name} ${a.last_name}`.trim()).filter(Boolean).sort((a, b) => a.localeCompare(b, 'de'));
+  let clip = null;   // kopierte Einheit (content + title)
+
+  const savePlan = async (quiet) => {
+    if (!(P.title || '').trim()) { alert(L('Bitte einen Titel für den Plan eingeben.', 'Please enter a plan title.')); return false; }
+    const { data: { user } } = await sb.auth.getUser();
+    const row = { title: P.title.trim(), team: (P.team || '').trim() || null, for_name: (P.for_name || '').trim() || null, start_date: P.start_date || null,
+      weeks: Math.max(1, Math.min(26, parseInt(P.weeks, 10) || 4)), per_week: Math.max(1, Math.min(7, parseInt(P.per_week, 10) || 2)), note: P.note || null, updated_at: new Date().toISOString() };
+    const r = P.id ? await sb.from('cd_plans').update(row).eq('id', P.id).select('*').single()
+                   : await sb.from('cd_plans').insert(Object.assign({ created_by: user.id }, row)).select('*').single();
+    if (r.error) { alert(L('Speichern fehlgeschlagen: ', 'Saving failed: ') + r.error.message); return false; }
+    P = r.data;
+    if (!quiet) toast(L('Plan gespeichert.', 'Plan saved.'));
+    return true;
+  };
+  const defTitle = (w, n) => `${L('Woche', 'Week')} ${w} · ${L('Einheit', 'Session')} ${n}`;
+  const insertSession = async (w, n, content, title) => {
+    const { data: { user } } = await sb.auth.getUser();
+    const r = await sb.from('cd_sessions').insert({ title: title || defTitle(w, n), team: P.team || null, planned_date: null, content, plan_id: P.id, plan_week: w, plan_slot: n, created_by: user.id }).select('id').single();
+    if (r.error) { alert(L('Fehler: ', 'Error: ') + r.error.message); return null; }
+    if ((P.members || []).length) await cdAssignSessions([r.data.id], P.members, athByProfile);
+    return r.data.id;
+  };
+  const openSession = (s) => renderCdEditor(profile, s, { plan: P, back: async () => { await reload(); draw(); } });
+  const blocksSummary = (s) => {
+    const main = ((s.content && s.content.blocks) || []).filter(b => b.phase === 'main');
+    return main.map(b => `${cdMethodLabel(b.method, true)}: ${cdStructText(b)}`).join(' | ');
+  };
+
+  const draw = () => {
+    const cw = cdPlanWeekNow(P, sessions, logs);
+    const weeks = Array.from({ length: P.weeks }, (_, i) => i + 1), slots = Array.from({ length: P.per_week }, (_, i) => i + 1);
+    const outside = sessions.filter(s => s.plan_week > P.weeks || s.plan_slot > P.per_week).length;
+    const cell = (w, n) => {
+      const s = sessions.find(x => x.plan_week === w && x.plan_slot === n);
+      if (!s) return `<td class="cd-pcell empty"><button type="button" class="secondary small-btn" data-new="${w},${n}">+ ${L('Neu', 'New')}</button>
+        <button type="button" class="secondary small-btn" data-lib="${w},${n}" title="${L('Aus vorhandenen Einheiten', 'From existing sessions')}">&#128218;</button>
+        ${clip ? `<button type="button" class="secondary small-btn" data-paste="${w},${n}" title="${L('Kopierte Einheit einf&uuml;gen', 'Paste copied session')}">&#128203;</button>` : ''}</td>`;
+      const dur = cdSessionSec(s.content || {});
+      const done = logs.filter(l => l.session_id === s.id && l.completed).length;
+      return `<td class="cd-pcell"><div class="cd-pc" data-open="${s.id}">
+        <b>${esc(/^(Woche|Week) \d+ · (Einheit|Session) \d+$/.test(s.title) ? (((s.content || {}).blocks || []).filter(b => b.phase === 'main').map(b => b.content || cdMethodLabel(b.method, true))[0] || s.title) : s.title)}</b>
+        <small>${esc(blocksSummary(s))}</small>
+        <small>${dur.sec ? '&asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}${(P.members || []).length ? ` &middot; ${done}/${P.members.length} &#10003;` : ''}</small></div>
+        <div class="cd-pcbtns"><button type="button" class="mini" data-copy="${s.id}" title="${L('Kopieren', 'Copy')}">&#10697;</button><button type="button" class="mini danger" data-rm="${s.id}" title="${L('Entfernen', 'Remove')}">&times;</button></div></td>`;
+    };
+    const weekMin = w => Math.round(sessions.filter(s => s.plan_week === w).reduce((n, s) => n + (cdSessionSec(s.content || {}).sec || 0), 0) / 60);
+    const html = `${cdLangBar()}
+      <div class="card">
+        <div class="cd-top">
+          <label class="w2">${L('Titel', 'Title')}<input type="text" id="cpTitle" value="${esc(P.title || '')}" placeholder="${L('z. B. HIIT-Block Vorbereitung', 'e.g. HIIT block pre-season')}"></label>
+          <label>${L('F&uuml;r wen?', 'For whom?')}<input type="text" id="cpFor" list="cpNames" value="${esc(P.for_name || '')}" placeholder="${L('Name oder Gruppe', 'Name or group')}"><datalist id="cpNames">${athNames.concat(groups.map(g => g.name)).map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>
+          <label>${L('Start (optional)', 'Start (optional)')}<input type="date" id="cpStart" value="${P.start_date || ''}"></label>
+          <label>${L('Wochen', 'Weeks')}<input type="number" id="cpWeeks" min="1" max="26" value="${P.weeks}"></label>
+          <label>${L('Einheiten pro Woche', 'Sessions per week')}<input type="number" id="cpPer" min="1" max="7" value="${P.per_week}"></label>
+          <label class="w2">${L('Hinweis', 'Note')}<input type="text" id="cpNote" value="${esc(P.note || '')}" placeholder="${L('z. B. Reihenfolge der Einheiten innerhalb der Woche frei, mind. 1 Tag Pause dazwischen', 'e.g. any order within the week, at least 1 rest day in between')}"></label>
+        </div>
+        <div class="cd-savebar" style="position:static;background:none;padding:12px 0 0;">
+          ${P.id ? `<span class="hint" style="margin:0 auto 0 0;align-self:center;">${(P.members || []).length ? L('Ver&ouml;ffentlicht f&uuml;r ', 'Published for ') + P.members.length + ' &middot; ' + L('aktuelle Woche ', 'current week ') + cw : L('Noch nicht ver&ouml;ffentlicht', 'Not published yet')}</span>` : ''}
+          <button type="button" class="secondary" id="cpSave">&#128190; ${L('Plan speichern', 'Save plan')}</button>
+          ${P.id ? `<button type="button" id="cpPub">&#128242; ${L('Plan ver&ouml;ffentlichen', 'Publish plan')}${(P.members || []).length ? ' (' + P.members.length + ')' : ''}</button>` : ''}
+        </div>
+      </div>
+      ${P.id ? `<div class="card">
+        <div class="tablewrap"><table class="cd-plangrid">
+          <thead><tr><th>${L('Woche', 'Week')}</th>${slots.map(n => `<th>${L('Einheit', 'Session')} ${n}</th>`).join('')}<th>${L('Summe', 'Total')}</th></tr></thead>
+          <tbody>${weeks.map(w => `<tr class="${w === cw && (P.members || []).length ? 'cur' : ''}">
+            <th><div>${L('Woche', 'Week')} ${w}</div>${P.start_date ? `<small>${cdDate(new Date(new Date(P.start_date + 'T00:00:00').getTime() + (w - 1) * 604800000).toISOString().slice(0, 10), { day: '2-digit', month: '2-digit' })}</small>` : ''}
+              ${w < P.weeks ? `<button type="button" class="secondary small-btn" data-copyw="${w}" title="${L('Woche in die n&auml;chste(n) Woche(n) kopieren, optional mit Progression', 'Copy week to the next week(s), optionally with progression')}">&#10697; &rarr;</button>` : ''}</th>
+            ${slots.map(n => cell(w, n)).join('')}
+            <td class="cd-psum">${weekMin(w) ? '&asymp; ' + weekMin(w) + ' min' : '–'}</td></tr>`).join('')}</tbody>
+        </table></div>
+        ${outside ? `<p class="hint" style="color:#8a5a00;">${outside} ${L('Einheit(en) liegen au&szlig;erhalb der aktuellen Wochen-/Einheitenzahl und werden nicht angezeigt (Zahl wieder erh&ouml;hen, um sie zu sehen).', 'session(s) lie outside the current number of weeks/sessions and are hidden (increase the numbers to see them).')}</p>` : ''}
+        <p class="hint">${L('Einheit anklicken zum Bearbeiten (gleicher Editor wie Einzel-Einheiten). &#10697; kopiert eine Einheit, &#128203; f&uuml;gt sie in ein leeres Feld ein. &bdquo;&#10697; &rarr;&ldquo; in der Wochenspalte kopiert die ganze Woche &ndash; unver&auml;ndert oder mit Progression (Wdh, Serien, Dauer, Intensit&auml;t, Deload). Die Reihenfolge der Einheiten innerhalb der Woche ist f&uuml;r die Athlet:innen frei.', 'Click a session to edit it (same editor as single sessions). &#10697; copies a session, &#128203; pastes it into an empty cell. &ldquo;&#10697; &rarr;&rdquo; in the week column copies the whole week &ndash; unchanged or with progression (reps, sets, duration, intensity, deload). Athletes may do the sessions of a week in any order.')}</p>
+      </div>` : `<p class="hint">${L('Plan speichern, dann Wochen mit Einheiten f&uuml;llen.', 'Save the plan, then fill the weeks with sessions.')}</p>`}`;
+    renderShell(profile, 'trainingsplan', P.title || L('Neuer Conditioning-Plan', 'New conditioning plan'), html, back);
+    cdWireLang(draw);
+    const f = (id, k) => { const el = document.getElementById(id); el.oninput = () => { P[k] = el.value; }; };
+    f('cpTitle', 'title'); f('cpFor', 'for_name'); f('cpStart', 'start_date'); f('cpWeeks', 'weeks'); f('cpPer', 'per_week'); f('cpNote', 'note');
+    document.getElementById('cpSave').onclick = async () => { if (await savePlan()) { await reload(); draw(); } };
+    const pubB = document.getElementById('cpPub'); if (pubB) pubB.onclick = () => publishPlan();
+    appEl.querySelectorAll('[data-open]').forEach(el => el.onclick = () => openSession(sessions.find(s => s.id === el.dataset.open)));
+    appEl.querySelectorAll('[data-new]').forEach(b => b.onclick = () => {
+      const [w, n] = b.dataset.new.split(',').map(Number);
+      const blocks = [cdNewBlock('warmup'), cdNewBlock('main'), cdNewBlock('cooldown')];
+      openSession({ id: null, title: defTitle(w, n), team: P.team, planned_date: null, content: { blocks }, plan_id: P.id, plan_week: w, plan_slot: n });
+    });
+    appEl.querySelectorAll('[data-paste]').forEach(b => b.onclick = async () => {
+      const [w, n] = b.dataset.paste.split(',').map(Number);
+      if (await insertSession(w, n, cdProgress(clip.content, 'none'), clip.title && !/^(Woche|Week) \d+ · (Einheit|Session) \d+$/.test(clip.title) ? clip.title : null)) { await reload(); draw(); toast(L('Eingefügt.', 'Pasted.')); }
+    });
+    appEl.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => { const s = sessions.find(x => x.id === b.dataset.copy); clip = { content: s.content, title: s.title }; draw(); toast(L('Kopiert – 📋 in einem leeren Feld einfügen.', 'Copied – paste with 📋 in an empty cell.')); });
+    appEl.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
+      const s = sessions.find(x => x.id === b.dataset.rm);
+      const n = logs.filter(l => l.session_id === s.id).length;
+      if (!confirm(L('Einheit aus dem Plan entfernen?', 'Remove session from the plan?') + (n ? '\n\n' + L(n + ' Eintragung(en) der Athlet:innen werden mitgelöscht.', n + ' athlete entr(y/ies) will be deleted as well.') : ''))) return;
+      const r = await sb.from('cd_sessions').delete().eq('id', s.id);
+      if (r.error) { toast(L('Fehler: ', 'Error: ') + r.error.message); return; }
+      await reload(); draw();
+    });
+    appEl.querySelectorAll('[data-lib]').forEach(b => b.onclick = () => pickFromLibrary(...b.dataset.lib.split(',').map(Number)));
+    appEl.querySelectorAll('[data-copyw]').forEach(b => b.onclick = () => copyWeek(+b.dataset.copyw));
+  };
+
+  const pickFromLibrary = (w, n) => {
+    const list = (lib.data || []).filter(s => s.plan_id !== P.id || true);
+    const host = document.createElement('div');
+    let q = '';
+    const render = () => {
+      const rows = list.filter(s => !q || (s.title || '').toLowerCase().includes(q) || JSON.stringify(s.content || {}).toLowerCase().includes(q)).slice(0, 80);
+      host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:640px;">
+        <h2>&#128218; ${L('Einheit &uuml;bernehmen', 'Use existing session')} &middot; ${L('Woche', 'Week')} ${w}, ${L('Einheit', 'Session')} ${n}</h2>
+        <input type="text" id="cplQ" value="${esc(q)}" placeholder="${L('Suchen &hellip;', 'Search &hellip;')}" style="width:100%;margin-bottom:10px;">
+        <div class="cd-libl">${rows.map(s => `<button type="button" class="cd-mine" data-pick="${s.id}"><span><b>${esc(s.title || 'Conditioning')}</b><span class="muted-inline">${esc(((s.content || {}).blocks || []).filter(b => b.phase === 'main').map(b => cdMethodLabel(b.method, true) + ' ' + cdStructText(b)).join(' | '))}</span></span></button>`).join('') || `<p class="muted">${L('Keine Einheiten gefunden.', 'No sessions found.')}</p>`}</div>
+        <div class="modal-actions"><span class="spacer"></span><button type="button" class="secondary" id="cplX">${L('Abbrechen', 'Cancel')}</button></div></div></div>`;
+      const qi = host.querySelector('#cplQ'); qi.oninput = () => { q = qi.value.toLowerCase(); const pos = qi.selectionStart; render(); const n2 = host.querySelector('#cplQ'); n2.focus(); n2.setSelectionRange(pos, pos); };
+      host.querySelector('#cplX').onclick = () => host.remove();
+      host.querySelectorAll('[data-pick]').forEach(b => b.onclick = async () => {
+        const s = list.find(x => x.id === b.dataset.pick);
+        host.remove();
+        if (await insertSession(w, n, cdProgress(s.content, 'none'), s.plan_id ? null : s.title)) { await reload(); draw(); toast(L('Übernommen.', 'Added.')); }
+      });
+    };
+    document.body.appendChild(host); render(); host.querySelector('#cplQ').focus();
+  };
+
+  const copyWeek = (w) => {
+    const host = document.createElement('div');
+    host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:520px;">
+      <h2>&#10697; ${L('Woche', 'Week')} ${w} ${L('kopieren', 'copy')}</h2>
+      <label class="wq-date">${L('Ziel', 'Target')}<select id="cwTo"><option value="next">${L('in Woche', 'to week')} ${w + 1}</option><option value="all">${L('in alle folgenden Wochen', 'to all following weeks')} (${w + 1}&ndash;${P.weeks})</option></select></label>
+      <label class="wq-date" style="margin-top:10px;">${L('Progression je Woche', 'Progression per week')}<select id="cwProg">${CD_PROG.filter(p => p.key !== 'deload').map(p => `<option value="${p.key}">${L(p.de, p.en)}</option>`).join('')}</select></label>
+      <label class="mp-check" style="margin-top:10px;"><input type="checkbox" id="cwDeload"> ${L('Jede 4. Woche Deload (&minus;30 % Wiederholungen)', 'Deload every 4th week (&minus;30 % reps)')}</label>
+      <p class="hint">${L('Vorhandene Einheiten in den Zielwochen werden ersetzt (Einheiten mit Eintragungen bleiben erhalten). Progression gilt f&uuml;r den Hauptteil; Warm-Up und Cool-down bleiben gleich.', 'Existing sessions in the target weeks are replaced (sessions with entries are kept). Progression applies to the main set; warm-up and cool-down stay the same.')}</p>
+      <div class="modal-actions"><span class="spacer"></span><button type="button" class="secondary" id="cwX">${L('Abbrechen', 'Cancel')}</button><button type="button" id="cwGo">${L('Kopieren', 'Copy')}</button></div></div></div>`;
+    document.body.appendChild(host);
+    host.querySelector('#cwX').onclick = () => host.remove();
+    host.querySelector('#cwGo').onclick = async () => {
+      const to = host.querySelector('#cwTo').value, prog = host.querySelector('#cwProg').value, deload = host.querySelector('#cwDeload').checked;
+      const src = sessions.filter(s => s.plan_week === w && s.plan_slot <= P.per_week);
+      if (!src.length) { alert(L('Woche ' + w + ' hat noch keine Einheiten.', 'Week ' + w + ' has no sessions yet.')); return; }
+      host.querySelector('#cwGo').disabled = true;
+      const targets = to === 'next' ? [w + 1] : Array.from({ length: P.weeks - w }, (_, i) => w + 1 + i);
+      let prev = Object.fromEntries(src.map(s => [s.plan_slot, s])), made = 0, kept = 0;
+      for (const tw of targets) {
+        const isDeload = deload && tw % 4 === 0;
+        const next = {};
+        for (const slot of Object.keys(prev).map(Number)) {
+          const base = prev[slot];
+          const content = cdProgress(base.content, isDeload ? 'deload' : prog);
+          const old = sessions.find(s => s.plan_week === tw && s.plan_slot === slot);
+          if (old && logs.some(l => l.session_id === old.id)) { kept++; next[slot] = old; continue; }
+          if (old) await sb.from('cd_sessions').delete().eq('id', old.id);
+          const title = /^(Woche|Week) \d+ · (Einheit|Session) \d+$/.test(base.title) ? null : base.title;
+          const id = await insertSession(tw, slot, content, title);
+          if (id) made++;
+          // Deload-Woche wirkt nicht als Basis für die nächste Progression
+          next[slot] = isDeload ? base : { content, title: base.title };
+        }
+        prev = next;
+      }
+      host.remove(); await reload(); draw();
+      toast(L(made + ' Einheit(en) erstellt', made + ' session(s) created') + (kept ? L(', ' + kept + ' mit Eintragungen behalten', ', ' + kept + ' with entries kept') : ''));
+    };
+  };
+
+  const publishPlan = () => {
+    const host = document.createElement('div');
+    const sel = new Set(P.members || []);
+    if (!sel.size && P.for_name) { const n = P.for_name.toLowerCase().trim(); users.forEach(u => { const a = athByProfile[u.id]; if ((a && (a.first_name + ' ' + a.last_name).toLowerCase() === n) || u.name.toLowerCase() === n) sel.add(u.id); }); const g = groups.find(x => x.name.toLowerCase() === n); if (g) users.forEach(u => { const a = athByProfile[u.id]; if (a && a.groupIds.includes(g.id)) sel.add(u.id); }); }
+    const render = () => {
+      host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:640px;">
+        <h2>&#128242; ${L('Plan ver&ouml;ffentlichen', 'Publish plan')}</h2>
+        <p class="hint" style="margin-top:0;">${L('Die Ausgew&auml;hlten sehen alle Einheiten des Plans unter &bdquo;Conditioning&ldquo; (aktuelle Woche oben). Sp&auml;ter hinzugef&uuml;gte Einheiten werden automatisch zugeordnet.', 'Selected athletes see all plan sessions under &ldquo;Conditioning&rdquo; (current week on top). Sessions added later are assigned automatically.')}</p>
+        <div class="chips" style="margin-bottom:8px;">${groups.map(g => `<button type="button" class="secondary small-btn" data-g="${g.id}">${esc(g.name)}</button>`).join('')}<button type="button" class="secondary small-btn" data-g="__all">${L('Alle', 'All')}</button><button type="button" class="secondary small-btn" data-g="__none">${L('Keine', 'None')}</button></div>
+        <div class="cd-pick">${users.map(u => { const noPerm = !!u.permissions && (u.permissions.condition === 'none' || !u.permissions.condition);
+          return `<label><input type="checkbox" data-u="${u.id}" ${sel.has(u.id) ? 'checked' : ''}> ${esc(u.name)}${noPerm ? ` <b style="color:#b0281c;">${L('Recht fehlt', 'no permission')}</b>` : ''}</label>`; }).join('')}</div>
+        <div class="modal-actions"><span class="spacer">${sel.size} ${L('ausgew&auml;hlt', 'selected')}</span>
+          <button type="button" class="secondary" id="cppX">${L('Abbrechen', 'Cancel')}</button><button type="button" id="cppGo">${L('Ver&ouml;ffentlichen', 'Publish')}</button></div></div></div>`;
+      host.querySelectorAll('[data-u]').forEach(c => c.onchange = () => { if (c.checked) sel.add(c.dataset.u); else sel.delete(c.dataset.u); render(); });
+      host.querySelectorAll('[data-g]').forEach(b => b.onclick = () => {
+        const g = b.dataset.g;
+        if (g === '__all') users.forEach(u => sel.add(u.id)); else if (g === '__none') sel.clear();
+        else { sel.clear(); users.forEach(u => { const a = athByProfile[u.id]; if (a && a.groupIds.includes(g)) sel.add(u.id); }); }
+        render();
+      });
+      host.querySelector('#cppX').onclick = () => host.remove();
+      host.querySelector('#cppGo').onclick = async () => {
+        const btn = host.querySelector('#cppGo'); btn.disabled = true;
+        if (!(await savePlan(true))) { btn.disabled = false; return; }
+        const members = [...sel], removed = (P.members || []).filter(u => !sel.has(u));
+        let r = await sb.from('cd_plans').update({ members }).eq('id', P.id);
+        if (!r.error) r = await cdAssignSessions(sessions.map(s => s.id), members, athByProfile);
+        if (!r.error && removed.length && sessions.length) r = await sb.from('cd_assignments').update({ active: false }).in('session_id', sessions.map(s => s.id)).in('user_id', removed);
+        if (r.error) { alert(L('Veröffentlichen fehlgeschlagen: ', 'Publishing failed: ') + r.error.message); btn.disabled = false; return; }
+        host.remove(); await reload(); draw(); toast(L('Plan veröffentlicht für ' + members.length + ' Athlet:innen', 'Plan published for ' + members.length + ' athletes'));
+      };
+    };
+    document.body.appendChild(host); render();
+  };
+  draw();
 }

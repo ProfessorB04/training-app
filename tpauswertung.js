@@ -121,7 +121,7 @@ function cdEvalHtml(CD, names) {
     const as = CD.asg.filter(a => a.session_id === s.id), ls = CD.logs.filter(l => l.session_id === s.id && l.completed);
     const rpe = ls.filter(l => l.srpe), avg = rpe.length ? (rpe.reduce((n, l) => n + l.srpe, 0) / rpe.length) : null;
     const au = ls.reduce((n, l) => n + cdAU(l), 0);
-    return `<tr class="tp-row" data-cdres="${s.id}"><td><b>${esc(s.title || 'Conditioning')}</b>${s.content && s.content.forName ? `<div class="muted-inline">f&uuml;r ${esc(s.content.forName)}</div>` : ''}</td><td>${s.planned_date ? new Date(s.planned_date + 'T00:00:00').toLocaleDateString('de-DE') : '–'}</td>
+    return `<tr class="tp-row" data-cdres="${s.id}"><td><b>${esc(typeof cdSessLabel === 'function' ? cdSessLabel(s, CD.plans) : (s.title || 'Conditioning'))}</b>${s.content && s.content.forName ? `<div class="muted-inline">f&uuml;r ${esc(s.content.forName)}</div>` : ''}</td><td>${s.planned_date ? new Date(s.planned_date + 'T00:00:00').toLocaleDateString('de-DE') : '–'}</td>
       <td>${ls.length}/${as.length}</td><td>${avg != null ? tpFmt(avg) : '–'}</td><td>${au ? au + ' AU' : '–'}</td></tr>`;
   }).join('');
   if (!rows) return '';
