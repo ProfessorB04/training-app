@@ -458,13 +458,15 @@ async function renderCdEditor(profile, session, ctx) {
     return `<input type="text" inputmode="decimal" data-k="int.min" value="${esc(b.int.min ?? '')}" placeholder="${L('von', 'from')}"> – <input type="text" inputmode="decimal" data-k="int.max" value="${esc(b.int.max ?? '')}" placeholder="${L('bis', 'to')}">`;
   };
   const unitSel = (k, v, opts) => `<select data-k="${k}">${opts.map(o => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+  const bsum = (b) => { const sec = cdBlockSec(b); return `${esc(cdStructText(b))}${cdIntText(b) ? ' &middot; ' + esc(cdIntText(b)) : ''} &middot; ${sec != null ? '&asymp; ' + cdFmtDur(sec) : L('Dauer je nach Tempo', 'duration depends on speed')}`; };
+  const totHtml = () => { const tot = cdSessionSec(S.content); return `${L('Gesamt', 'Total')} &asymp; <b>${tot.sec ? Math.round(tot.sec / 60) + ' min' : '–'}</b>${tot.unknown ? L(' (+ Bl&ouml;cke nach Strecke)', ' (+ distance-based blocks)') : ''} &middot; ${S.content.blocks.length} ${L('Bl&ouml;cke', 'blocks')}`; };
   const blockCard = (b, idx) => {
     const ph = CD_PHASES.find(p => p.key === b.phase) || CD_PHASES[1];
     const sec = cdBlockSec(b);
     return `<div class="cd-block" data-i="${idx}" style="--cat:${ph.color}">
       <div class="cd-bhead">
         <select data-k="method" class="cd-method">${CD_METHODS.map(m => `<option value="${m.key}" ${m.key === b.method ? 'selected' : ''}>${esc(L(m.de, m.en))}</option>`).join('')}</select>
-        <span class="cd-bsum">${esc(cdStructText(b))}${cdIntText(b) ? ' &middot; ' + esc(cdIntText(b)) : ''} &middot; ${sec != null ? '&asymp; ' + cdFmtDur(sec) : L('Dauer je nach Tempo', 'duration depends on speed')}</span>
+        <span class="cd-bsum">${bsum(b)}</span>
         <span class="cd-btools">
           <button type="button" class="mini" data-a="up" title="${L('nach oben', 'move up')}">&uarr;</button><button type="button" class="mini" data-a="down" title="${L('nach unten', 'move down')}">&darr;</button>
           <button type="button" class="mini" data-a="dup" title="${L('duplizieren', 'duplicate')}">&#10697;</button><button type="button" class="mini danger" data-a="del" title="${L('l&ouml;schen', 'delete')}">&times;</button>
@@ -481,7 +483,7 @@ async function renderCdEditor(profile, session, ctx) {
         <label>${L('Serienpause', 'Rest between sets')}<span class="cd-pair"><input type="text" inputmode="decimal" data-k="setRest.v" value="${esc(b.setRest.v ?? '')}">${unitSel('setRest.u', b.setRest.u, ['s', 'min'])}</span></label>
         <label class="w2">${L('Intensit&auml;t', 'Intensity')}<span class="cd-pair"><select data-k="int.type">${CD_INT_TYPES.map(t => `<option value="${t.key}" ${t.key === b.int.type ? 'selected' : ''}>${L(t.de, t.en)}</option>`).join('')}</select>${intInputs(b)}</span></label>
         <label>${L('HF-Kontrolle (% HFmax)', 'HR check (% HRmax)')}<span class="cd-pair"><input type="text" inputmode="numeric" data-k="hr.min" value="${esc(b.hr.min ?? '')}" placeholder="${L('von', 'from')}"> – <input type="text" inputmode="numeric" data-k="hr.max" value="${esc(b.hr.max ?? '')}" placeholder="${L('bis', 'to')}"></span></label>
-        <label class="w3">${L('Hinweis', 'Note')}<input type="text" data-k="note" value="${esc(b.note || '')}" placeholder="${L('z. B. Richtungswechsel alle 20 m, Pause aktiv gehen', 'e.g. change direction every 20 m, walk during rest')}"></label>
+        <label class="w3">${L('Hinweis', 'Note')}<textarea data-k="note" rows="2" placeholder="${L('z. B. Richtungswechsel alle 20 m, Pause aktiv gehen', 'e.g. change direction every 20 m, walk during rest')}">${esc(b.note || '')}</textarea></label>
       </div>
     </div>`;
   };
@@ -513,13 +515,13 @@ async function renderCdEditor(profile, session, ctx) {
           <label class="w2">${L('F&uuml;r wen?', 'For whom?')}<input type="text" id="cdFor" list="cdAthNames" value="${esc(S.content.forName || '')}" placeholder="${L('Name der Athletin / des Athleten (optional)', 'Athlete name (optional)')}"><datalist id="cdAthNames">${athNames.map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>
           <label class="w2">${L('Hinweis f&uuml;r alle', 'Note for everyone')}<input type="text" id="cdNote" value="${esc(S.content.note || '')}" placeholder="${L('z. B. Pulsgurt anlegen, Trinkflasche mitbringen', 'e.g. wear HR strap, bring a water bottle')}"></label>
         </div>
-        <div class="cd-total">${L('Gesamt', 'Total')} &asymp; <b>${tot.sec ? Math.round(tot.sec / 60) + ' min' : '–'}</b>${tot.unknown ? L(' (+ Bl&ouml;cke nach Strecke)', ' (+ distance-based blocks)') : ''} &middot; ${S.content.blocks.length} ${L('Bl&ouml;cke', 'blocks')}</div>
+        <div class="cd-total">${totHtml()}</div>
       </div>
       ${phaseHtml}
       <div class="card">
         <div class="ath-toolbar"><h2 style="margin:0;">${L('Pers&ouml;nliche Vorgaben (Vorschau)', 'Personal targets (preview)')}</h2><span class="spacer"></span>
           <select id="cdPrevGrp" style="width:auto;">${forUser() ? `<option value="__for" ${previewGrp === '__for' ? 'selected' : ''}>${L('Nur', 'Only')} ${esc(S.content.forName)}</option>` : ''}<option value="">${L('Alle mit App-Zugang', 'Everyone with an app account')}</option><option value="__pub" ${previewGrp === '__pub' ? 'selected' : ''}>${L('Nur ausgew&auml;hlte (Ver&ouml;ffentlichen)', 'Selected only (publish)')}</option>${groups.map(g => `<option value="${g.id}" ${g.id === previewGrp ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>
-        ${previewHtml()}
+        <div id="cdPrevWrap">${previewHtml()}</div>
         <p class="hint">${L('Fehlende vIFT/HFmax unter &bdquo;Conditioning &rarr; Leistungswerte&ldquo; eintragen oder aus dem 30-15 IFT &uuml;bernehmen. Ohne HFmax wird sie aus dem Alter gesch&auml;tzt (&asymp;), ohne jegliche Werte gilt der Richtwert nach Borg-Skala + Sprechtest (kursiv).',
           'Enter missing vIFT/HRmax under &ldquo;Conditioning &rarr; Test values&rdquo; or import them from the 30-15 IFT. Without HRmax it is estimated from age (&asymp;); without any values the Borg scale + talk test guide value applies (italic).')}</p>
         ${cdSourcesHtml()}
@@ -532,6 +534,16 @@ async function renderCdEditor(profile, session, ctx) {
     cdWireLang(draw);
     wire();
   };
+  // Teil-Aktualisierung ohne Neuaufbau (Fokus/Cursor bleibt im Eingabefeld)
+  const refresh = (card, b) => {
+    const bs = card.querySelector('.cd-bsum'); if (bs) bs.innerHTML = bsum(b);
+    const tt = appEl.querySelector('.cd-total'); if (tt) tt.innerHTML = totHtml();
+    const pw = document.getElementById('cdPrevWrap'); if (pw) { pw.innerHTML = previewHtml(); wirePreview(); }
+  };
+  const wirePreview = () => appEl.querySelectorAll('[data-av]').forEach(b => b.onclick = () => {
+    const u = users.find(x => x.id === b.dataset.av), a = athByProfile[u.id] || {};
+    cdAthletePreview(S, { vift: cdNum(a.vift_kmh), hr_max: a.hr_max, hr_rest: a.hr_rest, age: cdAge(a.birthdate) }, u.name);
+  });
   const setPath = (o, k, v) => { const p = k.split('.'); if (p.length === 2) o[p[0]][p[1]] = v; else o[k] = v; };
   const wire = () => {
     const top = (id, f) => { const el = document.getElementById(id); el.oninput = () => { f(el.value); dirty = true; }; };
@@ -540,15 +552,17 @@ async function renderCdEditor(profile, session, ctx) {
     fe.oninput = () => { S.content.forName = fe.value.trim(); dirty = true; };
     fe.onchange = () => { S.content.forName = fe.value.trim(); previewGrp = forUser() ? '__for' : (previewGrp === '__for' ? '' : previewGrp); draw(); };
     document.getElementById('cdPrevGrp').onchange = e => { previewGrp = e.target.value; draw(); };
-    appEl.querySelectorAll('[data-av]').forEach(b => b.onclick = () => {
-      const u = users.find(x => x.id === b.dataset.av), a = athByProfile[u.id] || {};
-      cdAthletePreview(S, { vift: cdNum(a.vift_kmh), hr_max: a.hr_max, hr_rest: a.hr_rest, age: cdAge(a.birthdate) }, u.name);
-    });
+    wirePreview();
     appEl.querySelectorAll('[data-add]').forEach(b => b.onclick = () => { S.content.blocks.push(cdNewBlock(b.dataset.add)); dirty = true; draw(); });
     appEl.querySelectorAll('.cd-block').forEach(card => {
       const i = +card.dataset.i, b = S.content.blocks[i];
       card.querySelectorAll('[data-k]').forEach(el => {
         const k = el.dataset.k;
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+          const upd = () => { setPath(b, k, el.value); dirty = true; refresh(card, b); };
+          el.oninput = upd; el.onchange = upd;
+          return;
+        }
         el.onchange = () => {
           dirty = true;
           if (k === 'method') {
@@ -561,7 +575,6 @@ async function renderCdEditor(profile, session, ctx) {
           if (k === 'int.type') { b.int.min = ''; b.int.max = ''; if (el.value === 'hrzone') { b.int.min = 2; b.int.max = 2; } }
           draw();
         };
-        if (el.tagName === 'INPUT') el.oninput = () => { setPath(b, k, el.value); dirty = true; };
       });
       card.querySelectorAll('[data-a]').forEach(btn => btn.onclick = () => {
         const a = btn.dataset.a, arr = S.content.blocks;

@@ -572,3 +572,5 @@ tr.no-access a{ color:var(--brand-strong); }
 .cd-libl{ display:flex; flex-direction:column; gap:6px; max-height:360px; overflow:auto; }
 .cd-weekhead{ font-weight:800; margin:4px 0 8px; }
 .cd-weekhead.small{ font-size:.9rem; margin-top:12px; }
+.cd-grid textarea{ padding:8px 9px; border:1px solid var(--line); border-radius:8px; font-size:.92rem; width:100%; box-sizing:border-box; font-family:inherit; resize:vertical; min-height:40px; }
+.cd-myblock .tpo-note{ white-space:pre-line; }
