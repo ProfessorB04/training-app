@@ -47,18 +47,24 @@ function toast(msg) {
   setTimeout(() => t.classList.remove('show'), 2200);
 }
 
-function weekDates() {
+// Datum als JJJJ-MM-TT in Ortszeit (toISOString wäre UTC und verschiebt kurz nach Mitternacht den Tag)
+function localIso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+// Mo–So der aktuellen Woche, mit offset Wochen davor (−) bzw. danach (+)
+function weekDates(offset) {
   const now = new Date();
   const day = (now.getDay() + 6) % 7; // 0 = Montag
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - day);
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + 7 * (offset || 0));
   const days = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    days.push(d.toISOString().slice(0, 10));
-  }
+  for (let i = 0; i < 7; i++) days.push(localIso(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i)));
   return days;
+}
+// ISO-Kalenderwoche
+function isoWeek(iso) {
+  const d = new Date(iso + 'T00:00:00');
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dn = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - dn);
+  const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return { week: Math.ceil(((t - y0) / 86400000 + 1) / 7), year: t.getUTCFullYear() };
 }
 
 // ---------------- Rollen ----------------
@@ -514,9 +520,10 @@ function renderMenu(profile) {
 
 // ---------------- Trainer-Ansicht: Load Management ----------------
 let LOAD_GROUP = '';   // gewählte Gruppe in der Load-Management-Übersicht ('' = alle mit App-Zugang)
+let LOAD_WEEK = 0;     // gewählte Kalenderwoche relativ zur aktuellen (0 = diese Woche, −1 = Vorwoche …)
 
 async function renderTrainerDashboard(profile) {
-  const days = weekDates();
+  const days = weekDates(LOAD_WEEK);
   const dayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
   const [profRes, entRes, mgmt] = await Promise.all([
@@ -526,6 +533,10 @@ async function renderTrainerDashboard(profile) {
   ]);
   const profiles = profRes.data || [];
   const entries = entRes.data || [];
+  const kw = isoWeek(days[0]);
+  const fmtD = iso => iso.slice(8, 10) + '.' + iso.slice(5, 7) + '.';
+  const weekOpts = Array.from({ length: 31 }, (_, i) => 4 - i).map(o => { const d = weekDates(o), k = isoWeek(d[0]);
+    return `<option value="${o}" ${o === LOAD_WEEK ? 'selected' : ''}>KW ${k.week}/${String(k.year).slice(2)} (${fmtD(d[0])}&ndash;${fmtD(d[6])})${o === 0 ? ' &middot; aktuell' : ''}</option>`; }).join('');
 
   const byUserDate = {};
   entries.forEach(e => {
@@ -549,7 +560,7 @@ async function renderTrainerDashboard(profile) {
   const rows = people.length
     ? people.map(a => {
         if (!a.userId) {
-          return `<tr class="no-access"><td>${esc(a.name)}</td><td colspan="7" class="muted">kein App-Zugang${isAdmin(profile) ? ` &middot; <a href="#" data-grant="${a.athleteId}">Zugang anlegen</a>` : ''}</td></tr>`;
+          return `<tr class="no-access"><td>${esc(a.name)}</td><td colspan="9" class="muted">kein App-Zugang${isAdmin(profile) ? ` &middot; <a href="#" data-grant="${a.athleteId}">Zugang anlegen</a>` : ''}</td></tr>`;
         }
         const cells = days.map(d => {
           const e = byUserDate[a.userId] && byUserDate[a.userId][d];
@@ -557,15 +568,24 @@ async function renderTrainerDashboard(profile) {
           const cls = load === null ? 'load-empty' : (load >= 500 ? 'load-high' : 'load-ok');
           return `<td class="${cls}">${load === null ? '–' : load}</td>`;
         }).join('');
-        return `<tr><td>${esc(a.name)}</td>${cells}</tr>`;
+        const vals = days.map(d => byUserDate[a.userId] && byUserDate[a.userId][d]).filter(Boolean);
+        const sum = vals.reduce((n, e) => n + e.srpe * e.duration_min, 0);
+        return `<tr><td>${esc(a.name)}</td>${cells}<td class="load-sum">${vals.length ? sum : '–'}</td><td class="muted">${vals.length}/7</td></tr>`;
       }).join('')
-    : `<tr><td colspan="8" class="muted">${LOAD_GROUP ? 'Keine Athlet:innen in dieser Gruppe.' : 'Noch keine Athlet:innen mit App-Zugang.'}</td></tr>`;
+    : `<tr><td colspan="10" class="muted">${LOAD_GROUP ? 'Keine Athlet:innen in dieser Gruppe.' : 'Noch keine Athlet:innen mit App-Zugang.'}</td></tr>`;
 
   const content = `
     <div class="card">
       <div class="ath-toolbar" style="margin-bottom:6px;">
-        <h2 style="margin:0;">Load Management — diese Woche</h2>
+        <h2 style="margin:0;">Load Management &mdash; KW ${kw.week}${LOAD_WEEK === 0 ? ' (diese Woche)' : ''}</h2>
+        <span class="muted-inline">${fmtD(days[0])} &ndash; ${fmtD(days[6])}.${kw.year}</span>
         <span class="spacer"></span>
+        <span class="lm-weeknav">
+          <button type="button" class="secondary small-btn" id="lwPrev" title="Woche zur&uuml;ck">&larr;</button>
+          <select id="lwSel">${weekOpts}</select>
+          <button type="button" class="secondary small-btn" id="lwNext" title="Woche vor">&rarr;</button>
+          ${LOAD_WEEK !== 0 ? '<button type="button" class="secondary small-btn" id="lwNow">Heute</button>' : ''}
+        </span>
         <select id="loadGroup">
           <option value="">Alle mit App-Zugang</option>
           ${groups.map(g => `<option value="${g.id}" ${LOAD_GROUP === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}
@@ -573,11 +593,11 @@ async function renderTrainerDashboard(profile) {
       </div>
       <div class="tablewrap">
         <table>
-          <thead><tr><th>Name</th>${dayLabels.map(l => `<th>${l}</th>`).join('')}</tr></thead>
+          <thead><tr><th>Name</th>${dayLabels.map((l, i) => `<th>${l}<div class="muted-inline" style="font-weight:400;">${fmtD(days[i])}</div></th>`).join('')}<th>&Sigma; Woche</th><th>Tage</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <p class="hint">Wert je Zelle = sRPE &times; Trainingsdauer in Minuten (Session-Load nach Foster). Ab 500 farblich hervorgehoben.
+      <p class="hint">Wert je Zelle = sRPE &times; Trainingsdauer in Minuten (Session-Load nach Foster). Ab 500 farblich hervorgehoben. &Sigma; Woche = Wochen-Load, Tage = Tage mit Eintrag. Mit &larr; &rarr; bzw. der Auswahl jede Kalenderwoche ansehen.
       Gruppen kommen aus der Athletenverwaltung; Werte tragen die Athlet:innen mit ihrem App-Zugang selbst ein.</p>
     </div>
   `;
@@ -585,6 +605,10 @@ async function renderTrainerDashboard(profile) {
   renderShell(profile, 'loadmanagement', 'sRPE-Einträge aus der App', content,
     { label: 'Load Management', go: () => renderLoadHub(profile) });
   document.getElementById('loadGroup').onchange = (e) => { LOAD_GROUP = e.target.value; renderTrainerDashboard(profile); };
+  document.getElementById('lwSel').onchange = (e) => { LOAD_WEEK = +e.target.value; renderTrainerDashboard(profile); };
+  document.getElementById('lwPrev').onclick = () => { LOAD_WEEK--; renderTrainerDashboard(profile); };
+  document.getElementById('lwNext').onclick = () => { LOAD_WEEK++; renderTrainerDashboard(profile); };
+  const now = document.getElementById('lwNow'); if (now) now.onclick = () => { LOAD_WEEK = 0; renderTrainerDashboard(profile); };
   appEl.querySelectorAll('[data-grant]').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); INVITE_PRESELECT = a.dataset.grant; renderTeamPage(profile); };
   });
