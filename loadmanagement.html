@@ -1261,7 +1261,7 @@
         var v = row.values[i], has = v !== null && v !== undefined;
         if (row.fromApp){
           if (!opt.days[i]) continue;
-          if (opt.mode === "replace") vals[i] = has ? v : null;
+          if (opt.mode === "replace") vals[i] = has ? v : 0;   // kein Eintrag = 0 (kein Training)
           else if (has && (vals[i] === null || vals[i] === undefined || vals[i] === "" || isNaN(vals[i]) || vals[i] === 0)) vals[i] = v;
         } else if (has) vals[i] = v;
       }
@@ -2192,7 +2192,7 @@
     var g0 = gUsed.filter(function(g){ return g.name.toLowerCase().trim() === team; })[0];
     var active = g0 ? g0.id : "";
     var sel = {};
-    var pre = function(r){ return !(r.noEntries && r.noApp); };
+    var pre = function(r){ return true; };   // alle vorauswählen: kein Eintrag → 0
     rows.forEach(function(r){ sel[r.uid] = (active ? (userGroups[r.uid] || []).indexOf(active) !== -1 : true) && pre(r); });
     var gName = {}; groups.forEach(function(g){ gName[g.id] = g.name; });
 
@@ -2211,7 +2211,7 @@
         " &middot; Tage: " + DN.map(function(d, i){ return "<label class='lm-dchk'><input type='checkbox' data-day='" + i + "'" + (o.days[i] ? " checked" : "") + "> " + d + "</label>"; }).join("") +
         " &middot; <label class='lm-dchk'><input type='radio' name='lmMode' value='replace'" + (o.mode === "replace" ? " checked" : "") + "> Ersetzen</label>" +
         "<label class='lm-dchk'><input type='radio' name='lmMode' value='fill'" + (o.mode === "fill" ? " checked" : "") + "> nur leere Felder f&uuml;llen</label>" +
-        "<div class='lm-apppick-hint'>Ersetzen: an den gew&auml;hlten Tagen gelten genau die App-Werte (Tage ohne App-Eintrag werden geleert). &#9998; = manuell nachgetragener Wert.</div></div>";
+        "<div class='lm-apppick-hint'>Ersetzen: an den gew&auml;hlten Tagen gelten genau die App-Werte, Tage ohne App-Eintrag werden auf 0 gesetzt (auch f&uuml;r Athlet:innen ohne Eintr&auml;ge oder ohne App &ndash; ggf. abw&auml;hlen). &#9998; = manuell nachgetragener Wert.</div></div>";
     }
     function render(){
       box.innerHTML =
