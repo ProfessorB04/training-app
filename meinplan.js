@@ -99,7 +99,8 @@ async function tpLoadMine() {
   const { data: asg, error } = await sb.from('tp_assignments').select('plan_id, active, assigned_at').eq('user_id', user.id).order('assigned_at', { ascending: false });
   if (error) throw error;
   const act = (asg || []).find(a => a.active);
-  if (!act) return { user, plan: null };
+  const pastIds = [...new Set((asg || []).filter(a => !a.active && (!act || a.plan_id !== act.plan_id)).map(a => a.plan_id))];
+  if (!act) return { user, plan: null, pastIds };
   const [pRes, vRes, lRes] = await Promise.all([
     sb.from('tp_plans').select('*').eq('id', act.plan_id).single(),
     sb.from('tp_plan_versions').select('*').eq('plan_id', act.plan_id).order('from_week'),
@@ -113,7 +114,65 @@ async function tpLoadMine() {
     const k = tpExerciseKey(ex);
     if (!last[k] && (ex.sets || []).some(s => s.done)) last[k] = ex.sets.filter(s => s.done);
   }));
-  return { user, plan: pRes.data, versions: vRes.data || [], logs: lRes.data || [], last };
+  return { user, plan: pRes.data, versions: vRes.data || [], logs: lRes.data || [], last, pastIds };
+}
+
+// ---------- Frühere Pläne (nur ansehen) ----------
+async function tpLoadPast(D) {
+  const ids = D.pastIds || [];
+  if (!ids.length) return [];
+  const [pRes, lRes] = await Promise.all([
+    sb.from('tp_plans').select('*').in('id', ids),
+    sb.from('tp_logs').select('plan_id, completed, entry_date').eq('user_id', D.user.id).in('plan_id', ids),
+  ]);
+  return (pRes.data || []).map(p => {
+    const ls = (lRes.data || []).filter(l => l.plan_id === p.id);
+    const dates = ls.map(l => l.entry_date).filter(Boolean).sort();
+    return { plan: p, done: ls.filter(l => l.completed).length, total: p.weeks * p.days, from: dates[0], to: dates[dates.length - 1] };
+  }).sort((a, b) => (b.plan.start_date || b.from || b.plan.created_at || '').localeCompare(a.plan.start_date || a.from || a.plan.created_at || ''));
+}
+function tpPastHtml(past) {
+  if (!past || !past.length) return '';
+  return `<div class="card"><h2>&#128193; Fr&uuml;here Pl&auml;ne</h2>
+    <div class="cd-mylist">${past.map((x, i) => `<button type="button" class="cd-mine done" data-past="${i}" style="border-left-color:var(--brand-strong, #0042fc);">
+      <span><b>${esc(x.plan.title || 'Trainingsplan')}</b><span class="muted-inline">${x.plan.team ? esc(x.plan.team) + ' &middot; ' : ''}${x.from ? wDate(x.from) + (x.to && x.to !== x.from ? ' &ndash; ' + wDate(x.to) : '') : (x.plan.start_date ? 'ab ' + wDate(x.plan.start_date) : '')} &middot; ${x.done}/${x.total} Einheiten erledigt</span></span><span class="cd-st">&rsaquo;</span></button>`).join('')}</div>
+    <p class="hint">Abgeschlossene Bl&ouml;cke mit allen eingetragenen S&auml;tzen &mdash; nur zum Ansehen.</p></div>`;
+}
+async function renderMyPastPlan(profile, plan, weekSel) {
+  const back = { label: 'Mein Trainingsplan', go: () => renderMyPlan(profile) };
+  renderShell(profile, 'meinplan', plan.title || 'Trainingsplan', `<p class="muted">Lade&hellip;</p>`, back);
+  const { data: { user } } = await sb.auth.getUser();
+  const { data: logs } = await sb.from('tp_logs').select('*').eq('plan_id', plan.id).eq('user_id', user.id).order('week').order('day');
+  const weeks = Array.from({ length: plan.weeks }, (_, i) => i + 1);
+  const withLogs = [...new Set((logs || []).map(l => l.week))].sort((a, b) => a - b);
+  const week = weekSel || withLogs[withLogs.length - 1] || 1;
+  // Bestwert je Übung und Woche: höchstes Gewicht eines erledigten Satzes (sonst meiste Wdh / längste Dauer)
+  const best = {};
+  (logs || []).forEach(l => (l.exercises || []).forEach(ex => {
+    if (ex.status === 'skipped' || (TP_CAT[ex.cat] || {}).type === 'check') return;
+    const k = tpExerciseKey(ex);
+    (ex.sets || []).filter(st => st.done).forEach(st => {
+      const kg = parseFloat(st.kg) || 0, r = parseFloat(st.reps) || 0, sec = parseFloat(st.sec) || 0;
+      const v = kg ? { v: kg, u: 'kg' } : (r ? { v: r, u: 'Wdh' } : { v: sec, u: 's' });
+      if (!v.v) return;
+      const c = ((best[k] = best[k] || {})[l.week]);
+      if (!c || (c.u === v.u && v.v > c.v) || (v.u === 'kg' && c.u !== 'kg')) best[k][l.week] = v;
+    });
+  }));
+  const rows = Object.keys(best).sort((a, b) => a.localeCompare(b, 'de')).map(k => `<tr><td><b>${esc(k)}</b></td>${weeks.map(w => { const c = best[k][w]; return `<td>${c ? (c.u === 'kg' ? tpKgText(c.v) + ' kg' : c.v + ' ' + c.u) : '<span class="muted">–</span>'}</td>`; }).join('')}</tr>`).join('');
+  const content = `
+    <div class="card">
+      <div class="ath-toolbar" style="margin-bottom:10px;">
+        <h2 style="margin:0;">${esc(plan.title || 'Trainingsplan')}</h2><span class="spacer"></span>
+        <select id="mpPastWeek" style="width:auto;">${weeks.map(w => `<option value="${w}" ${w === week ? 'selected' : ''}>Woche ${w}${withLogs.includes(w) ? '' : ' (leer)'}</option>`).join('')}</select>
+      </div>
+      ${tpWeekView(plan, logs || [], week)}
+    </div>
+    ${rows ? `<div class="card"><h2>Bestwerte je &Uuml;bung</h2><div class="tablewrap"><table class="tp-table">
+      <thead><tr><th>&Uuml;bung</th>${weeks.map(w => `<th>Woche ${w}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="hint">H&ouml;chstes Gewicht eines erledigten Satzes je Woche (ohne Gewicht: meiste Wiederholungen bzw. l&auml;ngste Dauer).</p></div>` : ''}`;
+  renderShell(profile, 'meinplan', plan.title || 'Trainingsplan', content, back);
+  document.getElementById('mpPastWeek').onchange = e => renderMyPastPlan(profile, plan, +e.target.value);
 }
 
 // ---------- Übersicht „Mein Trainingsplan“ ----------
@@ -123,7 +182,9 @@ async function renderMyPlan(profile) {
   try { D = await tpLoadMine(); }
   catch (e) { renderShell(profile, 'meinplan', 'Mein Trainingsplan', `<div class="card"><p class="error">Plan konnte nicht geladen werden: ${esc(e.message)}</p></div>`); return; }
   if (!D.plan) {
-    renderShell(profile, 'meinplan', 'Mein Trainingsplan', `<div class="card"><h2>Noch kein Trainingsplan</h2><p class="muted">Sobald dein Trainer einen Plan f&uuml;r dich ver&ouml;ffentlicht, erscheint er hier.</p></div>`);
+    const past0 = await tpLoadPast(D).catch(() => []);
+    renderShell(profile, 'meinplan', 'Mein Trainingsplan', `<div class="card"><h2>Kein aktueller Trainingsplan</h2><p class="muted">Sobald dein Trainer einen Plan f&uuml;r dich ver&ouml;ffentlicht, erscheint er hier.</p></div>` + tpPastHtml(past0));
+    appEl.querySelectorAll('[data-past]').forEach(b => b.onclick = () => renderMyPastPlan(profile, past0[+b.dataset.past].plan));
     return;
   }
   const P = D.plan;
@@ -162,7 +223,9 @@ async function renderMyPlan(profile) {
       <div class="mp-grid">${grid}</div>
       <p class="hint">&#10003; erledigt &middot; &#9680; angefangen</p>
     </div>`;
-  renderShell(profile, 'meinplan', 'Mein Trainingsplan', content);
+  const past = await tpLoadPast(D).catch(() => []);
+  renderShell(profile, 'meinplan', 'Mein Trainingsplan', content + tpPastHtml(past));
+  appEl.querySelectorAll('[data-past]').forEach(b => b.onclick = () => renderMyPastPlan(profile, past[+b.dataset.past].plan));
   // beim Öffnen einer Einheit den aktuellen Planstand holen (Trainer kann laufende Pläne ändern)
   const open = async (w, d) => {
     const [v, l] = await Promise.all([

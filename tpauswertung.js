@@ -184,15 +184,19 @@ async function renderTpAthlete(profile, plan, uid, name, weekSel) {
     typeof cdLoadAll === 'function' ? cdLoadAll().catch(() => ({ sessions: [], asg: [], logs: [] })) : { sessions: [], asg: [], logs: [] },
   ]);
   const cur = (asg || []).find(a => a.plan_id === plan.id);
-  const prevAsg = (asg || []).filter(a => a.plan_id !== plan.id && (!cur || a.assigned_at < cur.assigned_at))[0];
-  let prevTable = {}, prevWeeks = 0, prevTitle = '';
-  if (prevAsg) {
-    const [{ data: pl }, { data: pLogs }] = await Promise.all([
-      sb.from('tp_plans').select('title, weeks').eq('id', prevAsg.plan_id).single(),
-      sb.from('tp_logs').select('*').eq('plan_id', prevAsg.plan_id).eq('user_id', uid),
+  // alle früheren Blöcke (neueste zuerst): je Übung wird mit dem letzten Block verglichen, in dem sie vorkam
+  const earlier = (asg || []).filter(a => a.plan_id !== plan.id && (!cur || a.assigned_at < cur.assigned_at))
+    .sort((x, y) => (y.assigned_at || '').localeCompare(x.assigned_at || ''));
+  let prevBlocks = [];
+  if (earlier.length) {
+    const ids = earlier.map(a => a.plan_id);
+    const [{ data: pls }, { data: pLogs }] = await Promise.all([
+      sb.from('tp_plans').select('id, title, weeks').in('id', ids),
+      sb.from('tp_logs').select('*').in('plan_id', ids).eq('user_id', uid),
     ]);
-    prevTable = tpExerciseTable(pLogs || []); prevWeeks = pl ? pl.weeks : 0; prevTitle = pl ? pl.title : '';
+    prevBlocks = earlier.map(a => ({ title: ((pls || []).find(p => p.id === a.plan_id) || {}).title || 'früherer Block', table: tpExerciseTable((pLogs || []).filter(l => l.plan_id === a.plan_id)) }));
   }
+  const prevTitle = prevBlocks.length ? prevBlocks[0].title : '';
   const table = tpExerciseTable(logs || []);
   const weeks = Array.from({ length: plan.weeks }, (_, i) => i + 1);
   const avg = (w) => { const v = Object.values(w || {}); return v.length ? v.reduce((n, x) => n + x.value, 0) / v.length : null; };
@@ -206,10 +210,11 @@ async function renderTpAthlete(profile, plan, uid, name, weekSel) {
       const tr = tpTrend(c.value, prev); prev = c.value;
       return `<td>${tpFmt(c.value)} ${arrow(tr)}</td>`;
     }).join('');
-    const bNow = avg(table[k]), bPrev = avg(prevTable[k]);
+    const pb = prevBlocks.find(b => b.table[k]);
+    const bNow = avg(table[k]), bPrev = pb ? avg(pb.table[k]) : null;
     const btr = tpTrend(bNow, bPrev);
     return `<tr><td><b>${esc(k)}</b><div class="muted-inline">${unit === 'kg' ? 'bewegte Last in kg' : (unit === 's' ? 'Dauer in Sekunden' : 'Wiederholungen')}</div></td>${cells}
-      <td>${bPrev != null ? `${tpFmt(bPrev)} &rarr; ${tpFmt(bNow)} ${arrow(btr)}` : '<span class="muted">–</span>'}</td></tr>`;
+      <td>${bPrev != null ? `${tpFmt(bPrev)} &rarr; ${tpFmt(bNow)} ${arrow(btr)}${pb.title !== prevTitle ? `<div class="muted-inline">aus &bdquo;${esc(pb.title)}&ldquo;</div>` : ''}` : '<span class="muted">–</span>'}</td></tr>`;
   }).join('') || `<tr><td colspan="${weeks.length + 2}" class="muted">Noch keine Eintr&auml;ge mit S&auml;tzen.</td></tr>`;
 
   const sessions = (logs || []).map(l => {
@@ -235,7 +240,7 @@ async function renderTpAthlete(profile, plan, uid, name, weekSel) {
     <div class="card">
       <h2>${esc(plan.title || 'Trainingsplan')} &mdash; bewegte Last je &Uuml;bung</h2>
       <div class="tablewrap"><table class="tp-table">
-        <thead><tr><th>&Uuml;bung</th>${weeks.map(w => `<th>Woche ${w}</th>`).join('')}<th>Block-Vergleich${prevTitle ? `<div class="muted-inline">&Oslash; je Woche: ${esc(prevTitle)} &rarr; jetzt</div>` : ''}</th></tr></thead>
+        <thead><tr><th>&Uuml;bung</th>${weeks.map(w => `<th>Woche ${w}</th>`).join('')}<th>Block-Vergleich${prevTitle ? `<div class="muted-inline">&Oslash; je Woche: letzter Block mit der &Uuml;bung (meist ${esc(prevTitle)}) &rarr; jetzt</div>` : ''}</th></tr></thead>
         <tbody>${exRows}</tbody>
       </table></div>
       <p class="hint">Bewegte Last = &Sigma; (Wdh &times; kg) der erledigten S&auml;tze je Woche; ohne Gewicht z&auml;hlen die Wiederholungen. &#9650; Steigerung &gt; +2 % &middot; &#9644; gleich &middot; &#9660; R&uuml;ckschritt &lt; &minus;2 % (gegen&uuml;ber Vorwoche bzw. Wochen-&Oslash; des vorherigen Blocks). Maus &uuml;ber den Pfeil zeigt die Prozent.</p>
