@@ -442,11 +442,6 @@ function renderLoadHub(profile) {
         <span class="mc-title">sRPE-Eintr&auml;ge aus der App</span>
         <span class="mc-sub">Was Athlet:innen mit eigenem Zugang in der App eintragen &mdash; Wochen&uuml;bersicht nach Gruppe</span>
       </button>
-      <button class="menu-card tint-ath" type="button" id="loadWellness">
-        <span class="mc-icon">&#128154;</span>
-        <span class="mc-title">Wellness aus der App</span>
-        <span class="mc-sub">Wellness-Check der Athlet:innen (Schlaf, Erm&uuml;dung, Schmerzen, Energie) &mdash; Wochen&uuml;bersicht</span>
-      </button>
       <button class="menu-card tint-team" type="button" id="loadWellnessPreview">
         <span class="mc-icon">&#128065;</span>
         <span class="mc-title">Wellness-Fragebogen (Vorschau)</span>
@@ -457,7 +452,6 @@ function renderLoadHub(profile) {
   `;
   renderShell(profile, 'loadmanagement', 'Load Management', content);
   document.getElementById('loadAppEntries').onclick = () => renderTrainerDashboard(profile);
-  document.getElementById('loadWellness').onclick = () => renderWellnessOverview(profile);
   document.getElementById('loadWellnessPreview').onclick = () => renderWellnessPage(profile, true);
 }
 
