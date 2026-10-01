@@ -526,11 +526,16 @@ async function renderTrainerDashboard(profile) {
   const days = weekDates(LOAD_WEEK);
   const dayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
-  const [profRes, entRes, mgmt] = await Promise.all([
+  const [profRes, entRes, mgmt, manRes] = await Promise.all([
     sb.from('profiles').select('id, name').eq('role', 'athlete').order('name'),
     sb.from('load_entries').select('user_id, entry_date, srpe, duration_min').in('entry_date', days),
     loadAthleteData().catch(() => null),
+    sb.from('load_manual').select('*').in('entry_date', days),
   ]);
+  // manuelle Nachträge/Korrekturen (ersetzen den App-Wert des Tages); Tabelle fehlt vor der Migration → keine
+  const manual = {};
+  (manRes.error ? [] : (manRes.data || [])).forEach(m => { (manual[m.person_key] = manual[m.person_key] || {})[m.entry_date] = m; });
+  const canManual = !manRes.error;
   const profiles = profRes.data || [];
   const entries = entRes.data || [];
   const kw = isoWeek(days[0]);
@@ -559,18 +564,20 @@ async function renderTrainerDashboard(profile) {
 
   const rows = people.length
     ? people.map(a => {
-        if (!a.userId) {
-          return `<tr class="no-access"><td>${esc(a.name)}</td><td colspan="9" class="muted">kein App-Zugang${isAdmin(profile) ? ` &middot; <a href="#" data-grant="${a.athleteId}">Zugang anlegen</a>` : ''}</td></tr>`;
-        }
+        const pk = a.userId ? 'u:' + a.userId : 'a:' + a.athleteId;
+        // je Tag: manueller Wert vor App-Wert
+        const val = d => { const m = manual[pk] && manual[pk][d]; if (m) return { au: m.au, man: true, m };
+          const e = a.userId && byUserDate[a.userId] && byUserDate[a.userId][d]; return e ? { au: e.srpe * e.duration_min, app: e } : null; };
         const cells = days.map(d => {
-          const e = byUserDate[a.userId] && byUserDate[a.userId][d];
-          const load = e ? e.srpe * e.duration_min : null;
-          const cls = load === null ? 'load-empty' : (load >= 500 ? 'load-high' : 'load-ok');
-          return `<td class="${cls}">${load === null ? '–' : load}</td>`;
+          const v = val(d);
+          const cls = v === null ? 'load-empty' : (v.au >= 500 ? 'load-high' : 'load-ok');
+          const tip = v && v.man ? `manuell${v.m.srpe ? ': RPE ' + v.m.srpe + ' × ' + v.m.duration_min + ' min' : ''}${v.m.note ? ' – ' + v.m.note : ''}` : (v ? `App: RPE ${v.app.srpe} × ${v.app.duration_min} min` : '');
+          return `<td class="${cls}${canManual ? ' lm-edit' : ''}${v && v.man ? ' lm-man' : ''}" data-pk="${pk}" data-d="${d}" title="${esc(tip)}${canManual ? (tip ? ' · ' : '') + 'klicken zum Nachtragen/Korrigieren' : ''}">${v === null ? '–' : v.au}${v && v.man ? '<sup>&#9998;</sup>' : ''}</td>`;
         }).join('');
-        const vals = days.map(d => byUserDate[a.userId] && byUserDate[a.userId][d]).filter(Boolean);
-        const sum = vals.reduce((n, e) => n + e.srpe * e.duration_min, 0);
-        return `<tr><td>${esc(a.name)}</td>${cells}<td class="load-sum">${vals.length ? sum : '–'}</td><td class="muted">${vals.length}/7</td></tr>`;
+        const vals = days.map(val).filter(Boolean);
+        const sum = vals.reduce((n, v) => n + v.au, 0);
+        const noAcc = !a.userId ? ` <span class="muted-inline" title="kein App-Zugang – Werte nur manuell">(ohne App${isAdmin(profile) ? ` &middot; <a href="#" data-grant="${a.athleteId}">Zugang anlegen</a>` : ''})</span>` : '';
+        return `<tr><td>${esc(a.name)}${noAcc}</td>${cells}<td class="load-sum">${vals.length ? sum : '–'}</td><td class="muted">${vals.length}/7</td></tr>`;
       }).join('')
     : `<tr><td colspan="10" class="muted">${LOAD_GROUP ? 'Keine Athlet:innen in dieser Gruppe.' : 'Noch keine Athlet:innen mit App-Zugang.'}</td></tr>`;
 
@@ -598,6 +605,7 @@ async function renderTrainerDashboard(profile) {
         </table>
       </div>
       <p class="hint">Wert je Zelle = sRPE &times; Trainingsdauer in Minuten (Session-Load nach Foster). Ab 500 farblich hervorgehoben. &Sigma; Woche = Wochen-Load, Tage = Tage mit Eintrag. Mit &larr; &rarr; bzw. der Auswahl jede Kalenderwoche ansehen.
+      ${canManual ? '<b>Zelle anklicken</b>, um einen Wert nachzutragen oder zu korrigieren (&#9998; = manuell, ersetzt den App-Wert des Tages und wird mit &bdquo;Aus App &uuml;bernehmen&ldquo; ins Load-Management-Tool &uuml;bertragen).' : '<i>Manuelle Nachtr&auml;ge: Datenbank-Erweiterung fehlt noch (supabase_migration_load_manual.sql).</i>'}
       Gruppen kommen aus der Athletenverwaltung; Werte tragen die Athlet:innen mit ihrem App-Zugang selbst ein.</p>
     </div>
   `;
@@ -609,6 +617,45 @@ async function renderTrainerDashboard(profile) {
   document.getElementById('lwPrev').onclick = () => { LOAD_WEEK--; renderTrainerDashboard(profile); };
   document.getElementById('lwNext').onclick = () => { LOAD_WEEK++; renderTrainerDashboard(profile); };
   const now = document.getElementById('lwNow'); if (now) now.onclick = () => { LOAD_WEEK = 0; renderTrainerDashboard(profile); };
+  // Nachtragen/Korrigieren je Zelle
+  appEl.querySelectorAll('td.lm-edit').forEach(td => td.onclick = () => {
+    const pk = td.dataset.pk, d = td.dataset.d, person = people.find(x => (x.userId ? 'u:' + x.userId : 'a:' + x.athleteId) === pk);
+    const m = manual[pk] && manual[pk][d], e = person.userId && byUserDate[person.userId] && byUserDate[person.userId][d];
+    const host = document.createElement('div');
+    host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:420px;">
+      <h2 style="margin-bottom:4px;">${esc(person.name)}</h2>
+      <p class="hint" style="margin-top:0;">${['So','Mo','Di','Mi','Do','Fr','Sa'][new Date(d + 'T00:00:00').getDay()]}, ${fmtD(d)}${d.slice(0, 4)} &middot; ${e ? 'App: RPE ' + e.srpe + ' &times; ' + e.duration_min + ' min = ' + (e.srpe * e.duration_min) : 'kein App-Eintrag'}</p>
+      <div class="lm-mangrid">
+        <label>RPE (1&ndash;10)<input type="number" id="lmR" min="1" max="10" value="${m && m.srpe ? m.srpe : (e ? e.srpe : '')}"></label>
+        <label>Dauer (min)<input type="number" id="lmD" min="1" max="600" value="${m && m.duration_min ? m.duration_min : (e ? e.duration_min : '')}"></label>
+        <label>Session-Load (AU)<input type="number" id="lmA" min="0" max="5000" value="${m ? m.au : (e ? e.srpe * e.duration_min : '')}"></label>
+      </div>
+      <label class="wq-date" style="margin-top:8px;">Notiz (optional)<input type="text" id="lmN" value="${esc(m && m.note || '')}" placeholder="z. B. nachgetragen laut Trainer, Spiel"></label>
+      <p class="hint">RPE &times; Dauer wird automatisch berechnet; AU kann auch direkt eingetragen werden. 0 = bewusst kein Training.</p>
+      <div class="modal-actions">${m ? '<button type="button" class="danger" id="lmDel">Manuellen Wert l&ouml;schen</button>' : ''}<span class="spacer"></span>
+        <button type="button" class="secondary" id="lmX">Abbrechen</button><button type="button" id="lmOk">Speichern</button></div>
+    </div></div>`;
+    document.body.appendChild(host);
+    const q = id => host.querySelector(id);
+    const calc = () => { const r = +q('#lmR').value, du = +q('#lmD').value; if (r && du) q('#lmA').value = r * du; };
+    q('#lmR').oninput = calc; q('#lmD').oninput = calc;
+    q('#lmX').onclick = () => host.remove();
+    if (q('#lmDel')) q('#lmDel').onclick = async () => {
+      const r = await sb.from('load_manual').delete().eq('person_key', pk).eq('entry_date', d);
+      if (r.error) { toast('Fehler: ' + r.error.message); return; }
+      host.remove(); renderTrainerDashboard(profile);
+    };
+    q('#lmOk').onclick = async () => {
+      const au = q('#lmA').value === '' ? null : Math.round(+q('#lmA').value);
+      if (au === null || isNaN(au) || au < 0) { alert('Bitte einen Wert eingeben (RPE × Dauer oder AU).'); return; }
+      const { data: { user } } = await sb.auth.getUser();
+      const row = { person_key: pk, user_id: person.userId || null, athlete_id: person.userId ? null : person.athleteId, entry_date: d, au,
+        srpe: +q('#lmR').value || null, duration_min: +q('#lmD').value || null, note: q('#lmN').value.trim() || null, updated_by: user.id, updated_at: new Date().toISOString() };
+      const r = await sb.from('load_manual').upsert(row, { onConflict: 'person_key,entry_date' });
+      if (r.error) { alert('Speichern fehlgeschlagen: ' + r.error.message); return; }
+      host.remove(); toast('Gespeichert.'); renderTrainerDashboard(profile);
+    };
+  });
   appEl.querySelectorAll('[data-grant]').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); INVITE_PRESELECT = a.dataset.grant; renderTeamPage(profile); };
   });

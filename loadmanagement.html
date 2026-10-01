@@ -30,6 +30,101 @@
   });
 })();
 </script>
+<script>
+/* Load Management: Cloud-Speicher (Supabase tp_builder_store, Schlüssel „lm:…“, 2026-10-01) – gleiche Logik wie in der Trainingsplanung.
+   Teams (lm_datasets_v1) und alle Wochenwerte je Team (astroladies_load_v1 / lm_load_<team>) liegen damit geräteübergreifend in der Cloud.
+   Ursprünglich: Trainingsplanung: Cloud-Speicher (Supabase tp_builder_store, 2026-09-28)
+   Alle Daten der Trainingsplanung lagen bisher nur im Browser. Jetzt:
+   - jeder Speichervorgang (localStorage) der geteilten Schlüssel geht zusätzlich in die Cloud
+   - beim Öffnen wird der neueste Cloud-Stand geladen (anderes Gerät/andere Person) – bei Änderung einmal neu laden
+   Geteilt: Übungsbibliothek, Positionen/Optionen, Athleten, Gruppen, Plan-Historie je Gruppe/Athletin.
+   Je Person: der aktuelle Arbeitsstand (state:<user-id>). */
+(function(){
+  var sb = window.appSb; if(!sb) return;
+  var RX = /^(lm_datasets_v1|astroladies_load_v1|lm_load_.+)$/, PFX = "lm:";
+  var STATE = "__kein_arbeitsstand__";
+  function isShared(k){ return RX.test(k); }
+  var ready = false, uid = null, pending = {}, timer = null;
+  var raw = Storage.prototype.setItem;
+  var ls = window.localStorage;
+  function cloudKey(k){ return isShared(k) ? PFX + k : null; }
+  function localKey(ck){ return ck.slice(PFX.length); }
+  function rawSet(k, v){ try { raw.call(ls, k, v); } catch(e){} }
+  function setStatus(t, cls){
+    window.__tpCloudStatus = { t: t, cls: cls || "" };
+    var el = document.getElementById("cloudStatus");
+    if(!el && document.body){ el = document.createElement("div"); el.id = "cloudStatus"; el.setAttribute("style", "position:fixed;left:84px;bottom:10px;z-index:50;font:600 12px -apple-system,sans-serif;padding:4px 10px;border-radius:999px;background:#fff;border:1px solid #d7dcda;"); document.body.appendChild(el); }
+    if(el){ el.textContent = t; el.style.color = cls === "err" ? "#b0281c" : (cls === "ok" ? "#1f7a45" : "#7c8b92"); }
+  }
+  Storage.prototype.setItem = function(k, v){
+    raw.call(this, k, v);
+    if(this !== ls || !isShared(k)) return;
+    rawSet("lmc_dirty_" + k, "1");
+    if(ready && cloudKey(k)){ pending[k] = true; clearTimeout(timer); timer = setTimeout(flush, 1200); }
+  };
+  async function flush(){
+    var keys = Object.keys(pending); pending = {};
+    if(!keys.length || !uid) return;
+    setStatus("☁︎ speichert …", "busy");
+    var rows = [];
+    keys.forEach(function(k){
+      var v = null; try { v = JSON.parse(ls.getItem(k)); } catch(e){}
+      if(v !== null && cloudKey(k)) rows.push({ key: cloudKey(k), data: v, updated_at: new Date().toISOString(), updated_by: uid });
+    });
+    if(!rows.length) return;
+    var r = await sb.from("tp_builder_store").upsert(rows).select("key,updated_at");
+    if(r.error){
+      keys.forEach(function(k){ pending[k] = true; });
+      setStatus("☁︎ nicht gespeichert – nur auf diesem Gerät (offline?)", "err");
+      clearTimeout(timer); timer = setTimeout(flush, 15000);
+      return;
+    }
+    (r.data || []).forEach(function(x){ var lk = localKey(x.key); rawSet("lmc_stamp_" + lk, x.updated_at); try { ls.removeItem("lmc_dirty_" + lk); } catch(e){} });
+    setStatus("☁︎ in der Cloud gespeichert", "ok");
+  }
+
+  document.addEventListener("visibilitychange", function(){ if(document.hidden && ready) flush(); });
+
+  (async function pull(){
+    setStatus("☁︎ lädt …", "busy");
+    var s = await sb.auth.getSession();
+    if(!s.data.session) return;
+    uid = s.data.session.user.id;
+    var r = await sb.from("tp_builder_store").select("key,data,updated_at").like("key", PFX + "%");
+    if(r.error){ setStatus("☁︎ Cloud nicht erreichbar – nur auf diesem Gerät", "err"); ready = true; return; }
+    var cloud = {}; (r.data || []).forEach(function(x){ cloud[x.key] = x; });
+    var changed = false, toPush = [];
+    var keys = {};
+    for(var i = 0; i < ls.length; i++){ var lk = ls.key(i); if(isShared(lk)) keys[lk] = true; }
+    Object.keys(cloud).forEach(function(ck){ keys[localKey(ck)] = true; });
+    Object.keys(keys).forEach(function(k){
+      var c = cloud[cloudKey(k)], local = ls.getItem(k), st = ls.getItem("lmc_stamp_" + k), dirty = !!ls.getItem("lmc_dirty_" + k);
+      if(c){
+        if(!st || new Date(c.updated_at) > new Date(st)){
+          var nv = JSON.stringify(c.data);
+          if(nv !== local){
+            if(local && !st) rawSet("lmc_backup_" + k, local);   // erster Abgleich dieses Geräts: alten lokalen Stand aufheben
+            rawSet(k, nv); changed = true;
+          }
+          rawSet("lmc_stamp_" + k, c.updated_at);
+          try { ls.removeItem("lmc_dirty_" + k); } catch(e){}
+        } else if(dirty && local){ toPush.push(k); }
+      } else if(local){ toPush.push(k); }
+    });
+    ready = true;
+    if(changed){
+      var last = 0; try { last = parseInt(sessionStorage.getItem("lmc_reload"), 10) || 0; } catch(e){}
+      if(Date.now() - last > 15000){
+        try { sessionStorage.setItem("lmc_reload", String(Date.now())); } catch(e){}
+        location.reload();
+        return;
+      }
+    }
+    if(toPush.length){ toPush.forEach(function(k){ pending[k] = true; }); flush(); }
+    else setStatus("☁︎ Cloud aktuell", "ok");
+  })();
+})();
+</script>
 
 <div class="app-backbar" style="background:#a1d7ff;color:#00113d;font-family:-apple-system,sans-serif;font-size:13px;font-weight:600;padding:9px 16px;">
   <a href="index.html#loadmanagement" style="color:#00113d;text-decoration:none;">&larr; Zur&uuml;ck: Load Management</a>
@@ -200,6 +295,9 @@
   #wellnessEntry:not(.lm-collapsed) .lm-fold-ic{ transform:rotate(90deg); }
   #wellnessEntry.lm-collapsed > :not(.section-head){ display:none !important; }
   #wellnessEntry.lm-collapsed .section-head .btn{ display:none; }
+  .lm-apppick-opt{ margin:6px 0 8px; padding:8px 10px; background:var(--bg-elevated); border:1px solid var(--line); border-radius:8px; font-size:.85rem; line-height:1.9; }
+  .lm-dchk{ display:inline-flex; align-items:center; gap:3px; margin-right:8px; white-space:nowrap; }
+  .lm-apppick-hint{ font-size:.78rem; color:var(--ink-faint); line-height:1.4; }
   .steer-target .lbl{ font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-faint); }
   .steer-target button{ width:30px; height:30px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:1rem; cursor:pointer; }
   .steer-target button:hover{ border-color:var(--accent); }
@@ -1155,11 +1253,17 @@
   }
 
   function applyPastedRows(){
+    var opt = window.__lmAppOpt || { mode: "replace", days: [true,true,true,true,true,true,true] };
     pastedRows.forEach(function(row){
       if (state.players.indexOf(row.name) === -1) state.players.push(row.name);
       var vals = getPlayerWeek(state.currentWeek, row.name);
       for (var i=0; i<7; i++){
-        if (row.values[i] !== null && row.values[i] !== undefined) vals[i] = row.values[i];
+        var v = row.values[i], has = v !== null && v !== undefined;
+        if (row.fromApp){
+          if (!opt.days[i]) continue;
+          if (opt.mode === "replace") vals[i] = has ? v : null;
+          else if (has && (vals[i] === null || vals[i] === undefined || vals[i] === "" || isNaN(vals[i]) || vals[i] === 0)) vals[i] = v;
+        } else if (has) vals[i] = v;
       }
     });
     save();
@@ -1168,7 +1272,7 @@
     document.getElementById("pastePreviewWrap").style.display = "none";
     document.getElementById("pastePanel").style.display = "none";
     renderAll();
-    toast("Werte übernommen.");
+    toast("Werte übernommen in " + weekKeyLabel(state.currentWeek) + ".");
   }
 
   // ---------- Wellness Excel-Paste ----------
@@ -2097,9 +2201,20 @@
       if (kind === "srpe"){ pastedRows = chosen; renderPastePreview(); } else { pastedWellnessRows = chosen; renderWellnessPastePreview(); }
       var c = box.querySelector(".lm-apppick-count"); if (c) c.textContent = chosen.length + " von " + rows.length + " ausgewählt";
     }
+    if (kind === "srpe" && !window.__lmAppOpt) window.__lmAppOpt = { mode: "replace", days: [true,true,true,true,true,true,true] };
+    var DN = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+    function optHtml(){
+      if (kind !== "srpe") return "";
+      var o = window.__lmAppOpt;
+      return "<div class='lm-apppick-opt'><b>&rarr; in " + weekKeyLabel(state.currentWeek) + " (" + fmtDate(state.currentWeek).slice(0,6) + "&ndash;" + fmtDate(addDays(state.currentWeek,6)).slice(0,6) + ")</b>" +
+        " &middot; Tage: " + DN.map(function(d, i){ return "<label class='lm-dchk'><input type='checkbox' data-day='" + i + "'" + (o.days[i] ? " checked" : "") + "> " + d + "</label>"; }).join("") +
+        " &middot; <label class='lm-dchk'><input type='radio' name='lmMode' value='replace'" + (o.mode === "replace" ? " checked" : "") + "> Ersetzen</label>" +
+        "<label class='lm-dchk'><input type='radio' name='lmMode' value='fill'" + (o.mode === "fill" ? " checked" : "") + "> nur leere Felder f&uuml;llen</label>" +
+        "<div class='lm-apppick-hint'>Ersetzen: an den gew&auml;hlten Tagen gelten genau die App-Werte (Tage ohne App-Eintrag werden geleert). &#9998; = manuell nachgetragener Wert.</div></div>";
+    }
     function render(){
       box.innerHTML =
-        "<div class='lm-apppick-head'><b>&#128241; Aus der App (" + weekKeyLabel(state.currentWeek) + ")</b> &ndash; Athlet:innen auswählen, deren Werte übernommen werden sollen: <span class='lm-apppick-count'></span></div>" +
+        "<div class='lm-apppick-head'><b>&#128241; Aus der App (" + weekKeyLabel(state.currentWeek) + ")</b> &ndash; Athlet:innen auswählen, deren Werte übernommen werden sollen: <span class='lm-apppick-count'></span></div>" + optHtml() +
         "<div class='lm-apppick-groups'>" +
           gUsed.map(function(g){
             var n = rows.filter(function(r){ return (userGroups[r.uid] || []).indexOf(g.id) !== -1; }).length;
@@ -2109,7 +2224,7 @@
         "</div>" +
         "<div class='lm-apppick-list'>" + rows.map(function(r){
           var gl = (userGroups[r.uid] || []).map(function(id){ return gName[id]; }).filter(Boolean).join(", ");
-          return "<label><input type='checkbox' data-u='" + r.uid + "'" + (sel[r.uid] ? " checked" : "") + "> " + esc(r.name) +
+          return "<label><input type='checkbox' data-u='" + r.uid + "'" + (sel[r.uid] ? " checked" : "") + "> " + esc(r.name) + (r.manual && Object.keys(r.manual).length ? " &#9998;" : "") +
                  (gl ? " <span class='lm-apppick-g'>" + esc(gl) + "</span>" : " <span class='lm-apppick-g'>keine Gruppe</span>") + "</label>";
         }).join("") + "</div>";
       box.querySelectorAll("[data-g]").forEach(function(b){
@@ -2123,6 +2238,12 @@
       box.querySelector("[data-none]").addEventListener("click", function(){ active = ""; rows.forEach(function(r){ sel[r.uid] = false; }); render(); });
       box.querySelectorAll("input[data-u]").forEach(function(cb){
         cb.addEventListener("change", function(){ sel[cb.getAttribute("data-u")] = cb.checked; applySel(); });
+      });
+      box.querySelectorAll("input[data-day]").forEach(function(cb){
+        cb.addEventListener("change", function(){ window.__lmAppOpt.days[+cb.getAttribute("data-day")] = cb.checked; });
+      });
+      box.querySelectorAll("input[name=lmMode]").forEach(function(rb){
+        rb.addEventListener("change", function(){ if (rb.checked) window.__lmAppOpt.mode = rb.value; });
       });
       applySel();
     }
@@ -2139,16 +2260,17 @@
     Promise.all([
       sb.from("load_entries").select("user_id,entry_date,srpe,duration_min").gte("entry_date", from).lte("entry_date", to),
       sb.from("profiles").select("id,name"),
-      sb.from("athletes").select("id,first_name,last_name,profile_id").not("profile_id", "is", null),
+      sb.from("athletes").select("id,first_name,last_name,profile_id"),
       sb.from("athlete_groups").select("id,name").order("name"),
-      sb.from("athlete_group_members").select("athlete_id,group_id")
+      sb.from("athlete_group_members").select("athlete_id,group_id"),
+      sb.from("load_manual").select("person_key,entry_date,au").gte("entry_date", from).lte("entry_date", to)
     ]).then(function(r){
       btn.disabled = false;
       var err = r[0].error || r[1].error || r[2].error || r[3].error || r[4].error;
       if (err){ toast("Fehler beim Laden: " + err.message); return; }
       var nameOf = {};
       r[1].data.forEach(function(p){ nameOf[p.id] = p.name; });
-      r[2].data.forEach(function(a){ nameOf[a.profile_id] = ((a.first_name || "") + " " + (a.last_name || "")).trim(); });
+      r[2].data.forEach(function(a){ var nm = ((a.first_name || "") + " " + (a.last_name || "")).trim(); if (a.profile_id) nameOf[a.profile_id] = nm; nameOf["a:" + a.id] = nm; });
       var roster = {};
       state.players.forEach(function(p){ roster[p.toLowerCase().replace(/\s+/g, " ").trim()] = p; });
       var base = new Date(from + "T00:00:00").getTime();
@@ -2159,13 +2281,26 @@
         var row = byUser[e.user_id] || (byUser[e.user_id] = [null,null,null,null,null,null,null]);
         row[idx] = (row[idx] || 0) + e.srpe * e.duration_min;
       });
+      // manuelle Werte ersetzen den App-Wert des Tages ('u:<profil>' bzw. 'a:<athlet>' ohne App-Zugang)
+      var manDays = {};
+      (r[5] && !r[5].error ? r[5].data : []).forEach(function(m){
+        var idx = Math.round((new Date(m.entry_date + "T00:00:00").getTime() - base) / 86400000);
+        if (idx < 0 || idx > 6) return;
+        var key = m.person_key.indexOf("u:") === 0 ? m.person_key.slice(2) : m.person_key;
+        var row = byUser[key] || (byUser[key] = [null,null,null,null,null,null,null]);
+        row[idx] = m.au;
+        (manDays[key] = manDays[key] || {})[idx] = true;
+      });
       var rows = Object.keys(byUser).map(function(uid){
         var nm = (nameOf[uid] || "Unbekannt").replace(/\s+/g, " ").trim();
         nm = roster[nm.toLowerCase()] || nm;          // Schreibweise aus dem Kader übernehmen
-        return { uid: uid, name: nm, values: byUser[uid] };
+        return { uid: uid, name: nm, values: byUser[uid], fromApp: true, manual: manDays[uid] || {} };
       }).sort(function(a, b){ return a.name.localeCompare(b.name, "de"); });
       if (!rows.length){ toast("Keine App-Einträge für " + weekKeyLabel(from) + "."); return; }
-      lmShowAppPick("srpe", rows, r[3].data, lmUserGroups(r[2].data, r[4].data));
+      var ug = lmUserGroups(r[2].data, r[4].data);
+      // Gruppen auch für Athlet:innen ohne App-Zugang ('a:<id>')
+      r[2].data.forEach(function(a){ ug["a:" + a.id] = r[4].data.filter(function(m){ return m.athlete_id === a.id; }).map(function(m){ return m.group_id; }); });
+      lmShowAppPick("srpe", rows, r[3].data, ug);
     }, function(e){ btn.disabled = false; toast("Fehler beim Laden: " + e.message); });
   });
 

@@ -577,3 +577,10 @@ tr.no-access a{ color:var(--brand-strong); }
 .lm-weeknav{ display:inline-flex; gap:6px; align-items:center; }
 .lm-weeknav select{ width:auto; }
 td.load-sum{ font-weight:800; }
+td.lm-edit{ cursor:pointer; }
+td.lm-edit:hover{ background:var(--brand-pale); }
+td.lm-man{ font-style:italic; }
+td.lm-man sup{ font-size:.65em; margin-left:2px; }
+.lm-mangrid{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+.lm-mangrid label{ display:flex; flex-direction:column; gap:4px; font-size:.8rem; color:var(--ink-soft); }
+.lm-mangrid input{ padding:8px; border:1px solid var(--line); border-radius:8px; font-size:1rem; }
