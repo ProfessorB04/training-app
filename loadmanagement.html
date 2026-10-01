@@ -2192,7 +2192,8 @@
     var g0 = gUsed.filter(function(g){ return g.name.toLowerCase().trim() === team; })[0];
     var active = g0 ? g0.id : "";
     var sel = {};
-    rows.forEach(function(r){ sel[r.uid] = active ? (userGroups[r.uid] || []).indexOf(active) !== -1 : true; });
+    var pre = function(r){ return !(r.noEntries && r.noApp); };
+    rows.forEach(function(r){ sel[r.uid] = (active ? (userGroups[r.uid] || []).indexOf(active) !== -1 : true) && pre(r); });
     var gName = {}; groups.forEach(function(g){ gName[g.id] = g.name; });
 
     function applySel(){
@@ -2224,13 +2225,13 @@
         "</div>" +
         "<div class='lm-apppick-list'>" + rows.map(function(r){
           var gl = (userGroups[r.uid] || []).map(function(id){ return gName[id]; }).filter(Boolean).join(", ");
-          return "<label><input type='checkbox' data-u='" + r.uid + "'" + (sel[r.uid] ? " checked" : "") + "> " + esc(r.name) + (r.manual && Object.keys(r.manual).length ? " &#9998;" : "") +
+          return "<label><input type='checkbox' data-u='" + r.uid + "'" + (sel[r.uid] ? " checked" : "") + "> " + esc(r.name) + (r.manual && Object.keys(r.manual).length ? " &#9998;" : "") + (r.noEntries ? " <span class='lm-apppick-g' style='color:#b0281c'>keine Eintr&auml;ge" + (r.noApp ? ", ohne App" : "") + "</span>" : "") +
                  (gl ? " <span class='lm-apppick-g'>" + esc(gl) + "</span>" : " <span class='lm-apppick-g'>keine Gruppe</span>") + "</label>";
         }).join("") + "</div>";
       box.querySelectorAll("[data-g]").forEach(function(b){
         b.addEventListener("click", function(){
           active = b.getAttribute("data-g");
-          rows.forEach(function(r){ sel[r.uid] = (userGroups[r.uid] || []).indexOf(active) !== -1; });
+          rows.forEach(function(r){ sel[r.uid] = (userGroups[r.uid] || []).indexOf(active) !== -1 && pre(r); });
           render();
         });
       });
@@ -2296,7 +2297,19 @@
         nm = roster[nm.toLowerCase()] || nm;          // Schreibweise aus dem Kader übernehmen
         return { uid: uid, name: nm, values: byUser[uid], fromApp: true, manual: manDays[uid] || {} };
       }).sort(function(a, b){ return a.name.localeCompare(b.name, "de"); });
-      if (!rows.length){ toast("Keine App-Einträge für " + weekKeyLabel(from) + "."); return; }
+      var haveRow = {}; rows.forEach(function(x){ haveRow[x.uid] = true; });
+      r[2].data.forEach(function(a){
+        var key = a.profile_id || ("a:" + a.id);
+        if (haveRow[key]) return;
+        var nm = ((a.first_name || "") + " " + (a.last_name || "")).replace(/\s+/g, " ").trim();
+        if (!nm) return;
+        nm = roster[nm.toLowerCase()] || nm;
+        if (!a.profile_id && !roster[nm.toLowerCase()]) return;   // ohne App und nicht im Kader → nicht anbieten
+        rows.push({ uid: key, name: nm, values: [null,null,null,null,null,null,null], fromApp: true, manual: {}, noEntries: true, noApp: !a.profile_id });
+        haveRow[key] = true;
+      });
+      rows.sort(function(a, b){ return a.name.localeCompare(b.name, "de"); });
+      if (!rows.length){ toast("Keine Athlet:innen für " + weekKeyLabel(from) + "."); return; }
       var ug = lmUserGroups(r[2].data, r[4].data);
       // Gruppen auch für Athlet:innen ohne App-Zugang ('a:<id>')
       r[2].data.forEach(function(a){ ug["a:" + a.id] = r[4].data.filter(function(m){ return m.athlete_id === a.id; }).map(function(m){ return m.group_id; }); });
