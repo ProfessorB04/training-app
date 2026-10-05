@@ -624,3 +624,8 @@ td.lm-man sup{ font-size:.65em; margin-left:2px; }
 .cd-copygrid{ border-collapse:collapse; width:100%; font-size:.88rem; }
 .cd-copygrid th, .cd-copygrid td{ padding:6px 8px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
 .cd-copygrid label{ display:inline-flex; gap:5px; align-items:center; cursor:pointer; }
+.cd-seq{ margin:6px 0 0; padding-left:22px; font-size:.92rem; }
+.cd-seq li{ break-inside:avoid; padding:1px 0; }
+.cd-seqrest{ color:var(--ink-soft); font-size:.85rem; }
+.cd-grid input.cd-auto{ background:#f1f4f8; color:var(--ink-soft); }
+@media (max-width:560px){ .cd-seq{ columns:1; } }

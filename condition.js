@@ -157,20 +157,69 @@ function cdNewBlock(phase, methodKey) {
   if (phase !== 'main') { b.work = { v: phase === 'warmup' ? 10 : 8, u: 'min' }; b.int = { type: 'hrmax', min: 60, max: 70 }; b.method = 'dauer'; b.mDe = CD_METHODS[0].de; b.mEn = CD_METHODS[0].en; b.sets = 1; b.reps = 1; }
   return b;
 }
+// Pyramiden / Einzelzeiten: Belastung und Pause dürfen mehrere Werte enthalten, z. B. „45-60-75-90-75-60-45“
+// (Trenner - / ; oder Leerzeichen; Komma bleibt Dezimalzeichen). Belastungsliste = eine Wiederholung je Wert (Wdh = Anzahl),
+// Pausenliste gilt der Reihe nach für die Pausen dazwischen (kürzere Liste wird wiederholt).
+function cdList(v) {
+  const p = String(v ?? '').trim().split(/\s*[-–/;]\s*|\s+/).filter(x => x !== '');
+  if (p.length < 2) return null;
+  const n = p.map(cdNum);
+  return n.every(x => x != null) ? n : null;
+}
+function cdSecs(v, u) { const l = cdList(v); if (!l) return null; return u === 'min' ? l.map(x => x * 60) : (u === 's' ? l : null); }
+// Belastung je Wiederholung (Werte in Einheit), Pause nach Wiederholung i
+function cdWorkVals(b) { const l = cdList(b.work.v); if (l) return l; const n = cdNum(b.work.v); const reps = Math.max(1, cdNum(b.reps) || 1); return n == null ? null : Array(reps).fill(n); }
+function cdRestAt(b, i) { const l = cdList(b.rest.v); if (l) return l[i % l.length]; return cdNum(b.rest.v); }
+const cdIsSeq = (b) => !!(cdList(b.work.v) || cdList(b.rest.v));
 // Gesamtdauer eines Blocks (s); bei Belastung in Metern ohne Tempo nicht bestimmbar
 function cdBlockSec(b, workSecOverride) {
-  const sets = Math.max(1, cdNum(b.sets) || 1), reps = Math.max(1, cdNum(b.reps) || 1);
+  const sets = Math.max(1, cdNum(b.sets) || 1);
+  const sr = cdSec(b.setRest.v, b.setRest.u) || 0;
+  if (cdIsSeq(b)) {
+    const wv = cdWorkVals(b); if (!wv) return null;
+    const ws = workSecOverride != null ? wv.map(() => workSecOverride) : wv.map(x => cdSec(x, b.work.u));
+    if (ws.some(x => x == null)) return null;
+    let one = 0;
+    ws.forEach((w, i) => { one += w; if (i < ws.length - 1) one += cdSec(cdRestAt(b, i), b.rest.u) || 0; });
+    return sets * one + (sets - 1) * sr;
+  }
+  const reps = Math.max(1, cdNum(b.reps) || 1);
   const w = workSecOverride != null ? workSecOverride : cdSec(b.work.v, b.work.u);
-  const r = cdSec(b.rest.v, b.rest.u) || 0, sr = cdSec(b.setRest.v, b.setRest.u) || 0;
+  const r = cdSec(b.rest.v, b.rest.u) || 0;
   if (w == null) return null;
   return sets * reps * w + sets * (reps - 1) * r + (sets - 1) * sr;
 }
 function cdStructText(b) {
   const sets = cdNum(b.sets) || 1, reps = cdNum(b.reps) || 1;
-  const w = cdFmtVal(b.work.v, b.work.u), r = cdNum(b.rest.v) ? cdFmtVal(b.rest.v, b.rest.u) : '';
-  let t = (reps > 1 ? `${reps} × ${w}` : w) + (r && reps > 1 ? ` / ${r} ${L('Pause', 'rest')}` : '');
+  let t;
+  if (cdIsSeq(b)) {
+    const wv = cdWorkVals(b) || [];
+    const wl = cdList(b.work.v), rl = cdList(b.rest.v);
+    t = (wl ? L('Pyramide ', 'Pyramid ') + wl.map(cdDec).join('-') + ' ' + b.work.u : `${wv.length} × ${cdFmtVal(b.work.v, b.work.u)}`)
+      + (rl ? ` / ${rl.map(cdDec).join('-')} ${b.rest.u} ${L('Pause', 'rest')}` : (cdNum(b.rest.v) ? ` / ${cdFmtVal(b.rest.v, b.rest.u)} ${L('Pause', 'rest')}` : ''));
+  } else {
+    const w = cdFmtVal(b.work.v, b.work.u), r = cdNum(b.rest.v) ? cdFmtVal(b.rest.v, b.rest.u) : '';
+    t = (reps > 1 ? `${reps} × ${w}` : w) + (r && reps > 1 ? ` / ${r} ${L('Pause', 'rest')}` : '');
+  }
   if (sets > 1) t = L(`${sets} Serien à ${t}`, `${sets} sets of ${t}`) + (cdNum(b.setRest.v) ? ` · ${cdFmtVal(b.setRest.v, b.setRest.u)} ${L('Serienpause', 'between sets')}` : '');
   return t;
+}
+// Ablauf Schritt für Schritt (für Athletenansicht): „1. 45 s → 90 s Pause · 2. 60 s → 120 s Pause …“
+function cdSeqSteps(b, metresOf) {
+  if (!cdIsSeq(b)) return null;
+  const wv = cdWorkVals(b); if (!wv) return null;
+  return wv.map((w, i) => ({ n: i + 1, work: `${cdDec(w)} ${b.work.u}`, extra: metresOf ? metresOf(w) : '', rest: i < wv.length - 1 && cdNum(cdRestAt(b, i)) ? `${cdDec(cdRestAt(b, i))} ${b.rest.u}` : '' }));
+}
+function cdSeqHtml(b, p) {
+  // persönliche Strecke je Belastung bei % vIFT
+  let mOf = null;
+  const i = b.int || {}, lo = cdNum(i.min), hi = cdNum(i.max) ?? lo;
+  if (p && i.type === 'vift' && cdNum(p.vift) && (lo ?? hi) != null) {
+    const v1 = p.vift * (lo ?? hi) / 100, v2 = p.vift * hi / 100;
+    mOf = (w) => { const ws = cdSec(w, b.work.u); if (ws == null) return ''; const m1 = Math.round(v1 / 3.6 * ws / 5) * 5, m2 = Math.round(v2 / 3.6 * ws / 5) * 5; return `≈ ${m1}${m2 !== m1 ? '–' + m2 : ''} m`; };
+  }
+  const st = cdSeqSteps(b, mOf); if (!st) return '';
+  return `<ol class="cd-seq">${st.map(x => `<li><b>${esc(x.work)}</b>${x.extra ? ` <span class="muted-inline">${esc(x.extra)}</span>` : ''}${x.rest ? ` <span class="cd-seqrest">&rarr; ${esc(x.rest)} ${L('Pause', 'rest')}</span>` : ''}</li>`).join('')}</ol>`;
 }
 function cdIntText(b) {
   const i = b.int || {}, t = CD_INT[i.type];
@@ -216,8 +265,9 @@ function cdPersonalText(b, p) {
   if (i.type === 'vift' && cdNum(p.vift) && loV != null) {
     const v1 = p.vift * loV / 100, v2 = p.vift * hi / 100;
     out.push(`${cdDec(v1.toFixed(1))}${v2 !== v1 ? '–' + cdDec(v2.toFixed(1)) : ''} km/h`);
-    const ws = cdSec(b.work.v, b.work.u);
-    if (ws != null) { const m1 = Math.round(v1 / 3.6 * ws / 5) * 5, m2 = Math.round(v2 / 3.6 * ws / 5) * 5; out.push(`≈ ${m1}${m2 !== m1 ? '–' + m2 : ''} ${L('m je Belastung', 'm per rep')}`); }
+    const ws = cdIsSeq(b) ? null : cdSec(b.work.v, b.work.u);
+    if (cdList(b.work.v)) out.push(L('Strecke je Belastung siehe Ablauf', 'distance per rep: see steps'));
+    else if (ws != null) { const m1 = Math.round(v1 / 3.6 * ws / 5) * 5, m2 = Math.round(v2 / 3.6 * ws / 5) * 5; out.push(`≈ ${m1}${m2 !== m1 ? '–' + m2 : ''} ${L('m je Belastung', 'm per rep')}`); }
     else if (b.work.u === 'm' && cdNum(b.work.v)) { workSec = cdNum(b.work.v) / (v1 / 3.6); out.push(`≈ ${Math.round(workSec)} s ${L('je', 'per')} ${cdNum(b.work.v)} m`); }
   } else if ((i.type === 'hrmax' || i.type === 'hrzone') && cdNum(p.hr_max) && loV != null) {
     const pr = i.type === 'hrzone' ? [CD_ZONES[Math.round(loV)] ? CD_ZONES[Math.round(loV)][0] : null, CD_ZONES[Math.round(hi)] ? CD_ZONES[Math.round(hi)][1] : null] : [loV, hi];
@@ -535,9 +585,9 @@ async function renderCdEditor(profile, session, ctx) {
         <label class="c6">${L('Inhalt / &Uuml;bung / Ger&auml;t', 'Content / exercise / equipment')}<input type="text" data-k="content" list="cdLib" value="${esc(b.content || '')}" placeholder="${L('z. B. Air Bike, Pendell&auml;ufe 20 m &hellip;', 'e.g. air bike, 20 m shuttles &hellip;')}"></label>
         <label class="c6">${L('Intensit&auml;t', 'Intensity')}<span class="cd-pair"><select data-k="int.type">${CD_INT_TYPES.map(t => `<option value="${t.key}" ${t.key === b.int.type ? 'selected' : ''}>${L(t.de, t.en)}</option>`).join('')}</select>${intInputs(b)}</span></label>
         <label class="c1">${L('Serien', 'Sets')}<input type="text" inputmode="numeric" data-k="sets" value="${esc(b.sets ?? '')}"></label>
-        <label class="c1">${L('Wdh', 'Reps')}<input type="text" inputmode="numeric" data-k="reps" value="${esc(b.reps ?? '')}"></label>
-        <label class="c2">${L('Belastung', 'Work')}<span class="cd-pair"><input type="text" inputmode="decimal" data-k="work.v" value="${esc(b.work.v ?? '')}">${unitSel('work.u', b.work.u, ['s', 'min', 'm'])}</span></label>
-        <label class="c2">${L('Pause', 'Rest')}<span class="cd-pair"><input type="text" inputmode="decimal" data-k="rest.v" value="${esc(b.rest.v ?? '')}">${unitSel('rest.u', b.rest.u, ['s', 'min'])}</span></label>
+        <label class="c1">${L('Wdh', 'Reps')}<input type="text" inputmode="numeric" data-k="reps" value="${esc(cdList(b.work.v) ? cdList(b.work.v).length : (b.reps ?? ''))}" ${cdList(b.work.v) ? `readonly class="cd-auto" title="${L('aus der Pyramide', 'from the pyramid')}"` : ''}></label>
+        <label class="c2">${L('Belastung', 'Work')}<span class="cd-pair"><input type="text" data-k="work.v" value="${esc(b.work.v ?? '')}" title="${L('Pyramide / Einzelzeiten: Werte mit Bindestrich, z. B. 45-60-75-90-75-60-45', 'Pyramid / individual times: values with hyphens, e.g. 45-60-75-90-75-60-45')}">${unitSel('work.u', b.work.u, ['s', 'min', 'm'])}</span></label>
+        <label class="c2">${L('Pause', 'Rest')}<span class="cd-pair"><input type="text" data-k="rest.v" value="${esc(b.rest.v ?? '')}" title="${L('Mehrere Pausen der Reihe nach, z. B. 90-120-90', 'Several rests in order, e.g. 90-120-90')}">${unitSel('rest.u', b.rest.u, ['s', 'min'])}</span></label>
         <label class="c2">${L('Serienpause', 'Set rest')}<span class="cd-pair"><input type="text" inputmode="decimal" data-k="setRest.v" value="${esc(b.setRest.v ?? '')}">${unitSel('setRest.u', b.setRest.u, ['s', 'min'])}</span></label>
         <label class="c4">${L('HF-Kontrolle (% HFmax)', 'HR check (% HRmax)')}<span class="cd-pair"><input type="text" inputmode="numeric" data-k="hr.min" value="${esc(b.hr.min ?? '')}" placeholder="${L('von', 'from')}"> – <input type="text" inputmode="numeric" data-k="hr.max" value="${esc(b.hr.max ?? '')}" placeholder="${L('bis', 'to')}"></span></label>
         <label class="c12">${L('Hinweis', 'Note')}<textarea data-k="note" rows="1" placeholder="${L('z. B. Richtungswechsel alle 20 m, Pause aktiv gehen', 'e.g. change direction every 20 m, walk during rest')}">${esc(b.note || '')}</textarea></label>
@@ -759,7 +809,15 @@ async function renderCdEditor(profile, session, ctx) {
       card.querySelectorAll('[data-k]').forEach(el => {
         const k = el.dataset.k;
         if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-          const upd = () => { setPath(b, k, el.value); dirty = true; refresh(card, b); };
+          const upd = () => {
+            setPath(b, k, el.value); dirty = true;
+            if (k === 'work.v') {   // Pyramide: Wdh = Anzahl Werte
+              const l = cdList(el.value), ri = card.querySelector('[data-k="reps"]');
+              if (l) b.reps = l.length;
+              if (ri) { ri.readOnly = !!l; ri.classList.toggle('cd-auto', !!l); if (l) ri.value = l.length; }
+            }
+            refresh(card, b);
+          };
           el.oninput = upd; el.onchange = upd;
           return;
         }
@@ -976,7 +1034,7 @@ function renderMyCondition(profile, x) {
         const pers = cdPersonalText(b, p);
         return `<div class="card cd-myblock${d.done ? ' done' : ''}" style="--cat:${ph.color}">
           <div class="cd-mytitle"><b>${esc(b.content || cdBLabel(b))}</b><span class="muted-inline">${esc(cdModLabel(b.modality || '', b.modalityEn))}</span></div>
-          <div class="cd-mystruct">${esc(cdStructText(b))}</div>
+          <div class="cd-mystruct">${esc(cdStructText(b))}</div>${cdSeqHtml(b, p)}
           ${cdIntText(b) ? `<div class="cd-myint">${esc(cdIntText(b))}</div>` : ''}
           ${pers.text ? `<div class="cd-mypers">&#127919; ${L('Deine Vorgabe', 'Your target')}: <b>${esc(pers.text)}</b></div>` : ''}
           ${b.note ? `<div class="tpo-note">&#128204; ${esc(b.note)}</div>` : ''}
@@ -1120,7 +1178,7 @@ function renderCdAthleteDetail(profile, s, uid, name, CD, back) {
         const got = [d.hr ? L('&Oslash; Puls ', 'avg HR ') + esc(d.hr) : '', d.dist ? esc(d.dist) + ' m' : '', d.note ? '&#128221; ' + esc(d.note) : ''].filter(Boolean).join(' &middot; ');
         return `<div class="card cd-myblock${d.done ? ' done' : ''}" style="--cat:${ph.color}">
           <div class="cd-mytitle"><b>${esc(b.content || cdBLabel(b))}</b><span class="muted-inline">${d.done ? '&#10003; ' + L('erledigt', 'done') : L('nicht abgehakt', 'not ticked')}</span></div>
-          <div class="cd-mystruct">${esc(cdStructText(b))}</div>
+          <div class="cd-mystruct">${esc(cdStructText(b))}</div>${cdSeqHtml(b, p)}
           ${cdIntText(b) ? `<div class="cd-myint">${esc(cdIntText(b))}</div>` : ''}
           ${pers.text ? `<div class="cd-mypers">&#127919; ${L('Vorgabe', 'Target')}: <b>${esc(pers.text)}</b></div>` : ''}
           ${got ? `<div class="cd-got">${L('Eingetragen', 'Entered')}: ${got}</div>` : ''}
@@ -1302,7 +1360,7 @@ function cdAthletePreview(S, p, name) {
       const pers = cdPersonalText(b, p);
       return `<div class="card cd-myblock" style="--cat:${ph.color}">
         <div class="cd-mytitle"><b>${esc(b.content || cdBLabel(b))}</b><span class="muted-inline">${esc(cdModLabel(b.modality || '', b.modalityEn))}</span></div>
-        <div class="cd-mystruct">${esc(cdStructText(b))}</div>
+        <div class="cd-mystruct">${esc(cdStructText(b))}</div>${cdSeqHtml(b, p)}
         ${cdIntText(b) ? `<div class="cd-myint">${esc(cdIntText(b))}</div>` : ''}
         ${pers.text ? `<div class="cd-mypers">&#127919; ${L('Deine Vorgabe', 'Your target')}: <b>${esc(pers.text)}</b></div>` : ''}
         ${b.note ? `<div class="tpo-note">&#128204; ${esc(b.note)}</div>` : ''}
@@ -1375,9 +1433,11 @@ function cdProgress(content, key) {
     b.id = cdNewId();
     if (b.phase !== 'main' && key !== 'deload') return;           // Warm-Up/Cool-down bleiben gleich
     const n = v => cdNum(v);
-    if (key === 'rep' && n(b.reps)) b.reps = n(b.reps) + 1;
+    if (key === 'rep' && n(b.reps) && !cdList(b.work.v)) b.reps = n(b.reps) + 1;
     if (key === 'set' && n(b.sets)) b.sets = n(b.sets) + 1;
-    if (key === 'work' && n(b.work.v)) b.work.v = Math.round(n(b.work.v) * 1.1 * 10) / 10;
+    if (key === 'work' && cdList(b.work.v)) b.work.v = cdList(b.work.v).map(x => cdDec(Math.round(x * 1.1 * 10) / 10)).join('-');
+    else if (key === 'work' && n(b.work.v)) b.work.v = Math.round(n(b.work.v) * 1.1 * 10) / 10;
+    if (key === 'deload' && cdList(b.work.v)) return;   // Pyramide: Anzahl ergibt sich aus der Liste
     if (key === 'int' && ['vift', 'hrmax', 'hrr', 'watt', 'speed'].includes(b.int.type)) {
       ['min', 'max'].forEach(k => { if (n(b.int[k])) b.int[k] = Math.round(n(b.int[k]) * 1.025 * 10) / 10; });
     }
