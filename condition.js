@@ -93,8 +93,49 @@ const CD_METHODS = [
   { key: 'court', de: 'Court-Shuttles / Suicides', en: 'Court shuttles / suicides', d: { sets: 3, reps: 4, work: [30, 's'], rest: [30, 's'], setRest: [2, 'min'], int: ['rpe', 8, 9] } },
   { key: 'frei', de: 'Frei (eigene Vorgabe)', en: 'Custom', d: { sets: 1, reps: 1, work: [10, 'min'], rest: [0, 's'], setRest: [0, 's'], int: ['rpe', '', ''] } },
 ];
-const CD_METHOD = Object.fromEntries(CD_METHODS.map(m => [m.key, m]));
-const cdMethodLabel = (k, short) => { const m = CD_METHOD[k]; if (!m) return 'Block'; const t = L(m.de, m.en); return short ? t.split(' (')[0] : t; };
+// Szenarien-Bibliothek (Methoden-Vorlagen): Standardliste + eigene Vorlagen, gemeinsam für alle Trainer:innen
+// (Cloud: tp_builder_store „cd_methods“). Eigene Vorlagen speichern zusätzlich Inhalt, HF-Kontrolle und Hinweis.
+// Im Block werden Schlüssel + Name (mDe/mEn) gespeichert, damit gelöschte Vorlagen und die Athletenansicht lesbar bleiben.
+let CD_METHOD_LIST = CD_METHODS.slice();
+let CD_METHOD = Object.fromEntries(CD_METHOD_LIST.map(m => [m.key, m]));
+let CD_METHODS_LOADED = false;
+function cdSetMethods(items) { CD_METHOD_LIST = items; CD_METHOD = Object.fromEntries(items.map(m => [m.key, m])); }
+async function cdLoadMethods(force) {
+  if (CD_METHODS_LOADED && !force) return CD_METHOD_LIST;
+  try {
+    const r = await sb.from('tp_builder_store').select('data').eq('key', 'cd_methods').maybeSingle();
+    if (!r.error && r.data && r.data.data && Array.isArray(r.data.data.items) && r.data.data.items.length) cdSetMethods(r.data.data.items);
+    CD_METHODS_LOADED = true;
+  } catch (e) {}
+  return CD_METHOD_LIST;
+}
+async function cdSaveMethods(items) {
+  const { data: { user } } = await sb.auth.getUser();
+  const r = await sb.from('tp_builder_store').upsert({ key: 'cd_methods', data: { items }, updated_at: new Date().toISOString(), updated_by: user.id });
+  if (!r.error) cdSetMethods(items);
+  return r;
+}
+const cdMethodLabel = (k, short) => { const m = CD_METHOD[k] || CD_METHODS.find(x => x.key === k); if (!m) return 'Block'; const t = L(m.de, m.en || m.de); return short ? t.split(' (')[0] : t; };
+// Bezeichnung eines Blocks: gespeicherter Vorlagenname, sonst aus der Liste
+const cdBLabel = (b, short) => { if (b && b.mDe && !CD_METHOD[b.method]) { const t = L(b.mDe, b.mEn || b.mDe); return short ? t.split(' (')[0] : t; } return cdMethodLabel(b && b.method, short); };
+// Standard-Titel eines Plan-Tages (alte Pläne: „Einheit n“)
+const CD_DEF_TITLE_RE = /^(Woche|Week) \d+ · (Einheit|Session|Tag|Day) \d+$/;
+const cdDefTitle = (w, n) => `${L('Woche', 'Week')} ${w} · ${L('Tag', 'Day')} ${n}`;
+// Vorlage auf einen Block anwenden
+function cdApplyMethod(b, m) {
+  const d = m.d || {};
+  b.method = m.key; b.mDe = m.de; b.mEn = m.en || m.de;
+  Object.assign(b, { sets: d.sets ?? 1, reps: d.reps ?? 1, work: { v: (d.work || [])[0] ?? '', u: (d.work || [])[1] || 'min' }, rest: { v: (d.rest || [])[0] ?? 0, u: (d.rest || [])[1] || 's' },
+    setRest: { v: (d.setRest || [])[0] ?? 0, u: (d.setRest || [])[1] || 's' }, int: { type: (d.int || [])[0] || 'rpe', min: (d.int || [])[1] ?? '', max: (d.int || [])[2] ?? '' } });
+  if (d.hr) b.hr = { min: d.hr[0] ?? '', max: d.hr[1] ?? '' };
+  if (d.content) b.content = d.content;
+  if (d.note) b.note = d.note;
+}
+// Block → Vorlagen-Werte
+function cdBlockToD(b) {
+  return { sets: b.sets, reps: b.reps, work: [b.work.v, b.work.u], rest: [b.rest.v, b.rest.u], setRest: [b.setRest.v, b.setRest.u], int: [b.int.type, b.int.min, b.int.max],
+    hr: [(b.hr || {}).min || '', (b.hr || {}).max || ''], content: b.content || '', note: b.note || '' };
+}
 
 // ---------- Rechenhilfen ----------
 function cdNum(v) { const n = parseFloat(String(v ?? '').replace(',', '.')); return isNaN(n) ? null : n; }
@@ -106,12 +147,14 @@ function cdRange(a, b, u) { const x = String(a ?? '').trim(), y = String(b ?? ''
 function cdNewId() { return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function cdDate(iso, opts) { return iso ? new Date(iso + 'T00:00:00').toLocaleDateString(cdLoc(), opts) : ''; }
 function cdNewBlock(phase, methodKey) {
-  const m = CD_METHOD[methodKey || (phase === 'main' ? 'hiit1515' : 'dauer')] || CD_METHODS[0];
+  const mk = methodKey || (phase === 'main' ? 'hiit1515' : 'dauer');
+  const m = CD_METHOD[mk] || CD_METHODS.find(x => x.key === mk) || CD_METHODS[0];
   const d = m.d;
-  const b = { id: cdNewId(), phase, method: m.key, content: '', modality: (CD_MODS[0] || CD_MOD_DEFAULT[0]).de, modalityEn: (CD_MODS[0] || CD_MOD_DEFAULT[0]).en, sets: d.sets, reps: d.reps,
+  // Sportart/Gerät steht seit 10/2026 im Feld „Inhalt / Übung“ (modality bleibt nur in älteren Blöcken)
+  const b = { id: cdNewId(), phase, method: m.key, mDe: m.de, mEn: m.en, content: '', modality: '', modalityEn: '', sets: d.sets, reps: d.reps,
     work: { v: d.work[0], u: d.work[1] }, rest: { v: d.rest[0], u: d.rest[1] }, setRest: { v: d.setRest[0], u: d.setRest[1] },
     int: { type: d.int[0], min: d.int[1], max: d.int[2] }, hr: { min: '', max: '' }, note: '' };
-  if (phase !== 'main') { b.work = { v: phase === 'warmup' ? 10 : 8, u: 'min' }; b.int = { type: 'hrmax', min: 60, max: 70 }; b.method = 'dauer'; b.sets = 1; b.reps = 1; }
+  if (phase !== 'main') { b.work = { v: phase === 'warmup' ? 10 : 8, u: 'min' }; b.int = { type: 'hrmax', min: 60, max: 70 }; b.method = 'dauer'; b.mDe = CD_METHODS[0].de; b.mEn = CD_METHODS[0].en; b.sets = 1; b.reps = 1; }
   return b;
 }
 // Gesamtdauer eines Blocks (s); bei Belastung in Metern ohne Tempo nicht bestimmbar
@@ -246,7 +289,7 @@ async function renderConditionHub(profile) {
     return `<div class="card cd-card cd-plancard">
       <div class="tpo-head">
         <div><div class="tpo-title">&#128197; ${esc(pl.title || L('Conditioning-Plan', 'Conditioning plan'))}</div>
-          <div class="muted-inline">${pl.for_name ? L('f&uuml;r ', 'for ') + '<b>' + esc(pl.for_name) + '</b> &middot; ' : ''}${pl.weeks} ${L('Wochen', 'weeks')} &times; ${pl.per_week} ${L('Einheiten', 'sessions')}${pl.start_date ? ' &middot; ' + L('ab ', 'from ') + cdDate(pl.start_date) : ''} &middot; ${ss.length}/${pl.weeks * pl.per_week} ${L('geplant', 'planned')}</div></div>
+          <div class="muted-inline">${pl.for_name ? L('f&uuml;r ', 'for ') + '<b>' + esc(pl.for_name) + '</b> &middot; ' : ''}${pl.weeks} ${L('Wochen', 'weeks')} &times; ${pl.per_week} ${L('Tage', 'days')}${pl.start_date ? ' &middot; ' + L('ab ', 'from ') + cdDate(pl.start_date) : ''} &middot; ${ss.length}/${pl.weeks * pl.per_week} ${L('geplant', 'planned')}</div></div>
         <span class="tpo-week">${(pl.members || []).length ? `${L('Woche', 'Week')} ${cw} &middot; ${done} ${L('erledigt', 'done')}` : L('nicht ver&ouml;ffentlicht', 'not published')}</span>
       </div>
       ${(pl.members || []).length ? `<div class="tpo-people">${pl.members.map(u => `<span class="tpo-chip static">${esc(names[u] || '?')}</span>`).join('')}</div>` : ''}
@@ -281,14 +324,15 @@ async function renderConditionHub(profile) {
       <div class="ath-toolbar">
         <div><b>${L('Conditioning-Einheiten', 'Conditioning sessions')}</b> <span class="muted-inline">${L('Ausdauer &amp; Kondition planen, individuell nach vIFT (30-15 IFT) und Herzfrequenz', 'Plan endurance &amp; conditioning, individualised by vIFT (30-15 IFT) and heart rate')}</span></div>
         <span class="spacer"></span>
-        <button type="button" class="secondary" id="cdMods">&#128692; ${L('Sportarten / Ger&auml;te', 'Modalities / equipment')}</button>
+        <button type="button" class="secondary" id="cdTpls">&#128218; ${L('Szenarien / Vorlagen', 'Scenarios / templates')}</button>
+        <button type="button" class="secondary" id="cdMods">&#128692; ${L('Ger&auml;te-Liste', 'Equipment list')}</button>
         <button type="button" class="secondary" id="cdValues">&#128200; ${L('Leistungswerte (vIFT / HFmax)', 'Test values (vIFT / HRmax)')}</button>
         <button type="button" class="secondary" id="cdNewPlan">&#128197; ${L('Neuer Plan', 'New plan')}</button>
         <button type="button" id="cdNew">+ ${L('Neue Einheit', 'New session')}</button>
       </div>
     </div>
     ${plans === null ? `<p class="hint">${L('Conditioning-Pl&auml;ne: Datenbank-Erweiterung fehlt noch (supabase_migration_condition_plan.sql).', 'Conditioning plans: database extension missing (supabase_migration_condition_plan.sql).')}</p>` : ''}
-    ${planCards ? `<h2 class="cd-ov-h">&#128197; ${L('Pl&auml;ne (Wochen &times; Einheiten)', 'Plans (weeks &times; sessions)')}</h2>${planCards}<h2 class="cd-ov-h">${L('Einzelne Einheiten', 'Single sessions')}</h2>` : ''}
+    ${planCards ? `<h2 class="cd-ov-h">&#128197; ${L('Pl&auml;ne (Wochen &times; Tage)', 'Plans (weeks &times; days)')}</h2>${planCards}<h2 class="cd-ov-h">${L('Einzelne Einheiten', 'Single sessions')}</h2>` : ''}
     ${cards || `<div class="card"><p class="muted">${L('Noch keine Conditioning-Einheiten. &bdquo;+ Neue Einheit&ldquo; anklicken.', 'No conditioning sessions yet. Click &ldquo;+ New session&rdquo;.')}</p></div>`}
     ${cdSourcesHtml()}`;
   renderShell(profile, 'trainingsplan', T, content, { label: 'Trainingsplanung', go: () => renderTpHub(profile) });
@@ -306,6 +350,7 @@ async function renderConditionHub(profile) {
   });
   document.getElementById('cdValues').onclick = () => renderCdValues(profile);
   document.getElementById('cdMods').onclick = () => cdModalitiesDialog();
+  document.getElementById('cdTpls').onclick = () => cdMethodsDialog();
   appEl.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => renderCdEditor(profile, (sRes.data || []).find(s => s.id === b.dataset.edit)));
   appEl.querySelectorAll('[data-res]').forEach(b => b.onclick = () => renderCdResults(profile, (sRes.data || []).find(s => s.id === b.dataset.res), names));
   appEl.querySelectorAll('[data-dup]').forEach(b => b.onclick = () => {
@@ -425,21 +470,26 @@ async function renderCdValues(profile) {
 // Editor
 // ============================================================
 async function renderCdEditor(profile, session, ctx) {
-  // ctx (Einheit in einem Plan): { plan, back }
-  const back = { label: ctx ? L('Plan', 'Plan') : 'Conditioning', go: () => { if (!dirty || confirm(L('Ungespeicherte Änderungen verwerfen?', 'Discard unsaved changes?'))) (ctx ? ctx.back() : renderConditionHub(profile)); } };
-  const T = () => session && session.id ? L('Conditioning bearbeiten', 'Edit conditioning') : L('Neue Conditioning-Einheit', 'New conditioning session');
+  // ctx (Tag in einem Plan): { plan, back } – oben Reiter Woche ‹ › und Tag 1, 2, 3 … (+ Tag)
+  const back = { label: ctx ? L('Wochenraster', 'Week grid') : 'Conditioning', go: () => { if (!dirty || confirm(L('Ungespeicherte Änderungen verwerfen?', 'Discard unsaved changes?'))) (ctx ? ctx.back() : renderConditionHub(profile)); } };
+  const T = () => ctx ? (ctx.plan.title || L('Conditioning-Plan', 'Conditioning plan')) : (session && session.id ? L('Conditioning bearbeiten', 'Edit conditioning') : L('Neue Conditioning-Einheit', 'New conditioning session'));
   renderShell(profile, 'trainingsplan', T(), `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`, back);
   const S = session ? JSON.parse(JSON.stringify(session)) : { id: null, title: '', team: '', planned_date: new Date().toISOString().slice(0, 10), content: {} };
   S.content = S.content || {};
   if (!Array.isArray(S.content.blocks) || !S.content.blocks.length) S.content.blocks = [cdNewBlock('warmup'), cdNewBlock('main'), cdNewBlock('cooldown')];
+  if (ctx && !S.content.forName && ctx.plan.for_name) S.content.forName = ctx.plan.for_name;
   let dirty = false;
-  const [mgmt, lib, asg, prof] = await Promise.all([
-    loadAthleteData().catch(() => null).then(async x => { await cdLoadModalities(); return x; }),
+  const [mgmt, lib, asg, prof, pss] = await Promise.all([
+    loadAthleteData().catch(() => null).then(async x => { await Promise.all([cdLoadModalities(), cdLoadMethods()]); return x; }),
     sb.from('tp_builder_store').select('data').eq('key', 'tp_builder_db_v2').maybeSingle(),
     S.id ? sb.from('cd_assignments').select('user_id, active').eq('session_id', S.id) : Promise.resolve({ data: [] }),
     sb.from('profiles').select('id, name, role, permissions').eq('role', 'athlete').order('name'),
+    ctx ? sb.from('cd_sessions').select('*').eq('plan_id', ctx.plan.id) : Promise.resolve({ data: [] }),
   ]);
-  const libNames = ((lib.data && lib.data.data && lib.data.data.conditioning) || []).map(x => x.name).filter(Boolean).sort((a, b) => a.localeCompare(b, 'de'));
+  const planSess = pss.data || [];
+  // Vorschläge für „Inhalt“: Geräte-/Sportartenliste + Conditioning-Bibliothek der Trainingsplanung
+  const modNames = CD_MODS.map(m => CD_LANG === 'en' ? (m.en || m.de) : m.de);
+  const libNames = [...new Set(modNames.concat(((lib.data && lib.data.data && lib.data.data.conditioning) || []).map(x => x.name).filter(Boolean).sort((a, b) => a.localeCompare(b, 'de'))))];
   const athletes = mgmt ? mgmt.athletes : [], groups = mgmt ? mgmt.groups : [];
   const athByProfile = {}; athletes.forEach(a => { if (a.profile_id) athByProfile[a.profile_id] = a; });
   const users = (prof.data || []);
@@ -460,12 +510,21 @@ async function renderCdEditor(profile, session, ctx) {
   const unitSel = (k, v, opts) => `<select data-k="${k}">${opts.map(o => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
   const bsum = (b) => { const sec = cdBlockSec(b); return `${esc(cdStructText(b))}${cdIntText(b) ? ' &middot; ' + esc(cdIntText(b)) : ''} &middot; ${sec != null ? '&asymp; ' + cdFmtDur(sec) : L('Dauer je nach Tempo', 'duration depends on speed')}`; };
   const totHtml = () => { const tot = cdSessionSec(S.content); return `${L('Gesamt', 'Total')} &asymp; <b>${tot.sec ? Math.round(tot.sec / 60) + ' min' : '–'}</b>${tot.unknown ? L(' (+ Bl&ouml;cke nach Strecke)', ' (+ distance-based blocks)') : ''} &middot; ${S.content.blocks.length} ${L('Bl&ouml;cke', 'blocks')}`; };
+  // Vorlagen-Auswahl: Standard + eigene (optgroups); gelöschte Vorlage des Blocks bleibt als Eintrag sichtbar
+  const methodOpts = (b) => {
+    const own = CD_METHOD_LIST.filter(m => /^u_/.test(m.key)), std = CD_METHOD_LIST.filter(m => !/^u_/.test(m.key));
+    const o = m => `<option value="${esc(m.key)}" ${m.key === b.method ? 'selected' : ''}>${esc(L(m.de, m.en || m.de))}</option>`;
+    return (CD_METHOD[b.method] ? '' : `<option value="${esc(b.method || '')}" selected>${esc(cdBLabel(b))}</option>`)
+      + (own.length ? `<optgroup label="${L('Eigene Vorlagen', 'My templates')}">${own.map(o).join('')}</optgroup>` : '')
+      + `<optgroup label="${L('Standard', 'Standard')}">${std.map(o).join('')}</optgroup>`;
+  };
   const blockCard = (b, idx) => {
     const ph = CD_PHASES.find(p => p.key === b.phase) || CD_PHASES[1];
-    const sec = cdBlockSec(b);
     return `<div class="cd-block" data-i="${idx}" style="--cat:${ph.color}">
       <div class="cd-bhead">
-        <select data-k="method" class="cd-method">${CD_METHODS.map(m => `<option value="${m.key}" ${m.key === b.method ? 'selected' : ''}>${esc(L(m.de, m.en))}</option>`).join('')}</select>
+        <select data-k="method" class="cd-method" title="${L('Szenario / Vorlage', 'Scenario / template')}">${methodOpts(b)}</select>
+        <button type="button" class="mini cd-tplsave" data-a="tpl" title="${L('Diesen Block als eigene Vorlage speichern', 'Save this block as my own template')}">&#9734; ${L('Vorlage', 'Template')}</button>
+        <select data-k="phase" class="cd-phsel" title="${L('Phase', 'Phase')}">${CD_PHASES.map(p => `<option value="${p.key}" ${p.key === b.phase ? 'selected' : ''}>${cdPhaseLabel(p)}</option>`).join('')}</select>
         <span class="cd-bsum">${bsum(b)}</span>
         <span class="cd-btools">
           <button type="button" class="mini" data-a="up" title="${L('nach oben', 'move up')}">&uarr;</button><button type="button" class="mini" data-a="down" title="${L('nach unten', 'move down')}">&darr;</button>
@@ -473,17 +532,15 @@ async function renderCdEditor(profile, session, ctx) {
         </span>
       </div>
       <div class="cd-grid">
-        <label class="w2">${L('Inhalt / &Uuml;bung', 'Content / exercise')}<input type="text" data-k="content" list="cdLib" value="${esc(b.content || '')}" placeholder="${L('z. B. Pendell&auml;ufe 20 m, lockeres Einlaufen &hellip;', 'e.g. 20 m shuttles, easy jog &hellip;')}"></label>
-        <label>${L('Sportart / Ger&auml;t', 'Modality / equipment')}<select data-k="modality">${(CD_MODS.some(m => m.de === b.modality) || !b.modality ? '' : `<option value="${esc(b.modality)}" selected>${esc(cdModLabel(b.modality, b.modalityEn))}</option>`) + CD_MODS.map(m => `<option value="${esc(m.de)}" ${m.de === b.modality ? 'selected' : ''}>${esc(CD_LANG === 'en' ? (m.en || m.de) : m.de)}</option>`).join('')}</select></label>
-        <label>${L('Phase', 'Phase')}<select data-k="phase">${CD_PHASES.map(p => `<option value="${p.key}" ${p.key === b.phase ? 'selected' : ''}>${cdPhaseLabel(p)}</option>`).join('')}</select></label>
-        <label>${L('Serien', 'Sets')}<input type="text" inputmode="numeric" data-k="sets" value="${esc(b.sets ?? '')}"></label>
-        <label>${L('Wiederholungen', 'Reps')}<input type="text" inputmode="numeric" data-k="reps" value="${esc(b.reps ?? '')}"></label>
-        <label>${L('Belastung', 'Work')}<span class="cd-pair"><input type="text" inputmode="decimal" data-k="work.v" value="${esc(b.work.v ?? '')}">${unitSel('work.u', b.work.u, ['s', 'min', 'm'])}</span></label>
-        <label>${L('Pause', 'Rest')}<span class="cd-pair"><input type="text" inputmode="decimal" data-k="rest.v" value="${esc(b.rest.v ?? '')}">${unitSel('rest.u', b.rest.u, ['s', 'min'])}</span></label>
-        <label>${L('Serienpause', 'Rest between sets')}<span class="cd-pair"><input type="text" inputmode="decimal" data-k="setRest.v" value="${esc(b.setRest.v ?? '')}">${unitSel('setRest.u', b.setRest.u, ['s', 'min'])}</span></label>
-        <label class="w2">${L('Intensit&auml;t', 'Intensity')}<span class="cd-pair"><select data-k="int.type">${CD_INT_TYPES.map(t => `<option value="${t.key}" ${t.key === b.int.type ? 'selected' : ''}>${L(t.de, t.en)}</option>`).join('')}</select>${intInputs(b)}</span></label>
-        <label>${L('HF-Kontrolle (% HFmax)', 'HR check (% HRmax)')}<span class="cd-pair"><input type="text" inputmode="numeric" data-k="hr.min" value="${esc(b.hr.min ?? '')}" placeholder="${L('von', 'from')}"> – <input type="text" inputmode="numeric" data-k="hr.max" value="${esc(b.hr.max ?? '')}" placeholder="${L('bis', 'to')}"></span></label>
-        <label class="w3">${L('Hinweis', 'Note')}<textarea data-k="note" rows="2" placeholder="${L('z. B. Richtungswechsel alle 20 m, Pause aktiv gehen', 'e.g. change direction every 20 m, walk during rest')}">${esc(b.note || '')}</textarea></label>
+        <label class="c6">${L('Inhalt / &Uuml;bung / Ger&auml;t', 'Content / exercise / equipment')}<input type="text" data-k="content" list="cdLib" value="${esc(b.content || '')}" placeholder="${L('z. B. Air Bike, Pendell&auml;ufe 20 m &hellip;', 'e.g. air bike, 20 m shuttles &hellip;')}"></label>
+        <label class="c6">${L('Intensit&auml;t', 'Intensity')}<span class="cd-pair"><select data-k="int.type">${CD_INT_TYPES.map(t => `<option value="${t.key}" ${t.key === b.int.type ? 'selected' : ''}>${L(t.de, t.en)}</option>`).join('')}</select>${intInputs(b)}</span></label>
+        <label class="c1">${L('Serien', 'Sets')}<input type="text" inputmode="numeric" data-k="sets" value="${esc(b.sets ?? '')}"></label>
+        <label class="c1">${L('Wdh', 'Reps')}<input type="text" inputmode="numeric" data-k="reps" value="${esc(b.reps ?? '')}"></label>
+        <label class="c2">${L('Belastung', 'Work')}<span class="cd-pair"><input type="text" inputmode="decimal" data-k="work.v" value="${esc(b.work.v ?? '')}">${unitSel('work.u', b.work.u, ['s', 'min', 'm'])}</span></label>
+        <label class="c2">${L('Pause', 'Rest')}<span class="cd-pair"><input type="text" inputmode="decimal" data-k="rest.v" value="${esc(b.rest.v ?? '')}">${unitSel('rest.u', b.rest.u, ['s', 'min'])}</span></label>
+        <label class="c2">${L('Serienpause', 'Set rest')}<span class="cd-pair"><input type="text" inputmode="decimal" data-k="setRest.v" value="${esc(b.setRest.v ?? '')}">${unitSel('setRest.u', b.setRest.u, ['s', 'min'])}</span></label>
+        <label class="c4">${L('HF-Kontrolle (% HFmax)', 'HR check (% HRmax)')}<span class="cd-pair"><input type="text" inputmode="numeric" data-k="hr.min" value="${esc(b.hr.min ?? '')}" placeholder="${L('von', 'from')}"> – <input type="text" inputmode="numeric" data-k="hr.max" value="${esc(b.hr.max ?? '')}" placeholder="${L('bis', 'to')}"></span></label>
+        <label class="c12">${L('Hinweis', 'Note')}<textarea data-k="note" rows="1" placeholder="${L('z. B. Richtungswechsel alle 20 m, Pause aktiv gehen', 'e.g. change direction every 20 m, walk during rest')}">${esc(b.note || '')}</textarea></label>
       </div>
     </div>`;
   };
@@ -492,10 +549,72 @@ async function renderCdEditor(profile, session, ctx) {
     const fu = forUser();
     const who = users.filter(u => previewGrp === '__for' ? (fu && u.id === fu.id) : previewGrp === '__pub' ? picked.has(u.id) : (!previewGrp || (athByProfile[u.id] && athByProfile[u.id].groupIds.includes(previewGrp))));
     if (!mains.length) return `<p class="hint">${L('Noch keine Bl&ouml;cke.', 'No blocks yet.')}</p>`;
-    return `<div class="tablewrap"><table class="user-table cd-prev"><thead><tr><th>${L('Athlet:in', 'Athlete')}</th><th>vIFT</th><th>${L('HFmax', 'HRmax')}</th>${mains.map(b => { const ph = CD_PHASES.find(p => p.key === b.phase) || CD_PHASES[1]; return `<th style="border-top:3px solid ${ph.color};"><span class="cd-prevph" style="color:${ph.color}">${cdPhaseLabel(ph)}</span><br>${esc(b.content || cdMethodLabel(b.method, true))}<div class="hint" style="margin:0;">${esc(cdStructText(b))}</div></th>`; }).join('')}<th></th></tr></thead>
+    return `<div class="tablewrap"><table class="user-table cd-prev"><thead><tr><th>${L('Athlet:in', 'Athlete')}</th><th>vIFT</th><th>${L('HFmax', 'HRmax')}</th>${mains.map(b => { const ph = CD_PHASES.find(p => p.key === b.phase) || CD_PHASES[1]; return `<th style="border-top:3px solid ${ph.color};"><span class="cd-prevph" style="color:${ph.color}">${cdPhaseLabel(ph)}</span><br>${esc(b.content || cdBLabel(b, true))}<div class="hint" style="margin:0;">${esc(cdStructText(b))}</div></th>`; }).join('')}<th></th></tr></thead>
       <tbody>${who.map(u => { const a = athByProfile[u.id] || {}; const p = { vift: cdNum(a.vift_kmh), hr_max: a.hr_max, hr_rest: a.hr_rest, age: cdAge(a.birthdate) };
         const hm = p.hr_max || (p.age ? `<span class="muted" title="${L('gesch&auml;tzt nach Tanaka (208 &minus; 0,7 &times; Alter)', 'estimated with Tanaka (208 &minus; 0.7 &times; age)')}">&asymp; ${cdHrMaxEst(p.age)}</span>` : '<span class="muted">–</span>');
         return `<tr><td>${esc(u.name)}</td><td>${p.vift ? cdDec(p.vift) : '<span class="muted">–</span>'}</td><td>${hm}</td>${mains.map(b => { const r = cdPersonalText(b, p); const t = r.text || cdIntText(b); return `<td class="${r.fallback ? 'cd-fb' : ''}">${esc(t) || '<span class="muted">–</span>'}</td>`; }).join('')}<td><button type="button" class="secondary small-btn" data-av="${u.id}">&#128065; ${L('Ansicht', 'View')}</button></td></tr>`; }).join('') || `<tr><td colspan="${4 + mains.length}" class="muted">${L('Keine Athlet:innen mit App-Zugang in der Auswahl.', 'No athletes with an app account in this selection.')}</td></tr>`}</tbody></table></div>`;
+  };
+  // Reiter: Woche ‹ › + Tag 1 … n (+ Tag). Einzel-Einheit: „Tag 1“ + „+ Tag“ macht daraus einen Plan.
+  const tabsHtml = () => {
+    if (!ctx) return `<div class="cd-tabs"><span class="cd-tabs-days"><button type="button" class="cd-tab on">${L('Tag', 'Day')} 1</button>
+      <button type="button" class="cd-tab add" id="cdToPlan" title="${L('Weitere Tage / Wochen planen &ndash; macht aus dieser Einheit einen Plan', 'Plan more days / weeks &ndash; turns this session into a plan')}">+ ${L('Tag', 'Day')}</button></span>
+      <span class="hint" style="margin:0;">${L('Mehrere Tage oder Wochen? &bdquo;+ Tag&ldquo; macht daraus einen Plan, der auf einmal zugewiesen wird.', 'Several days or weeks? &ldquo;+ Day&rdquo; turns this into a plan you assign in one go.')}</span></div>`;
+    const P = ctx.plan, w = S.plan_week;
+    const days = Array.from({ length: P.per_week }, (_, i) => i + 1);
+    const has = n => n === S.plan_slot ? !!S.id : planSess.some(x => x.plan_week === w && x.plan_slot === n);
+    return `<div class="cd-tabs">
+      <span class="cd-wk"><button type="button" class="mini" data-wk="${w - 1}" ${w <= 1 ? 'disabled' : ''} title="${L('vorige Woche', 'previous week')}">&lsaquo;</button>
+        <select id="cdWkSel">${Array.from({ length: P.weeks }, (_, i) => `<option value="${i + 1}" ${i + 1 === w ? 'selected' : ''}>${L('Woche', 'Week')} ${i + 1} / ${P.weeks}</option>`).join('')}</select>
+        <button type="button" class="mini" data-wk="${w + 1}" ${w >= P.weeks ? 'disabled' : ''} title="${L('n&auml;chste Woche', 'next week')}">&rsaquo;</button>
+        ${w >= P.weeks && P.weeks < 26 ? `<button type="button" class="mini cd-addwk" id="cdAddWk" title="${L('Woche anh&auml;ngen', 'add a week')}">+ ${L('Woche', 'Week')}</button>` : ''}</span>
+      <span class="cd-tabs-days">${days.map(n => `<button type="button" class="cd-tab${n === S.plan_slot ? ' on' : ''}${has(n) ? ' has' : ''}" data-day="${n}">${L('Tag', 'Day')} ${n}${has(n) ? ' <i>&#9679;</i>' : ''}</button>`).join('')}
+        ${P.per_week < 7 ? `<button type="button" class="cd-tab add" id="cdAddDay">+ ${L('Tag', 'Day')}</button>` : ''}</span>
+    </div>`;
+  };
+  // zu Woche/Tag wechseln: aktuelle Seite speichern, wenn geändert
+  const goTo = async (w, n) => {
+    if (dirty && !(await save())) return;
+    const P = ctx.plan;
+    let s = w === S.plan_week && n === S.plan_slot ? S : null;
+    if (!s) { const r = await sb.from('cd_sessions').select('*').eq('plan_id', P.id).eq('plan_week', w).eq('plan_slot', n).maybeSingle(); s = r.data || null; }
+    if (!s) s = { id: null, title: cdDefTitle(w, n), team: P.team, planned_date: null, content: { blocks: [cdNewBlock('warmup'), cdNewBlock('main'), cdNewBlock('cooldown')] }, plan_id: P.id, plan_week: w, plan_slot: n };
+    dirty = false;
+    renderCdEditor(profile, s, ctx);
+  };
+  const updPlan = async (patch) => {
+    const r = await sb.from('cd_plans').update(Object.assign({ updated_at: new Date().toISOString() }, patch)).eq('id', ctx.plan.id).select('*').single();
+    if (r.error) { alert(L('Fehler: ', 'Error: ') + r.error.message); return false; }
+    ctx.plan = r.data; return true;
+  };
+  // Einzel-Einheit → Plan (Woche 1 · Tag 1), dann Tag 2 öffnen
+  const toPlan = () => {
+    const host = document.createElement('div');
+    host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:480px;">
+      <h2>&#128197; ${L('Mehrere Tage / Wochen planen', 'Plan several days / weeks')}</h2>
+      <p class="hint" style="margin-top:0;">${L('Diese Einheit wird zu <b>Woche 1 &middot; Tag 1</b> eines Plans. Titel, &bdquo;F&uuml;r wen?&ldquo; und Team gelten f&uuml;r den ganzen Plan; ver&ouml;ffentlicht wird der Plan auf einmal.', 'This session becomes <b>week 1 &middot; day 1</b> of a plan. Title, &ldquo;for whom&rdquo; and team apply to the whole plan; the plan is published in one go.')}</p>
+      <div class="cd-top" style="grid-template-columns:1fr 1fr;">
+        <label>${L('Wochen', 'Weeks')}<input type="number" id="tpW" min="1" max="26" value="1"></label>
+        <label>${L('Tage pro Woche', 'Days per week')}<input type="number" id="tpD" min="2" max="7" value="2"></label>
+        <label style="grid-column:span 2;">${L('Start (optional)', 'Start (optional)')}<input type="date" id="tpS" value="${S.planned_date || ''}"></label>
+      </div>
+      <div class="modal-actions"><span class="spacer"></span><button type="button" class="secondary" id="tpX">${L('Abbrechen', 'Cancel')}</button><button type="button" id="tpGo">${L('Plan anlegen', 'Create plan')}</button></div></div></div>`;
+    document.body.appendChild(host);
+    host.querySelector('#tpX').onclick = () => host.remove();
+    host.querySelector('#tpGo').onclick = async () => {
+      if (!(S.title || '').trim()) { alert(L('Bitte zuerst einen Titel eingeben (wird der Plan-Titel).', 'Please enter a title first (becomes the plan title).')); return; }
+      const btn = host.querySelector('#tpGo'); btn.disabled = true;
+      const { data: { user } } = await sb.auth.getUser();
+      const weeks = Math.max(1, Math.min(26, parseInt(host.querySelector('#tpW').value, 10) || 1)), per = Math.max(2, Math.min(7, parseInt(host.querySelector('#tpD').value, 10) || 2));
+      const r = await sb.from('cd_plans').insert({ created_by: user.id, title: S.title.trim(), team: (S.team || '').trim() || null, for_name: (S.content.forName || '').trim() || null,
+        start_date: host.querySelector('#tpS').value || null, weeks, per_week: per, members: [...picked], note: null }).select('*').single();
+      if (r.error) { alert(L('Fehler: ', 'Error: ') + r.error.message + (/cd_plans|relation/.test(r.error.message) ? '\n' + L('Datenbank-Erweiterung fehlt (supabase_migration_condition_plan.sql).', 'Database extension missing (supabase_migration_condition_plan.sql).') : '')); btn.disabled = false; return; }
+      const P = r.data;
+      ctx = { plan: P, back: () => renderCdPlan(profile, P.id) };
+      Object.assign(S, { plan_id: P.id, plan_week: 1, plan_slot: 1, title: cdDefTitle(1, 1), planned_date: null });
+      if (!(await save())) { btn.disabled = false; return; }
+      host.remove(); toast(L('Plan angelegt – weiter mit Tag 2.', 'Plan created – continue with day 2.'));
+      goTo(1, 2);
+    };
   };
   const draw = () => {
     const tot = cdSessionSec(S.content);
@@ -507,12 +626,14 @@ async function renderCdEditor(profile, session, ctx) {
     const html = `
       ${cdLangBar()}
       <datalist id="cdLib">${libNames.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+      ${tabsHtml()}
       <div class="card">
         <div class="cd-top">
-          <label class="w2">${L('Titel', 'Title')}<input type="text" id="cdTitle" value="${esc(S.title || '')}" placeholder="${L('z. B. HIIT 15/15 &ndash; Vorbereitung', 'e.g. HIIT 15/15 &ndash; pre-season')}"></label>
+          ${ctx ? `<label class="w2">${L('Bezeichnung des Tages (optional)', 'Name of this day (optional)')}<input type="text" id="cdTitle" value="${esc(CD_DEF_TITLE_RE.test(S.title || '') ? '' : (S.title || ''))}" placeholder="${L('z. B. Air Bike Intervalle', 'e.g. air bike intervals')}"></label>`
+          : `<label class="w2">${L('Titel', 'Title')}<input type="text" id="cdTitle" value="${esc(S.title || '')}" placeholder="${L('z. B. HIIT 15/15 &ndash; Vorbereitung', 'e.g. HIIT 15/15 &ndash; pre-season')}"></label>
           <label>${L('Datum', 'Date')}<input type="date" id="cdDate" value="${S.planned_date || ''}"></label>
           <label>${L('Team / Gruppe', 'Team / group')}<input type="text" id="cdTeam" list="cdTeams" value="${esc(S.team || '')}"><datalist id="cdTeams">${teamGroups.map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>
-          <label class="w2">${L('F&uuml;r wen?', 'For whom?')}<input type="text" id="cdFor" list="cdAthNames" value="${esc(S.content.forName || '')}" placeholder="${L('Name der Athletin / des Athleten (optional)', 'Athlete name (optional)')}"><datalist id="cdAthNames">${athNames.map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>
+          <label class="w2">${L('F&uuml;r wen?', 'For whom?')}<input type="text" id="cdFor" list="cdAthNames" value="${esc(S.content.forName || '')}" placeholder="${L('Name der Athletin / des Athleten (optional)', 'Athlete name (optional)')}"><datalist id="cdAthNames">${athNames.map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>`}
           <label class="w2">${L('Hinweis f&uuml;r alle', 'Note for everyone')}<input type="text" id="cdNote" value="${esc(S.content.note || '')}" placeholder="${L('z. B. Pulsgurt anlegen, Trinkflasche mitbringen', 'e.g. wear HR strap, bring a water bottle')}"></label>
         </div>
         <div class="cd-total">${totHtml()}</div>
@@ -528,7 +649,8 @@ async function renderCdEditor(profile, session, ctx) {
       </div>
       <div class="cd-savebar">
         <button type="button" class="secondary" id="cdSave">&#128190; ${L('Speichern', 'Save')}</button>
-        ${ctx ? `<span class="hint" style="align-self:center;margin:0;">${L('Teil des Plans', 'Part of plan')} &bdquo;${esc(ctx.plan.title || '')}&ldquo; &middot; ${L('Woche', 'Week')} ${S.plan_week} &middot; ${L('Einheit', 'Session')} ${S.plan_slot}${(ctx.plan.members || []).length ? ' &middot; ' + L('automatisch f&uuml;r die Plan-Teilnehmer:innen sichtbar', 'automatically visible to plan members') : ''}</span>` : `<button type="button" id="cdPub">&#128242; ${L('In App ver&ouml;ffentlichen', 'Publish to app')}${picked.size ? ' (' + picked.size + ')' : ''}</button>`}
+        ${ctx ? `<span class="hint" style="align-self:center;margin:0;">${L('Woche', 'Week')} ${S.plan_week} &middot; ${L('Tag', 'Day')} ${S.plan_slot}${(ctx.plan.members || []).length ? ' &middot; ' + L('automatisch f&uuml;r die Plan-Teilnehmer:innen sichtbar', 'automatically visible to plan members') : ''}</span>
+          <button type="button" id="cdPlanPub">&#128242; ${L('Plan ver&ouml;ffentlichen', 'Publish plan')}${(ctx.plan.members || []).length ? ' (' + ctx.plan.members.length + ')' : ''}</button>` : `<button type="button" id="cdPub">&#128242; ${L('In App ver&ouml;ffentlichen', 'Publish to app')}${picked.size ? ' (' + picked.size + ')' : ''}</button>`}
       </div>`;
     renderShell(profile, 'trainingsplan', T(), html, back);
     cdWireLang(draw);
@@ -546,11 +668,35 @@ async function renderCdEditor(profile, session, ctx) {
   });
   const setPath = (o, k, v) => { const p = k.split('.'); if (p.length === 2) o[p[0]][p[1]] = v; else o[k] = v; };
   const wire = () => {
-    const top = (id, f) => { const el = document.getElementById(id); el.oninput = () => { f(el.value); dirty = true; }; };
+    const top = (id, f) => { const el = document.getElementById(id); if (el) el.oninput = () => { f(el.value); dirty = true; }; };
     top('cdTitle', v => S.title = v); top('cdDate', v => S.planned_date = v || null); top('cdTeam', v => S.team = v); top('cdNote', v => S.content.note = v);
     const fe = document.getElementById('cdFor');
-    fe.oninput = () => { S.content.forName = fe.value.trim(); dirty = true; };
-    fe.onchange = () => { S.content.forName = fe.value.trim(); previewGrp = forUser() ? '__for' : (previewGrp === '__for' ? '' : previewGrp); draw(); };
+    if (fe) {
+      fe.oninput = () => { S.content.forName = fe.value.trim(); dirty = true; };
+      fe.onchange = () => { S.content.forName = fe.value.trim(); previewGrp = forUser() ? '__for' : (previewGrp === '__for' ? '' : previewGrp); draw(); };
+    }
+    // Reiter
+    const tp = document.getElementById('cdToPlan'); if (tp) tp.onclick = toPlan;
+    appEl.querySelectorAll('[data-day]').forEach(b => b.onclick = () => { const n = +b.dataset.day; if (n !== S.plan_slot) goTo(S.plan_week, n); });
+    appEl.querySelectorAll('[data-wk]').forEach(b => b.onclick = () => goTo(+b.dataset.wk, S.plan_slot));
+    const ws = document.getElementById('cdWkSel'); if (ws) ws.onchange = () => goTo(+ws.value, S.plan_slot);
+    const ad = document.getElementById('cdAddDay'); if (ad) ad.onclick = async () => { if (await updPlan({ per_week: ctx.plan.per_week + 1 })) goTo(S.plan_week, ctx.plan.per_week); };
+    const aw = document.getElementById('cdAddWk'); if (aw) aw.onclick = async () => {
+      // neue Woche: optional die aktuelle Woche hineinkopieren
+      if (dirty && !(await save())) return;
+      if (!(await updPlan({ weeks: ctx.plan.weeks + 1 }))) return;
+      const nw = ctx.plan.weeks;
+      const src = (await sb.from('cd_sessions').select('*').eq('plan_id', ctx.plan.id).eq('plan_week', S.plan_week)).data || [];
+      if (src.length && confirm(L('Woche ' + nw + ' angelegt. Die Tage von Woche ' + S.plan_week + ' hineinkopieren?', 'Week ' + nw + ' added. Copy the days of week ' + S.plan_week + ' into it?'))) {
+        const { data: { user } } = await sb.auth.getUser();
+        const rows = src.map(x => ({ title: CD_DEF_TITLE_RE.test(x.title || '') ? cdDefTitle(nw, x.plan_slot) : x.title, team: x.team, planned_date: null, content: cdProgress(x.content, 'none'), plan_id: ctx.plan.id, plan_week: nw, plan_slot: x.plan_slot, created_by: user.id }));
+        const r = await sb.from('cd_sessions').insert(rows).select('id');
+        if (r.error) alert(L('Fehler: ', 'Error: ') + r.error.message);
+        else if ((ctx.plan.members || []).length) await cdAssignSessions(r.data.map(x => x.id), ctx.plan.members, athByProfile);
+      }
+      dirty = false; goTo(nw, S.plan_slot);
+    };
+    const pp = document.getElementById('cdPlanPub'); if (pp) pp.onclick = async () => { if (dirty && !(await save())) return; renderCdPlan(profile, ctx.plan.id, { publish: true }); };
     document.getElementById('cdPrevGrp').onchange = e => { previewGrp = e.target.value; draw(); };
     wirePreview();
     appEl.querySelectorAll('[data-add]').forEach(b => b.onclick = () => { S.content.blocks.push(cdNewBlock(b.dataset.add)); dirty = true; draw(); });
@@ -566,8 +712,8 @@ async function renderCdEditor(profile, session, ctx) {
         el.onchange = () => {
           dirty = true;
           if (k === 'method') {
-            const m = CD_METHOD[el.value]; b.method = el.value;
-            if (m) { const d = m.d; Object.assign(b, { sets: d.sets, reps: d.reps, work: { v: d.work[0], u: d.work[1] }, rest: { v: d.rest[0], u: d.rest[1] }, setRest: { v: d.setRest[0], u: d.setRest[1] }, int: { type: d.int[0], min: d.int[1], max: d.int[2] } }); }
+            const m = CD_METHOD[el.value];
+            if (m) cdApplyMethod(b, m); else b.method = el.value;
             draw(); return;
           }
           setPath(b, k, el.value);
@@ -578,6 +724,7 @@ async function renderCdEditor(profile, session, ctx) {
       });
       card.querySelectorAll('[data-a]').forEach(btn => btn.onclick = () => {
         const a = btn.dataset.a, arr = S.content.blocks;
+        if (a === 'tpl') { cdSaveBlockAsTemplate(b, () => { dirty = true; draw(); }); return; }
         if (a === 'del') { if (!confirm(L('Block löschen?', 'Delete block?'))) return; arr.splice(i, 1); }
         else if (a === 'dup') { const c = JSON.parse(JSON.stringify(b)); c.id = cdNewId(); arr.splice(i + 1, 0, c); }
         else {
@@ -594,8 +741,10 @@ async function renderCdEditor(profile, session, ctx) {
     const pub = document.getElementById('cdPub'); if (pub) pub.onclick = () => publishDialog();
   };
   const save = async () => {
+    if (ctx && !(S.title || '').trim()) S.title = cdDefTitle(S.plan_week, S.plan_slot);
     if (!(S.title || '').trim()) { alert(L('Bitte einen Titel eingeben.', 'Please enter a title.')); return false; }
     const { data: { user } } = await sb.auth.getUser();
+    if (ctx && !S.team && ctx.plan.team) S.team = ctx.plan.team;
     const row = { title: S.title.trim(), team: (S.team || '').trim() || null, planned_date: S.planned_date || null, content: S.content, updated_at: new Date().toISOString() };
     if (S.plan_id) Object.assign(row, { plan_id: S.plan_id, plan_week: S.plan_week, plan_slot: S.plan_slot });
     let r;
@@ -666,7 +815,7 @@ async function renderCdResults(profile, s, names, backOverride) {
       const l = (lRes.data || []).find(x => x.user_id === a.user_id);
       const bd = (l && l.data && l.data.blocks) || {};
       const done = blocks.filter(b => bd[b.id] && bd[b.id].done).length;
-      const extras = blocks.map(b => { const x = bd[b.id]; if (!x) return ''; const t = [x.hr ? '&Oslash; ' + esc(x.hr) + ' bpm' : '', x.dist ? esc(x.dist) + ' m' : '', x.note ? esc(x.note) : ''].filter(Boolean).join(' · '); return t ? `<div class="hint" style="margin:0;"><b>${esc(cdMethodLabel(b.method, true))}:</b> ${t}</div>` : ''; }).join('');
+      const extras = blocks.map(b => { const x = bd[b.id]; if (!x) return ''; const t = [x.hr ? '&Oslash; ' + esc(x.hr) + ' bpm' : '', x.dist ? esc(x.dist) + ' m' : '', x.note ? esc(x.note) : ''].filter(Boolean).join(' · '); return t ? `<div class="hint" style="margin:0;"><b>${esc(cdBLabel(b, true))}:</b> ${t}</div>` : ''; }).join('');
       return `<tr><td>${esc(names[a.user_id] || '?')}</td>
         <td>${l && l.completed ? `<span class="status-pill ok">${L('erledigt', 'done')}</span>` : (l ? `<span class="status-pill half">${L('angefangen', 'started')}</span>` : `<span class="status-pill open">${L('offen', 'open')}</span>`)}</td>
         <td>${done}/${blocks.length}</td><td>${l && l.srpe ? l.srpe : '–'}</td><td>${l && l.duration_min ? l.duration_min + ' min' : '–'}</td>
@@ -708,9 +857,9 @@ function cdMyListHtml(list) {
     const pItem = x => {
       const dur = cdSessionSec(x.s.content || {});
       const st = x.log && x.log.completed ? '&#10003;' : (x.log ? '&#9680;' : '');
-      const main = ((x.s.content || {}).blocks || []).filter(b => b.phase === 'main').map(b => b.content || cdMethodLabel(b.method, true)).join(' + ');
+      const main = ((x.s.content || {}).blocks || []).filter(b => b.phase === 'main').map(b => b.content || cdBLabel(b, true)).join(' + ');
       return `<button type="button" class="cd-mine${x.log && x.log.completed ? ' done' : ''}" data-cd="${x.s.id}">
-        <span><b>${L('Einheit', 'Session')} ${x.s.plan_slot}${main ? ' &middot; ' + esc(main) : ''}</b><span class="muted-inline">${dur.sec ? '&asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}</span></span><span class="cd-st">${st}</span></button>`;
+        <span><b>${L('Tag', 'Day')} ${x.s.plan_slot}${x.s.title && !CD_DEF_TITLE_RE.test(x.s.title) ? ' &middot; ' + esc(x.s.title) : (main ? ' &middot; ' + esc(main) : '')}</b><span class="muted-inline">${dur.sec ? '&asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}</span></span><span class="cd-st">${st}</span></button>`;
     };
     const weekList = w => mine.filter(x => x.s.plan_week === w);
     const thisW = weekList(cw), doneW = thisW.filter(x => x.log && x.log.completed).length;
@@ -772,7 +921,7 @@ function renderMyCondition(profile, x) {
         const d = data.blocks[b.id] || {};
         const pers = cdPersonalText(b, p);
         return `<div class="card cd-myblock${d.done ? ' done' : ''}" style="--cat:${ph.color}">
-          <div class="cd-mytitle"><b>${esc(b.content || cdMethodLabel(b.method))}</b><span class="muted-inline">${esc(cdModLabel(b.modality || '', b.modalityEn))}</span></div>
+          <div class="cd-mytitle"><b>${esc(b.content || cdBLabel(b))}</b><span class="muted-inline">${esc(cdModLabel(b.modality || '', b.modalityEn))}</span></div>
           <div class="cd-mystruct">${esc(cdStructText(b))}</div>
           ${cdIntText(b) ? `<div class="cd-myint">${esc(cdIntText(b))}</div>` : ''}
           ${pers.text ? `<div class="cd-mypers">&#127919; ${L('Deine Vorgabe', 'Your target')}: <b>${esc(pers.text)}</b></div>` : ''}
@@ -791,7 +940,7 @@ function renderMyCondition(profile, x) {
       ${cdLangBar()}
       <div class="card mp-sesshead" style="--lay-main:#1f9d55;--lay-dark:#157a42;--lay-accent:#a1d7ff;">
         <div><div class="mp-kicker">Conditioning${s.planned_date ? ' &middot; ' + cdDate(s.planned_date, { weekday: 'long', day: '2-digit', month: '2-digit' }) : ''}</div>
-        <div class="mp-big">${esc(x.plan ? `${x.plan.title} · ${L('Woche', 'Week')} ${s.plan_week} · ${L('Einheit', 'Session')} ${s.plan_slot}` : (s.title || 'Conditioning'))}</div>
+        <div class="mp-big">${esc(x.plan ? `${x.plan.title} · ${L('Woche', 'Week')} ${s.plan_week} · ${L('Tag', 'Day')} ${s.plan_slot}${s.title && !CD_DEF_TITLE_RE.test(s.title) ? ' · ' + s.title : ''}` : (s.title || 'Conditioning'))}</div>
         ${s.content && s.content.forName ? `<div class="muted-inline">${L('f&uuml;r', 'for')} ${esc(s.content.forName)}</div>` : ''}
         <div class="muted-inline">${dur.sec ? '&asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}${x.log && x.log.completed ? ' &middot; ' + L('abgeschlossen', 'completed') : ''}</div></div>
       </div>
@@ -916,7 +1065,7 @@ function renderCdAthleteDetail(profile, s, uid, name, CD, back) {
         const d = bd[b.id] || {}, pers = cdPersonalText(b, p);
         const got = [d.hr ? L('&Oslash; Puls ', 'avg HR ') + esc(d.hr) : '', d.dist ? esc(d.dist) + ' m' : '', d.note ? '&#128221; ' + esc(d.note) : ''].filter(Boolean).join(' &middot; ');
         return `<div class="card cd-myblock${d.done ? ' done' : ''}" style="--cat:${ph.color}">
-          <div class="cd-mytitle"><b>${esc(b.content || cdMethodLabel(b.method))}</b><span class="muted-inline">${d.done ? '&#10003; ' + L('erledigt', 'done') : L('nicht abgehakt', 'not ticked')}</span></div>
+          <div class="cd-mytitle"><b>${esc(b.content || cdBLabel(b))}</b><span class="muted-inline">${d.done ? '&#10003; ' + L('erledigt', 'done') : L('nicht abgehakt', 'not ticked')}</span></div>
           <div class="cd-mystruct">${esc(cdStructText(b))}</div>
           ${cdIntText(b) ? `<div class="cd-myint">${esc(cdIntText(b))}</div>` : ''}
           ${pers.text ? `<div class="cd-mypers">&#127919; ${L('Vorgabe', 'Target')}: <b>${esc(pers.text)}</b></div>` : ''}
@@ -960,7 +1109,7 @@ function cdAthleteListHtml(CD, uid) {
   return `<div class="card"><h2>&#9201;&#65039; Conditioning</h2><div class="tablewrap"><table class="tp-table">
     <thead><tr><th>Einheit</th><th>Datum</th><th></th><th>Bl&ouml;cke</th><th>sRPE</th><th>Notizen</th></tr></thead>
     <tbody>${rows.map(x => { const blocks = (x.s.content && x.s.content.blocks) || [], bd = (x.l && x.l.data && x.l.data.blocks) || {};
-      const notes = blocks.map(b => { const d = bd[b.id]; return d && (d.hr || d.dist || d.note) ? `<li><b>${esc(cdMethodLabel(b.method, true))}:</b> ${[d.hr ? '&Oslash; ' + esc(d.hr) + ' bpm' : '', d.dist ? esc(d.dist) + ' m' : '', d.note ? esc(d.note) : ''].filter(Boolean).join(' · ')}</li>` : ''; }).join('') + (x.l && x.l.data && x.l.data.note ? `<li>&#128221; ${esc(x.l.data.note)}</li>` : '');
+      const notes = blocks.map(b => { const d = bd[b.id]; return d && (d.hr || d.dist || d.note) ? `<li><b>${esc(cdBLabel(b, true))}:</b> ${[d.hr ? '&Oslash; ' + esc(d.hr) + ' bpm' : '', d.dist ? esc(d.dist) + ' m' : '', d.note ? esc(d.note) : ''].filter(Boolean).join(' · ')}</li>` : ''; }).join('') + (x.l && x.l.data && x.l.data.note ? `<li>&#128221; ${esc(x.l.data.note)}</li>` : '');
       return `<tr class="tp-row" data-cds="${x.s.id}" data-cdu="${uid}"><td>${esc(cdSessLabel(x.s, CD.plans))}</td><td>${x.s.planned_date ? cdDate(x.s.planned_date) : '–'}</td><td>${cdStatusIcon(cdStatusOf(x.l))}</td>
         <td>${blocks.filter(b => bd[b.id] && bd[b.id].done).length}/${blocks.length}</td><td>${x.l && x.l.srpe ? `${x.l.srpe} &times; ${x.l.duration_min} min = ${cdAU(x.l)}` : '–'}</td><td><ul class="tp-ul">${notes}</ul></td></tr>`; }).join('')}</tbody>
   </table></div><p class="hint">Zeile anklicken f&uuml;r Vorgaben und Eintragungen je Block.</p></div>`;
@@ -973,8 +1122,8 @@ async function cdModalitiesDialog() {
   const host = document.createElement('div');
   const render = () => {
     host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:620px;">
-      <h2>&#128692; ${L('Sportarten / Ger&auml;te', 'Modalities / equipment')}</h2>
-      <p class="hint" style="margin-top:0;">${L('Gilt f&uuml;r alle Methoden und Phasen, f&uuml;r alle Trainer:innen. Gel&ouml;schte Eintr&auml;ge bleiben in bestehenden Einheiten erhalten.', 'Applies to all methods and phases, for all coaches. Deleted entries stay in existing sessions.')}</p>
+      <h2>&#128692; ${L('Ger&auml;te-Liste', 'Equipment list')}</h2>
+      <p class="hint" style="margin-top:0;">${L('Vorschl&auml;ge f&uuml;r das Feld &bdquo;Inhalt / &Uuml;bung / Ger&auml;t&ldquo; in jedem Block, f&uuml;r alle Trainer:innen. Gel&ouml;schte Eintr&auml;ge bleiben in bestehenden Einheiten erhalten.', 'Suggestions for the &ldquo;Content / exercise / equipment&rdquo; field in each block, for all coaches. Deleted entries stay in existing sessions.')}</p>
       <div class="cd-modlist">${items.map((m, i) => `<div class="cd-modrow" data-i="${i}">
         <input type="text" data-f="de" value="${esc(m.de)}" placeholder="Deutsch">
         <input type="text" data-f="en" value="${esc(m.en || '')}" placeholder="English">
@@ -1015,6 +1164,79 @@ async function cdModalitiesDialog() {
   document.body.appendChild(host); render();
 }
 
+// ---------- Szenarien-Bibliothek: eigene Vorlagen (z. B. Air-Bike-Intervalle) ----------
+// Block im Editor → „☆ Vorlage“: Name eingeben, Werte des Blocks werden als eigene Vorlage gespeichert (oder eine gleichnamige überschrieben)
+async function cdSaveBlockAsTemplate(b, done) {
+  await cdLoadMethods(true);
+  const def = (b.content ? b.content + ' – ' : '') + cdStructText(b);
+  const name = prompt(L('Name der Vorlage (erscheint in der Auswahl unter „Eigene Vorlagen“):', 'Template name (shown under “My templates”):'), def);
+  if (!name || !name.trim()) return;
+  const items = JSON.parse(JSON.stringify(CD_METHOD_LIST));
+  const ex = items.find(m => /^u_/.test(m.key) && (m.de.toLowerCase() === name.trim().toLowerCase() || (m.en || '').toLowerCase() === name.trim().toLowerCase()));
+  if (ex && !confirm(L('Vorlage „' + ex.de + '“ gibt es schon – überschreiben?', 'Template “' + ex.de + '” exists – overwrite?'))) return;
+  let m = ex;
+  if (!m) { m = { key: 'u_' + Date.now().toString(36), de: name.trim(), en: name.trim() }; items.unshift(m); }
+  m.d = cdBlockToD(b);
+  const r = await cdSaveMethods(items);
+  if (r.error) { alert(L('Speichern fehlgeschlagen: ', 'Saving failed: ') + r.error.message); return; }
+  b.method = m.key; b.mDe = m.de; b.mEn = m.en;
+  toast(L('Vorlage gespeichert.', 'Template saved.'));
+  if (done) done();
+}
+// Verwalten: Name DE/EN, Werte, Reihenfolge, löschen, neu, Standard wiederherstellen
+async function cdMethodsDialog() {
+  await cdLoadMethods(true);
+  let items = JSON.parse(JSON.stringify(CD_METHOD_LIST));
+  items.forEach(m => { m.d = Object.assign({ sets: 1, reps: 1, work: ['', 'min'], rest: [0, 's'], setRest: [0, 's'], int: ['rpe', '', ''], hr: ['', ''], content: '', note: '' }, m.d || {}); });
+  const host = document.createElement('div');
+  const uSel = (i, f, v, opts) => `<select data-i="${i}" data-f="${f}">${opts.map(o => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+  const render = () => {
+    host.innerHTML = `<div class="modal-scrim"><div class="modal cd-tplmodal">
+      <h2>&#128218; ${L('Szenarien / Vorlagen', 'Scenarios / templates')}</h2>
+      <p class="hint" style="margin-top:0;">${L('Erscheinen im Block oben links in der Auswahl. Beim Ausw&auml;hlen werden die Werte in den Block &uuml;bernommen (danach frei &auml;nderbar). Am schnellsten: im Editor einen Block einstellen und &bdquo;&#9734; Vorlage&ldquo; dr&uuml;cken. Gilt f&uuml;r alle Trainer:innen.', 'Shown in the selector at the top left of each block. Selecting one copies its values into the block (editable afterwards). Quickest: set up a block in the editor and press &ldquo;&#9734; Template&rdquo;. Shared by all coaches.')}</p>
+      <div class="tablewrap cd-tplwrap"><table class="cd-tpltab"><thead><tr>
+        <th>${L('Name (DE)', 'Name (DE)')}</th><th>${L('Name (EN)', 'Name (EN)')}</th><th>${L('Inhalt / Ger&auml;t', 'Content / equipment')}</th><th>${L('Serien', 'Sets')}</th><th>${L('Wdh', 'Reps')}</th><th>${L('Belastung', 'Work')}</th><th>${L('Pause', 'Rest')}</th><th>${L('Serienp.', 'Set rest')}</th><th>${L('Intensit&auml;t', 'Intensity')}</th><th></th></tr></thead>
+        <tbody>${items.map((m, i) => `<tr class="${/^u_/.test(m.key) ? 'own' : ''}">
+          <td><input data-i="${i}" data-f="de" value="${esc(m.de)}"></td><td><input data-i="${i}" data-f="en" value="${esc(m.en || '')}"></td>
+          <td><input data-i="${i}" data-f="d.content" value="${esc(m.d.content || '')}" list="cdTplMods"></td>
+          <td><input class="n" data-i="${i}" data-f="d.sets" value="${esc(m.d.sets ?? '')}"></td><td><input class="n" data-i="${i}" data-f="d.reps" value="${esc(m.d.reps ?? '')}"></td>
+          <td class="pr"><input class="n" data-i="${i}" data-f="d.work.0" value="${esc(m.d.work[0] ?? '')}">${uSel(i, 'd.work.1', m.d.work[1], ['s', 'min', 'm'])}</td>
+          <td class="pr"><input class="n" data-i="${i}" data-f="d.rest.0" value="${esc(m.d.rest[0] ?? '')}">${uSel(i, 'd.rest.1', m.d.rest[1], ['s', 'min'])}</td>
+          <td class="pr"><input class="n" data-i="${i}" data-f="d.setRest.0" value="${esc(m.d.setRest[0] ?? '')}">${uSel(i, 'd.setRest.1', m.d.setRest[1], ['s', 'min'])}</td>
+          <td class="pr"><select data-i="${i}" data-f="d.int.0">${CD_INT_TYPES.map(t => `<option value="${t.key}" ${t.key === m.d.int[0] ? 'selected' : ''}>${L(t.de, t.en)}</option>`).join('')}</select><input class="n" data-i="${i}" data-f="d.int.1" value="${esc(m.d.int[1] ?? '')}"><input class="n" data-i="${i}" data-f="d.int.2" value="${esc(m.d.int[2] ?? '')}"></td>
+          <td class="pr"><button type="button" class="mini" data-a="up" data-i="${i}">&uarr;</button><button type="button" class="mini" data-a="down" data-i="${i}">&darr;</button><button type="button" class="mini danger" data-a="del" data-i="${i}">&times;</button></td></tr>`).join('')}</tbody></table></div>
+      <datalist id="cdTplMods">${CD_MODS.map(m => `<option value="${esc(CD_LANG === 'en' ? (m.en || m.de) : m.de)}">`).join('')}</datalist>
+      <div class="modal-actions"><button type="button" class="secondary small-btn" id="cdtNew">+ ${L('Neue Vorlage', 'New template')}</button><button type="button" class="secondary small-btn" id="cdtReset">${L('Standard wiederherstellen', 'Restore defaults')}</button><span class="spacer"></span>
+        <button type="button" class="secondary" id="cdtX">${L('Abbrechen', 'Cancel')}</button><button type="button" id="cdtSave">${L('Speichern', 'Save')}</button></div>
+    </div></div>`;
+    host.querySelectorAll('[data-f]').forEach(el => {
+      const set = () => {
+        const m = items[+el.dataset.i], p = el.dataset.f.split('.');
+        if (p[0] !== 'd') { m[p[0]] = el.value; return; }
+        if (p.length === 2) m.d[p[1]] = el.value; else m.d[p[1]][+p[2]] = el.value;
+      };
+      el.oninput = set; el.onchange = set;
+    });
+    host.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
+      const i = +b.dataset.i, a = b.dataset.a;
+      if (a === 'del') { if (!confirm(L('Vorlage „' + items[i].de + '“ löschen? Bestehende Blöcke behalten ihre Werte.', 'Delete template “' + items[i].de + '”? Existing blocks keep their values.'))) return; items.splice(i, 1); }
+      else { const j = i + (a === 'up' ? -1 : 1); if (j < 0 || j >= items.length) return; [items[i], items[j]] = [items[j], items[i]]; }
+      render();
+    });
+    host.querySelector('#cdtNew').onclick = () => { items.unshift({ key: 'u_' + Date.now().toString(36), de: L('Neue Vorlage', 'New template'), en: 'New template', d: { sets: 1, reps: 6, work: [30, 's'], rest: [30, 's'], setRest: [0, 's'], int: ['rpe', 7, 8], hr: ['', ''], content: '', note: '' } }); render(); const f = host.querySelector('input[data-f="de"]'); f.focus(); f.select(); };
+    host.querySelector('#cdtReset').onclick = () => { if (confirm(L('Standardliste wiederherstellen? Eigene Vorlagen bleiben erhalten, gelöschte Standard-Vorlagen kommen zurück.', 'Restore defaults? Your own templates are kept, deleted standard templates come back.'))) { const own = items.filter(m => /^u_/.test(m.key)); items = own.concat(JSON.parse(JSON.stringify(CD_METHODS))); items.forEach(m => { m.d = Object.assign({ hr: ['', ''], content: '', note: '' }, m.d); }); render(); } };
+    host.querySelector('#cdtX').onclick = () => host.remove();
+    host.querySelector('#cdtSave').onclick = async () => {
+      const clean = items.filter(m => String(m.de || '').trim()).map(m => Object.assign(m, { de: m.de.trim(), en: String(m.en || '').trim() || m.de.trim() }));
+      if (!clean.length) { alert(L('Mindestens eine Vorlage nötig.', 'At least one template is required.')); return; }
+      const r = await cdSaveMethods(clean);
+      if (r.error) { alert(L('Speichern fehlgeschlagen: ', 'Saving failed: ') + r.error.message); return; }
+      host.remove(); toast(L('Vorlagen gespeichert.', 'Templates saved.'));
+    };
+  };
+  document.body.appendChild(host); render();
+}
+
 // Vorschau: Einheit so, wie die Athletin sie in der App sieht (ohne Eingabefelder)
 function cdAthletePreview(S, p, name) {
   const blocks = (S.content && S.content.blocks) || [];
@@ -1025,7 +1247,7 @@ function cdAthletePreview(S, p, name) {
     return `<div class="cd-phead" style="--cat:${ph.color}">${cdPhaseLabel(ph)}</div>` + list.map(b => {
       const pers = cdPersonalText(b, p);
       return `<div class="card cd-myblock" style="--cat:${ph.color}">
-        <div class="cd-mytitle"><b>${esc(b.content || cdMethodLabel(b.method))}</b><span class="muted-inline">${esc(cdModLabel(b.modality || '', b.modalityEn))}</span></div>
+        <div class="cd-mytitle"><b>${esc(b.content || cdBLabel(b))}</b><span class="muted-inline">${esc(cdModLabel(b.modality || '', b.modalityEn))}</span></div>
         <div class="cd-mystruct">${esc(cdStructText(b))}</div>
         ${cdIntText(b) ? `<div class="cd-myint">${esc(cdIntText(b))}</div>` : ''}
         ${pers.text ? `<div class="cd-mypers">&#127919; ${L('Deine Vorgabe', 'Your target')}: <b>${esc(pers.text)}</b></div>` : ''}
@@ -1082,7 +1304,7 @@ async function cdAssignSessions(sessionIds, userIds, athByProfile) {
 function cdSessLabel(s, plans) {
   if (!s || !s.plan_id) return (s && s.title) || 'Conditioning';
   const pl = (plans || []).find(p => p.id === s.plan_id);
-  return `${pl ? pl.title + ' · ' : ''}${L('W', 'W')}${s.plan_week} · ${L('E', 'S')}${s.plan_slot}${s.title && !/^(Woche|Week) \d+ · (Einheit|Session) \d+$/.test(s.title) ? ' – ' + s.title : ''}`;
+  return `${pl ? pl.title + ' · ' : ''}${L('W', 'W')}${s.plan_week} · ${L('T', 'D')}${s.plan_slot}${s.title && !CD_DEF_TITLE_RE.test(s.title) ? ' – ' + s.title : ''}`;
 }
 // Progression beim Kopieren einer Woche
 const CD_PROG = [
@@ -1110,7 +1332,7 @@ function cdProgress(content, key) {
   return c;
 }
 
-async function renderCdPlan(profile, planId) {
+async function renderCdPlan(profile, planId, opts) {
   const back = { label: 'Conditioning', go: () => renderConditionHub(profile) };
   renderShell(profile, 'trainingsplan', L('Conditioning-Plan', 'Conditioning plan'), `<p class="muted">${L('Lade', 'Loading')}&hellip;</p>`, back);
   let P = { id: null, title: '', team: '', for_name: '', start_date: null, weeks: 4, per_week: 2, members: [], note: '' };
@@ -1119,7 +1341,7 @@ async function renderCdPlan(profile, planId) {
     loadAthleteData().catch(() => null),
     sb.from('profiles').select('id, name, role, permissions').eq('role', 'athlete').order('name'),
     sb.from('cd_sessions').select('id, title, plan_id, plan_week, plan_slot, content, planned_date').eq('archived', false).order('created_at', { ascending: false }),
-    cdLoadModalities(),
+    Promise.all([cdLoadModalities(), cdLoadMethods()]),
   ]);
   const reload = async () => {
     if (!P.id) return;
@@ -1151,18 +1373,17 @@ async function renderCdPlan(profile, planId) {
     if (!quiet) toast(L('Plan gespeichert.', 'Plan saved.'));
     return true;
   };
-  const defTitle = (w, n) => `${L('Woche', 'Week')} ${w} · ${L('Einheit', 'Session')} ${n}`;
   const insertSession = async (w, n, content, title) => {
     const { data: { user } } = await sb.auth.getUser();
-    const r = await sb.from('cd_sessions').insert({ title: title || defTitle(w, n), team: P.team || null, planned_date: null, content, plan_id: P.id, plan_week: w, plan_slot: n, created_by: user.id }).select('id').single();
+    const r = await sb.from('cd_sessions').insert({ title: title || cdDefTitle(w, n), team: P.team || null, planned_date: null, content, plan_id: P.id, plan_week: w, plan_slot: n, created_by: user.id }).select('id').single();
     if (r.error) { alert(L('Fehler: ', 'Error: ') + r.error.message); return null; }
     if ((P.members || []).length) await cdAssignSessions([r.data.id], P.members, athByProfile);
     return r.data.id;
   };
-  const openSession = (s) => renderCdEditor(profile, s, { plan: P, back: async () => { await reload(); draw(); } });
+  const openSession = (s) => renderCdEditor(profile, s, { plan: P, back: () => renderCdPlan(profile, P.id) });
   const blocksSummary = (s) => {
     const main = ((s.content && s.content.blocks) || []).filter(b => b.phase === 'main');
-    return main.map(b => `${cdMethodLabel(b.method, true)}: ${cdStructText(b)}`).join(' | ');
+    return main.map(b => `${cdBLabel(b, true)}: ${cdStructText(b)}`).join(' | ');
   };
 
   const draw = () => {
@@ -1177,7 +1398,7 @@ async function renderCdPlan(profile, planId) {
       const dur = cdSessionSec(s.content || {});
       const done = logs.filter(l => l.session_id === s.id && l.completed).length;
       return `<td class="cd-pcell"><div class="cd-pc" data-open="${s.id}">
-        <b>${esc(/^(Woche|Week) \d+ · (Einheit|Session) \d+$/.test(s.title) ? (((s.content || {}).blocks || []).filter(b => b.phase === 'main').map(b => b.content || cdMethodLabel(b.method, true))[0] || s.title) : s.title)}</b>
+        <b>${esc(CD_DEF_TITLE_RE.test(s.title) ? (((s.content || {}).blocks || []).filter(b => b.phase === 'main').map(b => b.content || cdBLabel(b, true))[0] || s.title) : s.title)}</b>
         <small>${esc(blocksSummary(s))}</small>
         <small>${dur.sec ? '&asymp; ' + Math.round(dur.sec / 60) + ' min' : ''}${(P.members || []).length ? ` &middot; ${done}/${P.members.length} &#10003;` : ''}</small></div>
         <div class="cd-pcbtns"><button type="button" class="mini" data-copy="${s.id}" title="${L('Kopieren', 'Copy')}">&#10697;</button><button type="button" class="mini danger" data-rm="${s.id}" title="${L('Entfernen', 'Remove')}">&times;</button></div></td>`;
@@ -1190,7 +1411,7 @@ async function renderCdPlan(profile, planId) {
           <label>${L('F&uuml;r wen?', 'For whom?')}<input type="text" id="cpFor" list="cpNames" value="${esc(P.for_name || '')}" placeholder="${L('Name oder Gruppe', 'Name or group')}"><datalist id="cpNames">${athNames.concat(groups.map(g => g.name)).map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>
           <label>${L('Start (optional)', 'Start (optional)')}<input type="date" id="cpStart" value="${P.start_date || ''}"></label>
           <label>${L('Wochen', 'Weeks')}<input type="number" id="cpWeeks" min="1" max="26" value="${P.weeks}"></label>
-          <label>${L('Einheiten pro Woche', 'Sessions per week')}<input type="number" id="cpPer" min="1" max="7" value="${P.per_week}"></label>
+          <label>${L('Tage pro Woche', 'Days per week')}<input type="number" id="cpPer" min="1" max="7" value="${P.per_week}"></label>
           <label class="w2">${L('Hinweis', 'Note')}<input type="text" id="cpNote" value="${esc(P.note || '')}" placeholder="${L('z. B. Reihenfolge der Einheiten innerhalb der Woche frei, mind. 1 Tag Pause dazwischen', 'e.g. any order within the week, at least 1 rest day in between')}"></label>
         </div>
         <div class="cd-savebar" style="position:static;background:none;padding:12px 0 0;">
@@ -1201,7 +1422,7 @@ async function renderCdPlan(profile, planId) {
       </div>
       ${P.id ? `<div class="card">
         <div class="tablewrap"><table class="cd-plangrid">
-          <thead><tr><th>${L('Woche', 'Week')}</th>${slots.map(n => `<th>${L('Einheit', 'Session')} ${n}</th>`).join('')}<th>${L('Summe', 'Total')}</th></tr></thead>
+          <thead><tr><th>${L('Woche', 'Week')}</th>${slots.map(n => `<th>${L('Tag', 'Day')} ${n}</th>`).join('')}<th>${L('Summe', 'Total')}</th></tr></thead>
           <tbody>${weeks.map(w => `<tr class="${w === cw && (P.members || []).length ? 'cur' : ''}">
             <th><div>${L('Woche', 'Week')} ${w}</div>${P.start_date ? `<small>${cdDate(new Date(new Date(P.start_date + 'T00:00:00').getTime() + (w - 1) * 604800000).toISOString().slice(0, 10), { day: '2-digit', month: '2-digit' })}</small>` : ''}
               ${w < P.weeks ? `<button type="button" class="secondary small-btn" data-copyw="${w}" title="${L('Woche in die n&auml;chste(n) Woche(n) kopieren, optional mit Progression', 'Copy week to the next week(s), optionally with progression')}">&#10697; &rarr;</button>` : ''}</th>
@@ -1215,17 +1436,24 @@ async function renderCdPlan(profile, planId) {
     cdWireLang(draw);
     const f = (id, k) => { const el = document.getElementById(id); el.oninput = () => { P[k] = el.value; }; };
     f('cpTitle', 'title'); f('cpFor', 'for_name'); f('cpStart', 'start_date'); f('cpWeeks', 'weeks'); f('cpPer', 'per_week'); f('cpNote', 'note');
-    document.getElementById('cpSave').onclick = async () => { if (await savePlan()) { await reload(); draw(); } };
+    document.getElementById('cpSave').onclick = async () => {
+      const isNew = !P.id;
+      if (!(await savePlan())) return;
+      await reload();
+      // neuer Plan: direkt Woche 1 · Tag 1 in der Eingabemaske öffnen
+      if (isNew) openSession({ id: null, title: cdDefTitle(1, 1), team: P.team, planned_date: null, content: { blocks: [cdNewBlock('warmup'), cdNewBlock('main'), cdNewBlock('cooldown')] }, plan_id: P.id, plan_week: 1, plan_slot: 1 });
+      else draw();
+    };
     const pubB = document.getElementById('cpPub'); if (pubB) pubB.onclick = () => publishPlan();
     appEl.querySelectorAll('[data-open]').forEach(el => el.onclick = () => openSession(sessions.find(s => s.id === el.dataset.open)));
     appEl.querySelectorAll('[data-new]').forEach(b => b.onclick = () => {
       const [w, n] = b.dataset.new.split(',').map(Number);
       const blocks = [cdNewBlock('warmup'), cdNewBlock('main'), cdNewBlock('cooldown')];
-      openSession({ id: null, title: defTitle(w, n), team: P.team, planned_date: null, content: { blocks }, plan_id: P.id, plan_week: w, plan_slot: n });
+      openSession({ id: null, title: cdDefTitle(w, n), team: P.team, planned_date: null, content: { blocks }, plan_id: P.id, plan_week: w, plan_slot: n });
     });
     appEl.querySelectorAll('[data-paste]').forEach(b => b.onclick = async () => {
       const [w, n] = b.dataset.paste.split(',').map(Number);
-      if (await insertSession(w, n, cdProgress(clip.content, 'none'), clip.title && !/^(Woche|Week) \d+ · (Einheit|Session) \d+$/.test(clip.title) ? clip.title : null)) { await reload(); draw(); toast(L('Eingefügt.', 'Pasted.')); }
+      if (await insertSession(w, n, cdProgress(clip.content, 'none'), clip.title && !CD_DEF_TITLE_RE.test(clip.title) ? clip.title : null)) { await reload(); draw(); toast(L('Eingefügt.', 'Pasted.')); }
     });
     appEl.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => { const s = sessions.find(x => x.id === b.dataset.copy); clip = { content: s.content, title: s.title }; draw(); toast(L('Kopiert – 📋 in einem leeren Feld einfügen.', 'Copied – paste with 📋 in an empty cell.')); });
     appEl.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
@@ -1247,9 +1475,9 @@ async function renderCdPlan(profile, planId) {
     const render = () => {
       const rows = list.filter(s => !q || (s.title || '').toLowerCase().includes(q) || JSON.stringify(s.content || {}).toLowerCase().includes(q)).slice(0, 80);
       host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:640px;">
-        <h2>&#128218; ${L('Einheit &uuml;bernehmen', 'Use existing session')} &middot; ${L('Woche', 'Week')} ${w}, ${L('Einheit', 'Session')} ${n}</h2>
+        <h2>&#128218; ${L('Einheit &uuml;bernehmen', 'Use existing session')} &middot; ${L('Woche', 'Week')} ${w}, ${L('Tag', 'Day')} ${n}</h2>
         <input type="text" id="cplQ" value="${esc(q)}" placeholder="${L('Suchen &hellip;', 'Search &hellip;')}" style="width:100%;margin-bottom:10px;">
-        <div class="cd-libl">${rows.map(s => `<button type="button" class="cd-mine" data-pick="${s.id}"><span><b>${esc(s.title || 'Conditioning')}</b><span class="muted-inline">${esc(((s.content || {}).blocks || []).filter(b => b.phase === 'main').map(b => cdMethodLabel(b.method, true) + ' ' + cdStructText(b)).join(' | '))}</span></span></button>`).join('') || `<p class="muted">${L('Keine Einheiten gefunden.', 'No sessions found.')}</p>`}</div>
+        <div class="cd-libl">${rows.map(s => `<button type="button" class="cd-mine" data-pick="${s.id}"><span><b>${esc(s.title || 'Conditioning')}</b><span class="muted-inline">${esc(((s.content || {}).blocks || []).filter(b => b.phase === 'main').map(b => cdBLabel(b, true) + ' ' + cdStructText(b)).join(' | '))}</span></span></button>`).join('') || `<p class="muted">${L('Keine Einheiten gefunden.', 'No sessions found.')}</p>`}</div>
         <div class="modal-actions"><span class="spacer"></span><button type="button" class="secondary" id="cplX">${L('Abbrechen', 'Cancel')}</button></div></div></div>`;
       const qi = host.querySelector('#cplQ'); qi.oninput = () => { q = qi.value.toLowerCase(); const pos = qi.selectionStart; render(); const n2 = host.querySelector('#cplQ'); n2.focus(); n2.setSelectionRange(pos, pos); };
       host.querySelector('#cplX').onclick = () => host.remove();
@@ -1289,7 +1517,7 @@ async function renderCdPlan(profile, planId) {
           const old = sessions.find(s => s.plan_week === tw && s.plan_slot === slot);
           if (old && logs.some(l => l.session_id === old.id)) { kept++; next[slot] = old; continue; }
           if (old) await sb.from('cd_sessions').delete().eq('id', old.id);
-          const title = /^(Woche|Week) \d+ · (Einheit|Session) \d+$/.test(base.title) ? null : base.title;
+          const title = CD_DEF_TITLE_RE.test(base.title) ? null : base.title;
           const id = await insertSession(tw, slot, content, title);
           if (id) made++;
           // Deload-Woche wirkt nicht als Basis für die nächste Progression
@@ -1337,4 +1565,5 @@ async function renderCdPlan(profile, planId) {
     document.body.appendChild(host); render();
   };
   draw();
+  if (opts && opts.publish && P.id) publishPlan();
 }
