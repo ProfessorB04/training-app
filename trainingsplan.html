@@ -2406,7 +2406,11 @@ async function openPublishDialog(){
   const picked = {};
   const teamGroup = groupsUsed.find(g => g.name.toLowerCase() === (state.team||'').toLowerCase());
   if(teamGroup) users.forEach(u => { if(userGroups(u.id).includes(teamGroup.id)) picked[u.id] = true; });
-  let planSel = (state.publishedPlanId && plans.some(p=>p.id===state.publishedPlanId)) ? state.publishedPlanId : '__new';
+  // Bestehenden Plan nur vorwählen, wenn er zum geöffneten Plan passt (gleicher Titel) – sonst „neuer Plan“.
+  // (Vorher blieb die ID des zuletzt veröffentlichten Plans hängen; ein anderer Plan überschrieb dann z. B. „In-Season 1“.)
+  const normT = t => String(t || '').trim().toLowerCase();
+  const lastPub = plans.find(p => p.id === state.publishedPlanId);
+  let planSel = lastPub && (state.editingFromApp || normT(lastPub.title) === normT(state.title)) ? lastPub.id : '__new';
   let mode = 'all';
   // aus der Übersicht „Nur für <Person> ändern“ geöffnet: Variante nur für diese Person vorwählen
   if(state.editingFromApp && state.editTargetUid && planSel === state.publishedPlanId){ Object.keys(picked).forEach(k=>delete picked[k]); picked[state.editTargetUid] = true; mode = 'variant'; }
@@ -2433,7 +2437,8 @@ async function openPublishDialog(){
         <label><input type="radio" name="pubMode" value="all" ${mode==='all'?'checked':''}> f&uuml;r alle im Plan</label>
         <label><input type="radio" name="pubMode" value="variant" ${mode==='variant'?'checked':''}> nur f&uuml;r die Ausgew&auml;hlten (Variante)</label>
       </div>
-      <p style="margin:-4px 0 12px;color:#898781;font-size:12px;">Fr&uuml;here Wochen und bereits Eingetragenes bleiben unver&auml;ndert. Ausgew&auml;hlte, die noch nicht im Plan sind, werden hinzugef&uuml;gt.</p>` : ''}
+      <p style="margin:-4px 0 12px;color:#898781;font-size:12px;">Fr&uuml;here Wochen und bereits Eingetragenes bleiben unver&auml;ndert. Ausgew&auml;hlte, die noch nicht im Plan sind, werden hinzugef&uuml;gt.</p>
+      ${normT(p.title) !== normT(state.title) ? `<p style="margin:-4px 0 12px;padding:8px 10px;border-radius:8px;background:#fdecea;color:#8a1c12;font-size:13px;">&#9888;&#65039; Der ge&ouml;ffnete Plan hei&szlig;t <b>&bdquo;${escapeHtmlSeries(state.title || 'ohne Titel')}&ldquo;</b> &ndash; damit wird der laufende Plan <b>&bdquo;${escapeHtmlSeries(p.title || 'Ohne Titel')}&ldquo;</b> ge&auml;ndert. F&uuml;r einen eigenen Plan oben &bdquo;Als neuen Plan ver&ouml;ffentlichen&ldquo; w&auml;hlen.</p>` : ''}` : ''}
       <label style="font-size:12px;font-weight:600;color:#898781;">ATHLET:INNEN (mit App-Zugang)</label>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px;">
         ${groupsUsed.map(g=>`<button type="button" class="small" data-g="${g.id}">${escapeHtmlSeries(g.name)}</button>`).join('')}
@@ -2480,6 +2485,7 @@ async function openPublishDialog(){
     const ids = Object.keys(picked);
     if(!p && !ids.length){ alert('Bitte mindestens eine Athletin / einen Athleten auswählen.'); return; }
     if(p && mode === 'variant' && !ids.length){ alert('Für eine Variante bitte die betroffenen Athlet:innen auswählen.'); return; }
+    if(p && normT(p.title) !== normT(state.title) && !confirm('Achtung: Der geöffnete Plan „' + (state.title || 'ohne Titel') + '“ wird in den laufenden Plan „' + (p.title || 'Ohne Titel') + '“ geschrieben.\n\nWirklich den bestehenden Plan ändern? (Abbrechen → oben „Als neuen Plan veröffentlichen“ wählen)')) return;
     const content = JSON.parse(JSON.stringify({ plan: state.plan, prescription: state.prescription, cooldown: state.cooldown,
       prepNote: state.prepNote, lang: state.lang, days: state.days, weeks: state.weeks, title: state.title, team: state.team, layout: state.layout }));
     const btn = box.querySelector('#pubGo'); btn.disabled = true; btn.textContent = 'Veröffentliche …';
