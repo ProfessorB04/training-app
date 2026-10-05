@@ -569,6 +569,7 @@ async function renderCdEditor(profile, session, ctx) {
         ${w >= P.weeks && P.weeks < 26 ? `<button type="button" class="mini cd-addwk" id="cdAddWk" title="${L('Woche anh&auml;ngen', 'add a week')}">+ ${L('Woche', 'Week')}</button>` : ''}</span>
       <span class="cd-tabs-days">${days.map(n => `<button type="button" class="cd-tab${n === S.plan_slot ? ' on' : ''}${has(n) ? ' has' : ''}" data-day="${n}">${L('Tag', 'Day')} ${n}${has(n) ? ' <i>&#9679;</i>' : ''}</button>`).join('')}
         ${P.per_week < 7 ? `<button type="button" class="cd-tab add" id="cdAddDay">+ ${L('Tag', 'Day')}</button>` : ''}</span>
+      <button type="button" class="secondary small-btn" id="cdCopyDay" title="${L('Diesen Tag auf andere Tage / Wochen kopieren', 'Copy this day to other days / weeks')}">&#10697; ${L('Tag kopieren', 'Copy day')}</button>
     </div>`;
   };
   // zu Woche/Tag wechseln: aktuelle Seite speichern, wenn geändert
@@ -585,6 +586,58 @@ async function renderCdEditor(profile, session, ctx) {
     const r = await sb.from('cd_plans').update(Object.assign({ updated_at: new Date().toISOString() }, patch)).eq('id', ctx.plan.id).select('*').single();
     if (r.error) { alert(L('Fehler: ', 'Error: ') + r.error.message); return false; }
     ctx.plan = r.data; return true;
+  };
+  // Aktuellen Tag auf andere Tage/Wochen kopieren (vorhandene Tage werden überschrieben, Tage mit Eintragungen bleiben)
+  const copyDay = async () => {
+    if ((dirty || !S.id) && !(await save())) return;
+    const P = ctx.plan;
+    const [ssR, lgR] = await Promise.all([
+      sb.from('cd_sessions').select('id, title, plan_week, plan_slot').eq('plan_id', P.id),
+      sb.from('cd_logs').select('session_id'),
+    ]);
+    const ss = ssR.data || [], logged = new Set((lgR.data || []).map(l => l.session_id));
+    const at = (w, n) => ss.find(x => x.plan_week === w && x.plan_slot === n);
+    const host = document.createElement('div');
+    const weeks = Array.from({ length: P.weeks }, (_, i) => i + 1), days = Array.from({ length: P.per_week }, (_, i) => i + 1);
+    host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:620px;">
+      <h2>&#10697; ${L('Woche', 'Week')} ${S.plan_week} &middot; ${L('Tag', 'Day')} ${S.plan_slot} ${L('kopieren nach', 'copy to')} &hellip;</h2>
+      <p class="hint" style="margin-top:0;">${L('Ziel-Tage anhaken. Belegte Tage (&#9679;) werden &uuml;berschrieben; Tage, f&uuml;r die schon Eintragungen der Athlet:innen vorliegen (&#128274;), bleiben unver&auml;ndert.', 'Tick the target days. Filled days (&#9679;) are overwritten; days that already have athlete entries (&#128274;) stay unchanged.')}</p>
+      <div class="tablewrap"><table class="cd-copygrid"><thead><tr><th></th>${days.map(n => `<th>${L('Tag', 'Day')} ${n}</th>`).join('')}${P.per_week < 7 ? `<th>${L('neuer Tag', 'new day')}</th>` : ''}</tr></thead>
+      <tbody>${weeks.map(w => `<tr><th>${L('Woche', 'Week')} ${w}</th>${days.map(n => { const x = at(w, n), me = w === S.plan_week && n === S.plan_slot, lock = x && logged.has(x.id);
+        return `<td>${me ? '<span class="muted-inline">' + L('Quelle', 'source') + '</span>' : `<label><input type="checkbox" data-t="${w},${n}" ${lock ? 'disabled' : ''}> ${lock ? '&#128274;' : (x ? '&#9679;' : '')}</label>`}</td>`; }).join('')}
+        ${P.per_week < 7 ? `<td><label><input type="checkbox" data-t="${w},new"> +</label></td>` : ''}</tr>`).join('')}</tbody></table></div>
+      <div class="chips" style="margin-top:8px;"><button type="button" class="secondary small-btn" id="cdcWeek">${L('Alle Tage dieser Woche', 'All days this week')}</button><button type="button" class="secondary small-btn" id="cdcSame">${L('Tag', 'Day')} ${S.plan_slot} ${L('in allen Wochen', 'in all weeks')}</button></div>
+      <div class="modal-actions"><span class="spacer"></span><button type="button" class="secondary" id="cdcX">${L('Abbrechen', 'Cancel')}</button><button type="button" id="cdcGo">${L('Kopieren', 'Copy')}</button></div></div></div>`;
+    document.body.appendChild(host);
+    const boxes = () => [...host.querySelectorAll('[data-t]')].filter(c => !c.disabled);
+    host.querySelector('#cdcWeek').onclick = () => boxes().forEach(c => { const [w, n] = c.dataset.t.split(','); if (+w === S.plan_week && n !== 'new') c.checked = true; });
+    host.querySelector('#cdcSame').onclick = () => boxes().forEach(c => { const [, n] = c.dataset.t.split(','); if (+n === S.plan_slot) c.checked = true; });
+    host.querySelector('#cdcX').onclick = () => host.remove();
+    host.querySelector('#cdcGo').onclick = async () => {
+      const targets = boxes().filter(c => c.checked).map(c => c.dataset.t.split(','));
+      if (!targets.length) { alert(L('Bitte mindestens einen Ziel-Tag anhaken.', 'Please tick at least one target day.')); return; }
+      const btn = host.querySelector('#cdcGo'); btn.disabled = true;
+      // „neuer Tag“: Tage pro Woche einmal erhöhen
+      let newSlot = null;
+      if (targets.some(t => t[1] === 'new')) { if (!(await updPlan({ per_week: P.per_week + 1 }))) { btn.disabled = false; return; } newSlot = ctx.plan.per_week; }
+      const { data: { user } } = await sb.auth.getUser();
+      const custom = S.title && !CD_DEF_TITLE_RE.test(S.title) ? S.title : null;
+      let n = 0, newIds = [];
+      for (const [ws, ns] of targets) {
+        const w = +ws, d = ns === 'new' ? newSlot : +ns;
+        const content = cdProgress(S.content, 'none');   // neue Block-IDs
+        const old = at(w, d);
+        const title = custom || cdDefTitle(w, d);
+        let r;
+        if (old) r = await sb.from('cd_sessions').update({ content, title, updated_at: new Date().toISOString() }).eq('id', old.id);
+        else { r = await sb.from('cd_sessions').insert({ title, team: S.team || P.team || null, planned_date: null, content, plan_id: P.id, plan_week: w, plan_slot: d, created_by: user.id }).select('id').single(); if (!r.error) newIds.push(r.data.id); }
+        if (r.error) { alert(L('Fehler: ', 'Error: ') + r.error.message); break; }
+        n++;
+      }
+      if (newIds.length && (ctx.plan.members || []).length) await cdAssignSessions(newIds, ctx.plan.members, athByProfile);
+      host.remove(); toast(L(n + ' Tag(e) kopiert.', n + ' day(s) copied.'));
+      goTo(S.plan_week, S.plan_slot);
+    };
   };
   // Einzel-Einheit → Plan (Woche 1 · Tag 1), dann Tag 2 öffnen
   const toPlan = () => {
@@ -696,6 +749,7 @@ async function renderCdEditor(profile, session, ctx) {
       }
       dirty = false; goTo(nw, S.plan_slot);
     };
+    const cdc = document.getElementById('cdCopyDay'); if (cdc) cdc.onclick = copyDay;
     const pp = document.getElementById('cdPlanPub'); if (pp) pp.onclick = async () => { if (dirty && !(await save())) return; renderCdPlan(profile, ctx.plan.id, { publish: true }); };
     document.getElementById('cdPrevGrp').onchange = e => { previewGrp = e.target.value; draw(); };
     wirePreview();

@@ -621,3 +621,6 @@ td.lm-man sup{ font-size:.65em; margin-left:2px; }
 .lm-mangrid{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
 .lm-mangrid label{ display:flex; flex-direction:column; gap:4px; font-size:.8rem; color:var(--ink-soft); }
 .lm-mangrid input{ padding:8px; border:1px solid var(--line); border-radius:8px; font-size:1rem; }
+.cd-copygrid{ border-collapse:collapse; width:100%; font-size:.88rem; }
+.cd-copygrid th, .cd-copygrid td{ padding:6px 8px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+.cd-copygrid label{ display:inline-flex; gap:5px; align-items:center; cursor:pointer; }
