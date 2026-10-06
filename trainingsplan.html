@@ -2404,8 +2404,17 @@ async function openPublishDialog(){
   const userGroups = uid => { const a = athByProfile[uid]; return a ? (gByAth[a.id] || []) : []; };
   const groupsUsed = (gr.data||[]).filter(g => users.some(u => userGroups(u.id).includes(g.id)));
   const picked = {};
+  // Vorauswahl: 1) unter „2 · Für wen?“ gewählte App-Athlet:innen (gilt nur für diesen Plan-Titel),
+  // 2) die eine Athletin aus „Für wen? (Athlet)“, 3) sonst das ganze Team
+  const nN = t => String(t || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const tgt = appTargetsFor();
+  const forA = state.athleteIdx ? ATHLETES.find(a => a.id === state.athleteIdx) : null;
+  const forName = forA ? nN((forA.first || '') + ' ' + (forA.last || '')) : '';
+  const forUser = forName ? users.find(u => { const a = athByProfile[u.id]; return nN(u.name) === forName || (a && nN(a.first_name + ' ' + a.last_name) === forName); }) : null;
   const teamGroup = groupsUsed.find(g => g.name.toLowerCase() === (state.team||'').toLowerCase());
-  if(teamGroup) users.forEach(u => { if(userGroups(u.id).includes(teamGroup.id)) picked[u.id] = true; });
+  if(tgt.length) tgt.forEach(id => { if(users.some(u => u.id === id)) picked[id] = true; });
+  else if(forUser) picked[forUser.id] = true;
+  else if(teamGroup) users.forEach(u => { if(userGroups(u.id).includes(teamGroup.id)) picked[u.id] = true; });
   // Bestehenden Plan nur vorwählen, wenn er zum geöffneten Plan passt (gleicher Titel) – sonst „neuer Plan“.
   // (Vorher blieb die ID des zuletzt veröffentlichten Plans hängen; ein anderer Plan überschrieb dann z. B. „In-Season 1“.)
   const normT = t => String(t || '').trim().toLowerCase();
@@ -2513,6 +2522,7 @@ async function openPublishDialog(){
         const a = await sb.from('tp_assignments').upsert({ plan_id: planId, user_id: uid, active: true }, { onConflict: 'plan_id,user_id' });
         if(a.error) throw a.error;
       }
+      if(!p) state.appTargets = { title: state.title || '', ids: ids.slice() };
       state.publishedPlanId = planId; state.editingFromApp = false; state.editTargetUid = ''; state.editTargetName = ''; saveState(true);
       close();
       toast(!p ? 'Plan veröffentlicht für ' + ids.length + ' Athlet:innen' : (userIds ? 'Variante ab Woche ' + fromWeek + ' für ' + ids.length + ' Athlet:innen' : 'Änderung ab Woche ' + fromWeek + ' veröffentlicht'));
@@ -2530,6 +2540,90 @@ async function openPublishDialog(){
   b.addEventListener('click', openPublishDialog);
   const anchor = document.getElementById('btnSeriesExport') || document.getElementById('btnExport');
   anchor.insertAdjacentElement('afterend', b);
+})();
+/* „2 · Für wen?“: mehrere Athlet:innen (mit App-Zugang) direkt für diesen Plan auswählen.
+   Gespeichert in state.appTargets = { title, ids } – gilt nur, solange der Plan-Titel gleich bleibt
+   (ein anderer geöffneter Plan übernimmt die Auswahl nicht). Der Veröffentlichen-Dialog hakt sie vor. */
+function appTargetsFor(){
+  const t = state.appTargets;
+  if(!t || !Array.isArray(t.ids)) return [];
+  return String(t.title || '').trim().toLowerCase() === String(state.title || '').trim().toLowerCase() ? t.ids : [];
+}
+let APP_USERS_CACHE = null;
+async function loadAppUsers(){
+  if(APP_USERS_CACHE) return APP_USERS_CACHE;
+  const sb = window.appSb;
+  if(!sb) throw new Error('Nicht angemeldet (App-Verbindung fehlt).');
+  const [pr, at, gr, mem] = await Promise.all([
+    sb.from('profiles').select('id,name,role,permissions').eq('role','athlete').order('name'),
+    sb.from('athletes').select('id,first_name,last_name,profile_id'),
+    sb.from('athlete_groups').select('id,name').order('name'),
+    sb.from('athlete_group_members').select('athlete_id,group_id'),
+  ]);
+  const err = [pr,at,gr,mem].map(r=>r.error).filter(Boolean)[0];
+  if(err) throw err;
+  const athByProfile = {}; (at.data||[]).forEach(a=>{ if(a.profile_id) athByProfile[a.profile_id] = a; });
+  const gByAth = {}; (mem.data||[]).forEach(m=>{ (gByAth[m.athlete_id] = gByAth[m.athlete_id] || []).push(m.group_id); });
+  const users = (pr.data||[]).map(u => ({ id: u.id, name: u.name, noPerm: !u.permissions || !u.permissions.meinplan || u.permissions.meinplan === 'none',
+    groups: athByProfile[u.id] ? (gByAth[athByProfile[u.id].id] || []) : [] }));
+  const groups = (gr.data||[]).filter(g => users.some(u => u.groups.includes(g.id)));
+  APP_USERS_CACHE = { users, groups };
+  return APP_USERS_CACHE;
+}
+function renderAppTargets(){
+  const box = document.getElementById('appTargetsBox'); if(!box) return;
+  const ids = appTargetsFor();
+  const names = APP_USERS_CACHE ? ids.map(id => (APP_USERS_CACHE.users.find(u => u.id === id) || {}).name).filter(Boolean) : [];
+  box.innerHTML = `<button type="button" id="btnAppTargets">👥 Athlet:innen wählen${ids.length ? ' (' + ids.length + ')' : ''}</button>
+    ${ids.length ? `<div class="app-tg-chips">${(names.length ? names : ids.map(()=> '…')).map(n => `<span class="app-tg-chip">${escapeHtmlSeries(n)}</span>`).join('')}<button type="button" class="app-tg-clear" id="btnAppTargetsClear" title="Auswahl leeren">×</button></div>`
+      : '<div class="app-tg-hint">Mehrere Athlet:innen anhaken &ndash; beim &bdquo;📲 In App ver&ouml;ffentlichen&ldquo; bekommen alle denselben Plan.</div>'}`;
+  document.getElementById('btnAppTargets').onclick = openAppTargetsDialog;
+  const c = document.getElementById('btnAppTargetsClear'); if(c) c.onclick = () => { state.appTargets = null; saveState(true); renderAppTargets(); };
+  if(ids.length && !APP_USERS_CACHE) loadAppUsers().then(renderAppTargets).catch(()=>{});
+}
+async function openAppTargetsDialog(){
+  const host = document.createElement('div');
+  host.innerHTML = `<div id="atScrim" style="position:fixed;inset:0;background:rgba(10,14,30,.45);z-index:9998;display:flex;align-items:flex-start;justify-content:center;padding:30px 14px;overflow-y:auto;">
+    <div style="background:#fff;border-radius:14px;padding:20px 22px;width:100%;max-width:640px;box-shadow:0 20px 50px rgba(0,17,61,.25);" id="atBox"><p>Lade …</p></div></div>`;
+  document.body.appendChild(host);
+  const box = host.querySelector('#atBox'), close = () => host.remove();
+  host.querySelector('#atScrim').addEventListener('click', e => { if(e.target.id === 'atScrim') close(); });
+  let data;
+  try { data = await loadAppUsers(); } catch(e){ box.innerHTML = '<p style="color:#b0281c">Fehler: ' + escapeHtmlSeries(e.message) + '</p>'; return; }
+  const sel = new Set(appTargetsFor());
+  const render = () => {
+    box.innerHTML = `<h2 style="margin:0 0 4px;font-size:18px;">👥 F&uuml;r wen in der App?</h2>
+      <p style="margin:0 0 12px;color:#52514e;font-size:13px;">Alle Angehakten bekommen beim Ver&ouml;ffentlichen <b>denselben Plan &bdquo;${escapeHtmlSeries(state.title || 'ohne Titel')}&ldquo;</b>. Der Excel-Export bleibt bei &bdquo;F&uuml;r wen? (Athlet)&ldquo;.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${data.groups.map(g=>`<button type="button" class="small" data-g="${g.id}">${escapeHtmlSeries(g.name)}</button>`).join('')}<button type="button" class="small" data-g="__all">Alle</button><button type="button" class="small" data-g="__none">Keine</button></div>
+      <div style="max-height:320px;overflow:auto;border:1px solid #e1e0d9;border-radius:10px;padding:6px 10px;columns:2;column-gap:18px;">
+        ${data.users.map(u=>`<label style="display:flex;gap:6px;align-items:flex-start;font-size:13px;padding:3px 0;break-inside:avoid;cursor:pointer;"><input type="checkbox" data-u="${u.id}" ${sel.has(u.id)?'checked':''} style="margin-top:3px;"> <span>${escapeHtmlSeries(u.name)}${u.noPerm ? ' <b style="color:#b0281c;font-size:11px;">Recht fehlt</b>' : ''}</span></label>`).join('') || '<span style="color:#898781;font-size:13px;">Noch keine Athlet:innen mit App-Zugang.</span>'}
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:14px;"><span style="flex:1;font-size:13px;color:#52514e;">${sel.size} ausgew&auml;hlt</span>
+        <button type="button" id="atX">Abbrechen</button><button type="button" class="primary" id="atOk">&Uuml;bernehmen</button></div>`;
+    box.querySelectorAll('[data-u]').forEach(c => c.onchange = () => { c.checked ? sel.add(c.dataset.u) : sel.delete(c.dataset.u); render(); });
+    box.querySelectorAll('[data-g]').forEach(b => b.onclick = () => {
+      const g = b.dataset.g;
+      if(g === '__all') data.users.forEach(u => sel.add(u.id)); else if(g === '__none') sel.clear();
+      else data.users.forEach(u => { if(u.groups.includes(g)) sel.add(u.id); });
+      render();
+    });
+    box.querySelector('#atX').onclick = close;
+    box.querySelector('#atOk').onclick = () => { state.appTargets = sel.size ? { title: state.title || '', ids: [...sel] } : null; saveState(true); close(); renderAppTargets(); };
+  };
+  render();
+}
+(function(){
+  const sel = document.getElementById('cfgAthlete'); if(!sel) return;
+  const f = document.createElement('div'); f.className = 'field app-targets';
+  f.innerHTML = '<label>In der App f&uuml;r (mehrere m&ouml;glich)</label><div id="appTargetsBox"></div>';
+  (sel.closest('.field') || sel).insertAdjacentElement('afterend', f);
+  const st = document.createElement('style');
+  st.textContent = '.app-targets{min-width:260px}.app-tg-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;align-items:center}.app-tg-chip{background:#eaf5ff;border:1px solid #a1d7ff;border-radius:999px;padding:2px 9px;font-size:12px}.app-tg-clear{padding:0 8px;line-height:20px;font-size:14px;border-radius:999px}.app-tg-hint{font-size:11.5px;color:#898781;margin-top:4px;max-width:360px}';
+  document.head.appendChild(st);
+  // Titel geändert / anderer Plan geöffnet → Anzeige aktualisieren
+  const t = document.getElementById('cfgTitle'); if(t) t.addEventListener('input', () => renderAppTargets());
+  setInterval(() => { const k = (state.title || '') + '|' + JSON.stringify(state.appTargets || null); if(k !== window.__appTgKey){ window.__appTgKey = k; renderAppTargets(); } }, 1500);
+  renderAppTargets();
 })();
 /* Laufenden App-Plan zum Bearbeiten laden (Link „✎ Plan bearbeiten“ aus der Auswertung: trainingsplan.html#edit=<planId>) */
 (async function(){
@@ -2784,7 +2878,7 @@ setTimeout(function tpTidyConfig(){
   };
   const wrap = document.createElement('div'); wrap.id = 'tpCfgNew';
   wrap.appendChild(group('1 &middot; Plan', ['cfgTitle','cfgTeam','cfgDays','cfgWeeks','cfgStart','cfgLayout']));
-  wrap.appendChild(group('2 &middot; F&uuml;r wen?', ['cfgAthlete'], 'narrow'));
+  wrap.appendChild(group('2 &middot; F&uuml;r wen?', ['cfgAthlete','appTargetsBox'], 'narrow'));
   const exp = group('3 &middot; Export: Sprache &amp; Namensformat', ['cfgLang','cfgNameOrder'], 'narrow');
   // alte Einzel-Lader (Pläne dieser Athletin / letzter Plan der Gruppe) stecken jetzt in „📂 Pläne öffnen“
   const apf = document.getElementById('athletePlanField'); if(apf) apf.style.display = 'none';
