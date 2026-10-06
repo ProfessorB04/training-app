@@ -586,13 +586,19 @@ function loadLibrary(){
   try{ v = JSON.parse(localStorage.getItem(LS_LIBRARY)); }catch(e){}
   if(!Array.isArray(v) || !v.length) return seedLibrary();
   v.forEach(e=>{ if(e.dosageDe == null) e.dosageDe = SEED_DE_BY_NAME[e.name] || ""; normalizeCatRegion(e); });
+  // Doppelte IDs reparieren (ältere Stände hatten zwei Übungslisten mit denselben „seed-N“-IDs →
+  // „Bearbeiten“/„Löschen“ traf die falsche Übung). Erste behält die ID, weitere bekommen eine neue.
+  { const seen = new Set(); let fixed = 0;
+    v.forEach(e=>{ if(!e.id || seen.has(e.id)){ e.id = uid(); fixed++; } seen.add(e.id); });
+    if(fixed){ try{ localStorage.setItem(LS_LIBRARY, JSON.stringify(v)); }catch(e){} } }
   let sv = 0;
   try{ sv = parseInt(localStorage.getItem("mwb_seed_v"), 10) || 0; }catch(e){}
   if(sv < SEED_VERSION){
     const have = {};
     v.forEach(e=>{ have[e.name + "||" + e.cat] = true; });
     let added = 0;
-    seedLibrary().forEach(se=>{ if(!have[se.name + "||" + se.cat]){ v.push(se); added++; } });
+    const ids = new Set(v.map(e=>e.id));
+    seedLibrary().forEach(se=>{ if(!have[se.name + "||" + se.cat]){ if(ids.has(se.id)) se.id = uid(); ids.add(se.id); v.push(se); added++; } });
     try{
       localStorage.setItem("mwb_seed_v", String(SEED_VERSION));
       localStorage.setItem(LS_LIBRARY, JSON.stringify(v));
