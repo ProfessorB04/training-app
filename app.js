@@ -520,16 +520,21 @@ async function renderTrainerDashboard(profile) {
   const days = weekDates(LOAD_WEEK);
   const dayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
-  const [profRes, entRes, mgmt, manRes] = await Promise.all([
+  const [profRes, entRes, mgmt, manRes, multiRes] = await Promise.all([
     sb.from('profiles').select('id, name').eq('role', 'athlete').order('name'),
     sb.from('load_entries').select('user_id, entry_date, srpe, duration_min').in('entry_date', days),
     loadAthleteData().catch(() => null),
     sb.from('load_manual').select('*').in('entry_date', days),
+    sb.from('load_manual').select('session_no').limit(1),
   ]);
-  // manuelle Nachträge/Korrekturen (ersetzen den App-Wert des Tages); Tabelle fehlt vor der Migration → keine
+  // manuelle Nachträge/Korrekturen: je Person und Tag beliebig viele Sessions (Liste nach session_no);
+  // count_app = App-Wert zählt zusätzlich, sonst ersetzen die Sessions den App-Wert. Tabelle fehlt vor der Migration → keine
   const manual = {};
-  (manRes.error ? [] : (manRes.data || [])).forEach(m => { (manual[m.person_key] = manual[m.person_key] || {})[m.entry_date] = m; });
+  (manRes.error ? [] : (manRes.data || [])).forEach(m => { const p = manual[m.person_key] = manual[m.person_key] || {}; (p[m.entry_date] = p[m.entry_date] || []).push(m); });
+  Object.values(manual).forEach(p => Object.values(p).forEach(l => l.sort((x, y) => (x.session_no || 1) - (y.session_no || 1))));
   const canManual = !manRes.error;
+  const canMulti = canManual && !multiRes.error;   // Spalten session_no/count_app vorhanden (supabase_migration_load_manual_sessions.sql)
+  const sessTxt = m => (m.srpe ? 'RPE ' + m.srpe + ' × ' + m.duration_min + ' min = ' : '') + m.au + (m.note ? ' (' + m.note + ')' : '');
   const profiles = profRes.data || [];
   const entries = entRes.data || [];
   const kw = isoWeek(days[0]);
@@ -559,14 +564,19 @@ async function renderTrainerDashboard(profile) {
   const rows = people.length
     ? people.map(a => {
         const pk = a.userId ? 'u:' + a.userId : 'a:' + a.athleteId;
-        // je Tag: manueller Wert vor App-Wert
-        const val = d => { const m = manual[pk] && manual[pk][d]; if (m) return { au: m.au, man: true, m };
-          const e = a.userId && byUserDate[a.userId] && byUserDate[a.userId][d]; return e ? { au: e.srpe * e.duration_min, app: e } : null; };
+        // je Tag: manuelle Sessions (ersetzen den App-Wert oder kommen dazu) vor App-Wert
+        const val = d => {
+          const e = a.userId && byUserDate[a.userId] && byUserDate[a.userId][d];
+          const ms = manual[pk] && manual[pk][d];
+          if (ms && ms.length) { const keepApp = !!e && ms.some(m => m.count_app);
+            return { au: ms.reduce((n, m) => n + m.au, 0) + (keepApp ? e.srpe * e.duration_min : 0), man: true, ms, keepApp, app: e, n: ms.length + (keepApp ? 1 : 0) }; }
+          return e ? { au: e.srpe * e.duration_min, app: e, n: 1 } : null; };
         const cells = days.map(d => {
           const v = val(d);
           const cls = v === null ? 'load-empty' : (v.au >= 500 ? 'load-high' : 'load-ok');
-          const tip = v && v.man ? `manuell${v.m.srpe ? ': RPE ' + v.m.srpe + ' × ' + v.m.duration_min + ' min' : ''}${v.m.note ? ' – ' + v.m.note : ''}` : (v ? `App: RPE ${v.app.srpe} × ${v.app.duration_min} min` : '');
-          return `<td class="${cls}${canManual ? ' lm-edit' : ''}${v && v.man ? ' lm-man' : ''}" data-pk="${pk}" data-d="${d}" title="${esc(tip)}${canManual ? (tip ? ' · ' : '') + 'klicken zum Nachtragen/Korrigieren' : ''}">${v === null ? '–' : v.au}${v && v.man ? '<sup>&#9998;</sup>' : ''}</td>`;
+          const tip = v && v.man ? [v.keepApp ? `App: RPE ${v.app.srpe} × ${v.app.duration_min} min = ${v.app.srpe * v.app.duration_min}` : '', ...v.ms.map((m, i) => `manuell${v.n > 1 ? ' ' + (i + 1) : ''}: ${sessTxt(m)}`)].filter(Boolean).join(' | ')
+            : (v ? `App: RPE ${v.app.srpe} × ${v.app.duration_min} min` : '');
+          return `<td class="${cls}${canManual ? ' lm-edit' : ''}${v && v.man ? ' lm-man' : ''}" data-pk="${pk}" data-d="${d}" title="${esc(tip)}${canManual ? (tip ? ' · ' : '') + 'klicken zum Nachtragen/Korrigieren' : ''}">${v === null ? '–' : v.au}${v && v.man ? '<sup>&#9998;</sup>' : ''}${v && v.n > 1 ? `<span class="lm-nsess">${v.n}&times;</span>` : ''}</td>`;
         }).join('');
         const vals = days.map(val).filter(Boolean);
         const sum = vals.reduce((n, v) => n + v.au, 0);
@@ -599,7 +609,7 @@ async function renderTrainerDashboard(profile) {
         </table>
       </div>
       <p class="hint">Wert je Zelle = sRPE &times; Trainingsdauer in Minuten (Session-Load nach Foster). Ab 500 farblich hervorgehoben. &Sigma; Woche = Wochen-Load, Tage = Tage mit Eintrag. Mit &larr; &rarr; bzw. der Auswahl jede Kalenderwoche ansehen.
-      ${canManual ? '<b>Zelle anklicken</b>, um einen Wert nachzutragen oder zu korrigieren (&#9998; = manuell, ersetzt den App-Wert des Tages und wird mit &bdquo;Aus App &uuml;bernehmen&ldquo; ins Load-Management-Tool &uuml;bertragen).' : '<i>Manuelle Nachtr&auml;ge: Datenbank-Erweiterung fehlt noch (supabase_migration_load_manual.sql).</i>'}
+      ${canManual ? '<b>Zelle anklicken</b>, um einen Wert nachzutragen oder zu korrigieren &ndash; auch mehrere Sessions pro Tag (&#9998; = manuell, 2&times; = Anzahl Sessions; die Tagessumme wird mit &bdquo;Aus App &uuml;bernehmen&ldquo; ins Load-Management-Tool &uuml;bertragen).' : '<i>Manuelle Nachtr&auml;ge: Datenbank-Erweiterung fehlt noch (supabase_migration_load_manual.sql).</i>'}
       Gruppen kommen aus der Athletenverwaltung; Werte tragen die Athlet:innen mit ihrem App-Zugang selbst ein.</p>
     </div>
   `;
@@ -611,41 +621,81 @@ async function renderTrainerDashboard(profile) {
   document.getElementById('lwPrev').onclick = () => { LOAD_WEEK--; renderTrainerDashboard(profile); };
   document.getElementById('lwNext').onclick = () => { LOAD_WEEK++; renderTrainerDashboard(profile); };
   const now = document.getElementById('lwNow'); if (now) now.onclick = () => { LOAD_WEEK = 0; renderTrainerDashboard(profile); };
-  // Nachtragen/Korrigieren je Zelle
+  // Nachtragen/Korrigieren je Zelle – mehrere Sessions pro Tag
   appEl.querySelectorAll('td.lm-edit').forEach(td => td.onclick = () => {
     const pk = td.dataset.pk, d = td.dataset.d, person = people.find(x => (x.userId ? 'u:' + x.userId : 'a:' + x.athleteId) === pk);
-    const m = manual[pk] && manual[pk][d], e = person.userId && byUserDate[person.userId] && byUserDate[person.userId][d];
+    const ms = (manual[pk] && manual[pk][d]) || [], e = person.userId && byUserDate[person.userId] && byUserDate[person.userId][d];
+    const appAu = e ? e.srpe * e.duration_min : 0;
+    // Startzustand: vorhandene Sessions; sonst bei App-Eintrag „App zählt + leere zweite Session“, ohne App eine leere Session
+    let keepApp = !!e && (ms.length ? ms.some(m => m.count_app) : canMulti);
+    let sess = ms.length ? ms.map(m => ({ r: m.srpe || '', du: m.duration_min || '', au: m.au, n: m.note || '' }))
+      : [{ r: '', du: '', au: '', n: '' }];
+    if (!canMulti) { keepApp = false; sess = sess.slice(0, 1); if (!ms.length && e) sess = [{ r: e.srpe, du: e.duration_min, au: appAu, n: '' }]; }
     const host = document.createElement('div');
-    host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:420px;">
+    host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:520px;">
       <h2 style="margin-bottom:4px;">${esc(person.name)}</h2>
-      <p class="hint" style="margin-top:0;">${['So','Mo','Di','Mi','Do','Fr','Sa'][new Date(d + 'T00:00:00').getDay()]}, ${fmtD(d)}${d.slice(0, 4)} &middot; ${e ? 'App: RPE ' + e.srpe + ' &times; ' + e.duration_min + ' min = ' + (e.srpe * e.duration_min) : 'kein App-Eintrag'}</p>
-      <div class="lm-mangrid">
-        <label>RPE (1&ndash;10)<input type="number" id="lmR" min="1" max="10" value="${m && m.srpe ? m.srpe : (e ? e.srpe : '')}"></label>
-        <label>Dauer (min)<input type="number" id="lmD" min="1" max="600" value="${m && m.duration_min ? m.duration_min : (e ? e.duration_min : '')}"></label>
-        <label>Session-Load (AU)<input type="number" id="lmA" min="0" max="5000" value="${m ? m.au : (e ? e.srpe * e.duration_min : '')}"></label>
-      </div>
-      <label class="wq-date" style="margin-top:8px;">Notiz (optional)<input type="text" id="lmN" value="${esc(m && m.note || '')}" placeholder="z. B. nachgetragen laut Trainer, Spiel"></label>
-      <p class="hint">RPE &times; Dauer wird automatisch berechnet; AU kann auch direkt eingetragen werden. 0 = bewusst kein Training.</p>
-      <div class="modal-actions">${m ? '<button type="button" class="danger" id="lmDel">Manuellen Wert l&ouml;schen</button>' : ''}<span class="spacer"></span>
+      <p class="hint" style="margin-top:0;">${['So','Mo','Di','Mi','Do','Fr','Sa'][new Date(d + 'T00:00:00').getDay()]}, ${fmtD(d)}${d.slice(0, 4)} &middot; ${e ? 'App: RPE ' + e.srpe + ' &times; ' + e.duration_min + ' min = ' + appAu : 'kein App-Eintrag'}</p>
+      ${e && canMulti ? `<label class="lm-appkeep"><input type="checkbox" id="lmApp" ${keepApp ? 'checked' : ''}><span>App-Wert (${appAu}) z&auml;hlt mit &ndash; Sessions unten kommen <b>dazu</b>.<br><span class="muted-inline">Haken raus = Sessions unten <b>ersetzen</b> den App-Wert (Korrektur).</span></span></label>` : ''}
+      <div id="lmSess"></div>
+      ${canMulti ? '<button type="button" class="secondary small-btn" id="lmAdd">+ weitere Session</button>' : '<p class="hint"><i>Mehrere Sessions pro Tag: Datenbank-Erweiterung fehlt noch (supabase_migration_load_manual_sessions.sql).</i></p>'}
+      <p class="lm-daysum">Tagessumme: <b id="lmSum">–</b> AU</p>
+      <p class="hint">RPE &times; Dauer wird je Session automatisch berechnet; AU kann auch direkt eingetragen werden. 0 = bewusst kein Training. Leere Sessions werden ignoriert.</p>
+      <div class="modal-actions">${ms.length ? '<button type="button" class="danger" id="lmDel">Manuelle Werte l&ouml;schen</button>' : ''}<span class="spacer"></span>
         <button type="button" class="secondary" id="lmX">Abbrechen</button><button type="button" id="lmOk">Speichern</button></div>
     </div></div>`;
     document.body.appendChild(host);
     const q = id => host.querySelector(id);
-    const calc = () => { const r = +q('#lmR').value, du = +q('#lmD').value; if (r && du) q('#lmA').value = r * du; };
-    q('#lmR').oninput = calc; q('#lmD').oninput = calc;
+    const filled = () => sess.filter(x => x.au !== '' && !isNaN(+x.au));
+    const showSum = () => { const f = filled(), k = q('#lmApp') ? q('#lmApp').checked : false;
+      q('#lmSum').textContent = (f.length || (k && e)) ? f.reduce((n, x) => n + Math.round(+x.au), 0) + (k && e ? appAu : 0) : '–'; };
+    const drawSess = () => {
+      q('#lmSess').innerHTML = sess.map((x, i) => `<div class="lm-sess" data-i="${i}">
+        <div class="lm-sess-h"><b>Session ${i + 1 + (q('#lmApp') && q('#lmApp').checked ? 1 : 0)}</b>${sess.length > 1 ? `<button type="button" class="link-btn" data-rm="${i}" title="Session entfernen">&times; entfernen</button>` : ''}</div>
+        <div class="lm-mangrid">
+          <label>RPE (1&ndash;10)<input type="number" data-f="r" min="1" max="10" value="${x.r}"></label>
+          <label>Dauer (min)<input type="number" data-f="du" min="1" max="600" value="${x.du}"></label>
+          <label>Session-Load (AU)<input type="number" data-f="au" min="0" max="5000" value="${x.au}"></label>
+        </div>
+        <label class="wq-date" style="margin-top:6px;">Notiz (optional)<input type="text" data-f="n" value="${esc(x.n)}" placeholder="z. B. nachgetragen laut Trainer, Spiel, 2. Einheit"></label>
+      </div>`).join('');
+      q('#lmSess').querySelectorAll('.lm-sess').forEach(box => {
+        const x = sess[+box.dataset.i], inp = f => box.querySelector(`[data-f="${f}"]`);
+        box.querySelectorAll('input').forEach(el => el.oninput = () => {
+          x[el.dataset.f] = el.value;
+          if (el.dataset.f === 'r' || el.dataset.f === 'du') { const r = +x.r, du = +x.du; if (r && du) { x.au = r * du; inp('au').value = x.au; } }
+          showSum();
+        });
+      });
+      q('#lmSess').querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { sess.splice(+b.dataset.rm, 1); drawSess(); });
+      showSum();
+    };
+    drawSess();
+    if (q('#lmApp')) q('#lmApp').onchange = drawSess;
+    if (q('#lmAdd')) q('#lmAdd').onclick = () => { sess.push({ r: '', du: '', au: '', n: '' }); drawSess(); const l = q('#lmSess').lastElementChild; if (l) l.querySelector('input').focus(); };
     q('#lmX').onclick = () => host.remove();
+    const delAll = () => sb.from('load_manual').delete().eq('person_key', pk).eq('entry_date', d);
     if (q('#lmDel')) q('#lmDel').onclick = async () => {
-      const r = await sb.from('load_manual').delete().eq('person_key', pk).eq('entry_date', d);
+      const r = await delAll();
       if (r.error) { toast('Fehler: ' + r.error.message); return; }
       host.remove(); renderTrainerDashboard(profile);
     };
     q('#lmOk').onclick = async () => {
-      const au = q('#lmA').value === '' ? null : Math.round(+q('#lmA').value);
-      if (au === null || isNaN(au) || au < 0) { alert('Bitte einen Wert eingeben (RPE × Dauer oder AU).'); return; }
+      const k = !!(q('#lmApp') && q('#lmApp').checked);
+      if (sess.some(x => x.au !== '' && (isNaN(+x.au) || +x.au < 0 || +x.au > 5000))) { alert('Bitte gültige Werte eingeben (AU 0–5000).'); return; }
+      const f = filled();
+      if (!f.length && !(k && e)) { alert('Bitte einen Wert eingeben (RPE × Dauer oder AU). 0 = bewusst kein Training.'); return; }
       const { data: { user } } = await sb.auth.getUser();
-      const row = { person_key: pk, user_id: person.userId || null, athlete_id: person.userId ? null : person.athleteId, entry_date: d, au,
-        srpe: +q('#lmR').value || null, duration_min: +q('#lmD').value || null, note: q('#lmN').value.trim() || null, updated_by: user.id, updated_at: new Date().toISOString() };
-      const r = await sb.from('load_manual').upsert(row, { onConflict: 'person_key,entry_date' });
+      const now = new Date().toISOString();
+      const rows = f.map((x, i) => ({ person_key: pk, user_id: person.userId || null, athlete_id: person.userId ? null : person.athleteId, entry_date: d,
+        au: Math.round(+x.au), srpe: +x.r || null, duration_min: +x.du || null, note: String(x.n || '').trim() || null, updated_by: user.id, updated_at: now,
+        ...(canMulti ? { session_no: i + 1, count_app: k } : {}) }));
+      let r;
+      if (canMulti) {
+        r = await delAll();
+        if (!r.error && rows.length) r = await sb.from('load_manual').insert(rows);
+      } else {
+        r = await sb.from('load_manual').upsert(rows[0], { onConflict: 'person_key,entry_date' });
+      }
       if (r.error) { alert('Speichern fehlgeschlagen: ' + r.error.message); return; }
       host.remove(); toast('Gespeichert.'); renderTrainerDashboard(profile);
     };

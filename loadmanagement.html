@@ -2264,7 +2264,7 @@
       sb.from("athletes").select("id,first_name,last_name,profile_id"),
       sb.from("athlete_groups").select("id,name").order("name"),
       sb.from("athlete_group_members").select("athlete_id,group_id"),
-      sb.from("load_manual").select("person_key,entry_date,au").gte("entry_date", from).lte("entry_date", to)
+      sb.from("load_manual").select("*").gte("entry_date", from).lte("entry_date", to)
     ]).then(function(r){
       btn.disabled = false;
       var err = r[0].error || r[1].error || r[2].error || r[3].error || r[4].error;
@@ -2282,15 +2282,23 @@
         var row = byUser[e.user_id] || (byUser[e.user_id] = [null,null,null,null,null,null,null]);
         row[idx] = (row[idx] || 0) + e.srpe * e.duration_min;
       });
-      // manuelle Werte ersetzen den App-Wert des Tages ('u:<profil>' bzw. 'a:<athlet>' ohne App-Zugang)
-      var manDays = {};
+      // manuelle Sessions ('u:<profil>' bzw. 'a:<athlet>' ohne App-Zugang): Summe je Tag; ersetzen den App-Wert,
+      // außer count_app = true (dann App-Wert + Sessions) – mehrere Sessions pro Tag seit 2026-10-09
+      var manDays = {}, manSum = {}, manKeep = {};
       (r[5] && !r[5].error ? r[5].data : []).forEach(function(m){
         var idx = Math.round((new Date(m.entry_date + "T00:00:00").getTime() - base) / 86400000);
         if (idx < 0 || idx > 6) return;
         var key = m.person_key.indexOf("u:") === 0 ? m.person_key.slice(2) : m.person_key;
-        var row = byUser[key] || (byUser[key] = [null,null,null,null,null,null,null]);
-        row[idx] = m.au;
+        var s = manSum[key] || (manSum[key] = {}), k = manKeep[key] || (manKeep[key] = {});
+        s[idx] = (s[idx] || 0) + (+m.au || 0);
+        if (m.count_app) k[idx] = true;
         (manDays[key] = manDays[key] || {})[idx] = true;
+      });
+      Object.keys(manSum).forEach(function(key){
+        var row = byUser[key] || (byUser[key] = [null,null,null,null,null,null,null]);
+        Object.keys(manSum[key]).forEach(function(idx){
+          row[idx] = (manKeep[key][idx] ? (row[idx] || 0) : 0) + manSum[key][idx];
+        });
       });
       var rows = Object.keys(byUser).map(function(uid){
         var nm = (nameOf[uid] || "Unbekannt").replace(/\s+/g, " ").trim();

@@ -621,6 +621,15 @@ td.lm-man sup{ font-size:.65em; margin-left:2px; }
 .lm-mangrid{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
 .lm-mangrid label{ display:flex; flex-direction:column; gap:4px; font-size:.8rem; color:var(--ink-soft); }
 .lm-mangrid input{ padding:8px; border:1px solid var(--line); border-radius:8px; font-size:1rem; }
+.lm-sess{ border:1px solid var(--line); border-radius:10px; padding:8px 10px 10px; margin:8px 0; }
+.lm-sess-h{ display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; font-size:.88rem; }
+.lm-appkeep{ display:flex; gap:8px; align-items:flex-start; font-size:.88rem; margin:4px 0 6px; cursor:pointer; }
+.lm-appkeep input{ margin-top:3px; width:auto; }
+.lm-sess .wq-date{ display:flex; flex-direction:column; gap:4px; font-size:.8rem; }
+.lm-sess .wq-date input{ width:100%; box-sizing:border-box; }
+.lm-daysum{ margin:10px 0 0; font-size:.95rem; }
+.lm-nsess{ display:block; font-size:.66rem; font-weight:600; opacity:.7; line-height:1; }
+@media (max-width:520px){ .lm-mangrid{ grid-template-columns:1fr 1fr; } .lm-mangrid label:last-child{ grid-column:1 / -1; } }
 .cd-copygrid{ border-collapse:collapse; width:100%; font-size:.88rem; }
 .cd-copygrid th, .cd-copygrid td{ padding:6px 8px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
 .cd-copygrid label{ display:inline-flex; gap:5px; align-items:center; cursor:pointer; }
