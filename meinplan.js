@@ -533,15 +533,8 @@ function renderMySession(profile, D, week, day) {
       // sRPE direkt ins Load Management (Session-RPE der App)
       if (perm(profile, 'srpe') === 'edit') {
         const date = new Date().toISOString().slice(0, 10);
-        const { data: ex } = await sb.from('load_entries').select('*').eq('user_id', uid).eq('entry_date', date).maybeSingle();
-        let row = { user_id: uid, entry_date: date, srpe: rpe, duration_min: dur, comment: `Trainingsplan W${week}/T${day}` };
-        if (ex && !(ex.comment || '').includes(`Trainingsplan W${week}/T${day}`)) {
-          const totalDur = ex.duration_min + dur;
-          row = { user_id: uid, entry_date: date, duration_min: totalDur,
-            srpe: Math.max(1, Math.min(10, Math.round((ex.srpe * ex.duration_min + rpe * dur) / totalDur))),
-            comment: [ex.comment, `+ Trainingsplan W${week}/T${day}`].filter(Boolean).join(' ') };
-        }
-        await sb.from('load_entries').upsert(row, { onConflict: 'user_id,entry_date' });
+        // jede Einheit = eigene Session-Zeile (mehrere Sessions pro Tag), erneutes Abschließen ersetzt sie
+        await saveSessionLoad(uid, date, rpe, dur, `Trainingsplan W${week}/T${day}`);
       }
       try { localStorage.removeItem(draftKey); } catch (e) {}
       host.remove();

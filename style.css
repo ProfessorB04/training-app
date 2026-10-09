@@ -627,6 +627,7 @@ td.lm-man sup{ font-size:.65em; margin-left:2px; }
 .lm-appkeep input{ margin-top:3px; width:auto; }
 .lm-sess .wq-date{ display:flex; flex-direction:column; gap:4px; font-size:.8rem; }
 .lm-sess .wq-date input{ width:100%; box-sizing:border-box; }
+.srpe-daystart td{ border-top:2px solid var(--line); }
 .lm-daysum{ margin:10px 0 0; font-size:.95rem; }
 .lm-nsess{ display:block; font-size:.66rem; font-weight:600; opacity:.7; line-height:1; }
 @media (max-width:520px){ .lm-mangrid{ grid-template-columns:1fr 1fr; } .lm-mangrid label:last-child{ grid-column:1 / -1; } }

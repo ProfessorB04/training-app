@@ -534,6 +534,7 @@ async function renderTrainerDashboard(profile) {
   Object.values(manual).forEach(p => Object.values(p).forEach(l => l.sort((x, y) => (x.session_no || 1) - (y.session_no || 1))));
   const canManual = !manRes.error;
   const canMulti = canManual && !multiRes.error;   // Spalten session_no/count_app vorhanden (supabase_migration_load_manual_sessions.sql)
+  const appTxt = e => e.list.map(x => `RPE ${x.srpe} × ${x.duration_min} min`).join(' + ') + ' = ' + e.au;
   const sessTxt = m => (m.srpe ? 'RPE ' + m.srpe + ' × ' + m.duration_min + ' min = ' : '') + m.au + (m.note ? ' (' + m.note + ')' : '');
   const profiles = profRes.data || [];
   const entries = entRes.data || [];
@@ -544,8 +545,10 @@ async function renderTrainerDashboard(profile) {
 
   const byUserDate = {};
   entries.forEach(e => {
-    byUserDate[e.user_id] = byUserDate[e.user_id] || {};
-    byUserDate[e.user_id][e.entry_date] = e;
+    // mehrere Sessions pro Tag möglich → je Tag Liste + Summe
+    const u = byUserDate[e.user_id] = byUserDate[e.user_id] || {};
+    const t = u[e.entry_date] = u[e.entry_date] || { au: 0, list: [] };
+    t.list.push(e); t.au += e.srpe * e.duration_min;
   });
 
   // Zeilen: ohne Gruppe = alle Athlet:innen mit App-Zugang; mit Gruppe = alle Mitglieder (auch ohne Zugang)
@@ -569,13 +572,13 @@ async function renderTrainerDashboard(profile) {
           const e = a.userId && byUserDate[a.userId] && byUserDate[a.userId][d];
           const ms = manual[pk] && manual[pk][d];
           if (ms && ms.length) { const keepApp = !!e && ms.some(m => m.count_app);
-            return { au: ms.reduce((n, m) => n + m.au, 0) + (keepApp ? e.srpe * e.duration_min : 0), man: true, ms, keepApp, app: e, n: ms.length + (keepApp ? 1 : 0) }; }
-          return e ? { au: e.srpe * e.duration_min, app: e, n: 1 } : null; };
+            return { au: ms.reduce((n, m) => n + m.au, 0) + (keepApp ? e.au : 0), man: true, ms, keepApp, app: e, n: ms.length + (keepApp ? e.list.length : 0) }; }
+          return e ? { au: e.au, app: e, n: e.list.length } : null; };
         const cells = days.map(d => {
           const v = val(d);
           const cls = v === null ? 'load-empty' : (v.au >= 500 ? 'load-high' : 'load-ok');
-          const tip = v && v.man ? [v.keepApp ? `App: RPE ${v.app.srpe} × ${v.app.duration_min} min = ${v.app.srpe * v.app.duration_min}` : '', ...v.ms.map((m, i) => `manuell${v.n > 1 ? ' ' + (i + 1) : ''}: ${sessTxt(m)}`)].filter(Boolean).join(' | ')
-            : (v ? `App: RPE ${v.app.srpe} × ${v.app.duration_min} min` : '');
+          const tip = v && v.man ? [v.keepApp ? 'App: ' + appTxt(v.app) : '', ...v.ms.map((m, i) => `manuell${v.n > 1 ? ' ' + (i + 1) : ''}: ${sessTxt(m)}`)].filter(Boolean).join(' | ')
+            : (v ? 'App: ' + appTxt(v.app) : '');
           return `<td class="${cls}${canManual ? ' lm-edit' : ''}${v && v.man ? ' lm-man' : ''}" data-pk="${pk}" data-d="${d}" title="${esc(tip)}${canManual ? (tip ? ' · ' : '') + 'klicken zum Nachtragen/Korrigieren' : ''}">${v === null ? '–' : v.au}${v && v.man ? '<sup>&#9998;</sup>' : ''}${v && v.n > 1 ? `<span class="lm-nsess">${v.n}&times;</span>` : ''}</td>`;
         }).join('');
         const vals = days.map(val).filter(Boolean);
@@ -625,16 +628,16 @@ async function renderTrainerDashboard(profile) {
   appEl.querySelectorAll('td.lm-edit').forEach(td => td.onclick = () => {
     const pk = td.dataset.pk, d = td.dataset.d, person = people.find(x => (x.userId ? 'u:' + x.userId : 'a:' + x.athleteId) === pk);
     const ms = (manual[pk] && manual[pk][d]) || [], e = person.userId && byUserDate[person.userId] && byUserDate[person.userId][d];
-    const appAu = e ? e.srpe * e.duration_min : 0;
+    const appAu = e ? e.au : 0, app1 = e && e.list.length === 1 ? e.list[0] : null;
     // Startzustand: vorhandene Sessions; sonst bei App-Eintrag „App zählt + leere zweite Session“, ohne App eine leere Session
     let keepApp = !!e && (ms.length ? ms.some(m => m.count_app) : canMulti);
     let sess = ms.length ? ms.map(m => ({ r: m.srpe || '', du: m.duration_min || '', au: m.au, n: m.note || '' }))
       : [{ r: '', du: '', au: '', n: '' }];
-    if (!canMulti) { keepApp = false; sess = sess.slice(0, 1); if (!ms.length && e) sess = [{ r: e.srpe, du: e.duration_min, au: appAu, n: '' }]; }
+    if (!canMulti) { keepApp = false; sess = sess.slice(0, 1); if (!ms.length && e) sess = [{ r: app1 ? app1.srpe : '', du: app1 ? app1.duration_min : '', au: appAu, n: '' }]; }
     const host = document.createElement('div');
     host.innerHTML = `<div class="modal-scrim"><div class="modal" style="max-width:520px;">
       <h2 style="margin-bottom:4px;">${esc(person.name)}</h2>
-      <p class="hint" style="margin-top:0;">${['So','Mo','Di','Mi','Do','Fr','Sa'][new Date(d + 'T00:00:00').getDay()]}, ${fmtD(d)}${d.slice(0, 4)} &middot; ${e ? 'App: RPE ' + e.srpe + ' &times; ' + e.duration_min + ' min = ' + appAu : 'kein App-Eintrag'}</p>
+      <p class="hint" style="margin-top:0;">${['So','Mo','Di','Mi','Do','Fr','Sa'][new Date(d + 'T00:00:00').getDay()]}, ${fmtD(d)}${d.slice(0, 4)} &middot; ${e ? (e.list.length > 1 ? 'App (' + e.list.length + ' Sessions): ' : 'App: ') + esc(appTxt(e)).replace(/×/g, '&times;') : 'kein App-Eintrag'}</p>
       ${e && canMulti ? `<label class="lm-appkeep"><input type="checkbox" id="lmApp" ${keepApp ? 'checked' : ''}><span>App-Wert (${appAu}) z&auml;hlt mit &ndash; Sessions unten kommen <b>dazu</b>.<br><span class="muted-inline">Haken raus = Sessions unten <b>ersetzen</b> den App-Wert (Korrektur).</span></span></label>` : ''}
       <div id="lmSess"></div>
       ${canMulti ? '<button type="button" class="secondary small-btn" id="lmAdd">+ weitere Session</button>' : '<p class="hint"><i>Mehrere Sessions pro Tag: Datenbank-Erweiterung fehlt noch (supabase_migration_load_manual_sessions.sql).</i></p>'}
@@ -1004,26 +1007,35 @@ async function renderAthleteDashboard(profile) {
     .from('load_entries')
     .select('*')
     .order('entry_date', { ascending: false })
-    .limit(14);
+    .order('created_at', { ascending: false })
+    .limit(30);
 
+  // mehrere Sessions pro Tag: Tagessumme in der ersten Zeile des Tages
+  const daySum = {}, dayCnt = {};
+  (rows || []).forEach(r => { daySum[r.entry_date] = (daySum[r.entry_date] || 0) + r.srpe * r.duration_min; dayCnt[r.entry_date] = (dayCnt[r.entry_date] || 0) + 1; });
+  const fmtDay = iso => ['So','Mo','Di','Mi','Do','Fr','Sa'][new Date(iso + 'T00:00:00').getDay()] + ', ' + iso.slice(8, 10) + '.' + iso.slice(5, 7) + '.';
   const historyRows = (rows && rows.length)
-    ? rows.map(r => `
-        <tr>
-          <td>${esc(r.entry_date)}</td>
+    ? rows.map((r, i) => {
+        const first = i === 0 || rows[i - 1].entry_date !== r.entry_date;
+        return `
+        <tr${first && i ? ' class="srpe-daystart"' : ''}>
+          <td>${first ? esc(fmtDay(r.entry_date)) : ''}</td>
           <td>${r.srpe}</td>
           <td>${r.duration_min} min</td>
           <td>${r.srpe * r.duration_min}</td>
+          <td>${first && dayCnt[r.entry_date] > 1 ? `<b>${daySum[r.entry_date]}</b> <span class="muted-inline">(${dayCnt[r.entry_date]} Sessions)</span>` : (first ? daySum[r.entry_date] : '')}</td>
           <td>${esc(r.comment || '')}</td>
-        </tr>
-      `).join('')
-    : `<tr><td colspan="5" class="muted">Noch keine Eintr&auml;ge.</td></tr>`;
+          ${canEdit ? `<td><button type="button" class="link-btn" data-del="${r.id}" title="Eintrag l&ouml;schen">&#128465;</button></td>` : ''}
+        </tr>`; }).join('')
+    : `<tr><td colspan="7" class="muted">Noch keine Eintr&auml;ge.</td></tr>`;
 
   const srpeOptions = Array.from({ length: 10 }, (_, i) => i + 1)
     .map(n => `<option value="${n}">${n}</option>`).join('');
 
   const content = `
     <div class="card" ${canEdit ? '' : 'hidden'}>
-      <h2>Heutige Einheit eintragen</h2>
+      <h2>Session eintragen</h2>
+      <p class="hint" style="margin-top:0;">Mehrere Trainings am selben Tag? Einfach jede Session einzeln eintragen &ndash; sie werden zusammengez&auml;hlt.</p>
       <form id="entryForm" class="inline-form">
         <label>Datum<input type="date" id="entryDate" value="${today}" required></label>
         <label>sRPE (1&ndash;10)
@@ -1043,7 +1055,7 @@ async function renderAthleteDashboard(profile) {
       <h2>Meine letzten Eintr&auml;ge</h2>
       <div class="tablewrap">
         <table>
-          <thead><tr><th>Datum</th><th>sRPE</th><th>Dauer</th><th>Load</th><th>Kommentar</th></tr></thead>
+          <thead><tr><th>Datum</th><th>sRPE</th><th>Dauer</th><th>Load</th><th>Tag &Sigma;</th><th>Kommentar</th>${canEdit ? '<th></th>' : ''}</tr></thead>
           <tbody>${historyRows}</tbody>
         </table>
       </div>
@@ -1060,20 +1072,46 @@ async function renderAthleteDashboard(profile) {
     const comment = document.getElementById('entryComment').value.trim();
 
     const { data: { user } } = await sb.auth.getUser();
-    const { error } = await sb
-      .from('load_entries')
-      .upsert(
-        { user_id: user.id, entry_date, srpe, duration_min, comment },
-        { onConflict: 'user_id,entry_date' }
-      );
+    // jede Session = eigene Zeile; vor der Datenbank-Erweiterung (ein Eintrag je Tag) wird zum Tageseintrag dazugerechnet
+    let { error } = await sb.from('load_entries').insert({ user_id: user.id, entry_date, srpe, duration_min, comment });
+    if (error && error.code === '23505') error = await addToDayEntry(user.id, entry_date, srpe, duration_min, comment || 'Session', true);
 
     const msg = document.getElementById('entryMsg');
     msg.hidden = false;
     msg.textContent = error ? ('Fehler: ' + error.message) : 'Gespeichert.';
     if (!error) {
+      toast('Session gespeichert.');
       renderAthleteDashboard(profile);
     }
   };
+  appEl.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm('Diesen Eintrag löschen?')) return;
+    const { error } = await sb.from('load_entries').delete().eq('id', +b.dataset.del);
+    if (error) { toast('Fehler: ' + error.message); return; }
+    renderAthleteDashboard(profile);
+  });
+}
+
+// Session-RPE speichern: jede Session/Einheit = eigene Zeile in load_entries. `tag` (Kommentar) kennzeichnet die Quelle,
+// z. B. „Trainingsplan W2/T1“ – ein vorhandener Eintrag mit genau diesem Kommentar am selben Tag wird ersetzt (erneut abgeschlossen).
+// Fallback, solange die Datenbank nur einen Eintrag je Tag erlaubt (Migration load_entries_sessions fehlt): zusammenrechnen.
+async function saveSessionLoad(uid, entry_date, srpe, duration_min, tag) {
+  await sb.from('load_entries').delete().eq('user_id', uid).eq('entry_date', entry_date).eq('comment', tag);
+  const { error } = await sb.from('load_entries').insert({ user_id: uid, entry_date, srpe, duration_min, comment: tag });
+  if (error && error.code === '23505') return addToDayEntry(uid, entry_date, srpe, duration_min, tag);
+  return error;
+}
+async function addToDayEntry(uid, date, rpe, dur, tag, always) {
+  const { data: ex } = await sb.from('load_entries').select('*').eq('user_id', uid).eq('entry_date', date).maybeSingle();
+  let row = { user_id: uid, entry_date: date, srpe: rpe, duration_min: dur, comment: tag };
+  if (ex && (always || !(ex.comment || '').includes(tag))) {
+    const totalDur = ex.duration_min + dur;
+    row = { user_id: uid, entry_date: date, duration_min: totalDur,
+      srpe: Math.max(1, Math.min(10, Math.round((ex.srpe * ex.duration_min + rpe * dur) / totalDur))),
+      comment: [ex.comment, '+ ' + tag].filter(Boolean).join(' ') };
+  }
+  const { error } = await sb.from('load_entries').upsert(row, { onConflict: 'user_id,entry_date' });
+  return error;
 }
 
 // ---------------- Start ----------------

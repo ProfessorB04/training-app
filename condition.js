@@ -1094,17 +1094,9 @@ function renderMyCondition(profile, x) {
       const dur = needRpe ? (parseInt(host.querySelector('#cdDur').value, 10) || mins) : null;
       await persist(true, needRpe ? { srpe: rpe, duration_min: dur } : {});
       if (needRpe) {
-        // wie „Mein Trainingsplan“: sRPE ins Load Management, bei vorhandenem Tages-Eintrag zusammenrechnen
+        // wie „Mein Trainingsplan“: sRPE ins Load Management als eigene Session (mehrere pro Tag)
         const date = new Date().toISOString().slice(0, 10), tag = 'Conditioning: ' + (s.title || '');
-        const { data: ex } = await sb.from('load_entries').select('*').eq('user_id', x.uid).eq('entry_date', date).maybeSingle();
-        let row = { user_id: x.uid, entry_date: date, srpe: rpe, duration_min: dur, comment: tag };
-        if (ex && !(ex.comment || '').includes(tag)) {
-          const totalDur = ex.duration_min + dur;
-          row = { user_id: x.uid, entry_date: date, duration_min: totalDur,
-            srpe: Math.max(1, Math.min(10, Math.round((ex.srpe * ex.duration_min + rpe * dur) / totalDur))),
-            comment: [ex.comment, '+ ' + tag].filter(Boolean).join(' ') };
-        }
-        await sb.from('load_entries').upsert(row, { onConflict: 'user_id,entry_date' });
+        await saveSessionLoad(x.uid, date, rpe, dur, tag);
       }
       host.remove(); toast(L('Einheit gespeichert – stark! 💪', 'Session saved – great work! 💪')); renderMyConditionList(profile);
     };
