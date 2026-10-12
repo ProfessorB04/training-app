@@ -240,6 +240,11 @@
   .lm-acwr-opt{ display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; font-size:.85rem; margin:0 0 12px; color:var(--ink-soft); }
   .lm-acwr-opt label{ display:inline-flex; gap:5px; align-items:center; cursor:pointer; color:var(--ink); }
   .lm-acwr-opt .lm-acwr-note{ font-size:.78rem; color:var(--ink-faint); }
+  .steer-auto-hint{ font-size:.82rem; margin:0 0 8px; padding:8px 12px; border-radius:8px; }
+  .steer-auto-hint:empty{ display:none; }
+  .steer-auto-hint.warn{ background:rgba(192,57,43,.08); border:1px solid rgba(192,57,43,.35); color:var(--ink); }
+  .steer-auto-hint.ok{ background:var(--bg); border:1px dashed var(--line); color:var(--ink-faint); }
+  .steer-auto-hint button{ margin-left:8px; }
   .steer-st{ font-size:.72rem; font-weight:700; color:#fff; border-radius:4px; padding:1px 5px; }
   .loadinput{ width:56px; padding:6px 4px; text-align:center; border-radius:6px; border:1px solid var(--line); background:var(--bg-elevated); color:var(--ink); font-size:.85rem; }
   .loadinput:focus{ outline:2px solid var(--accent); outline-offset:1px; }
@@ -619,6 +624,7 @@
       <div id="steerPrintHeader" class="print-header"></div>
 
       <div class="steer-week-label no-print">Bearbeiten (Tag-Typ &amp; Stufen anklicken)</div>
+      <div class="steer-auto-hint no-print" id="steerAutoHint"></div>
       <div class="steer-week no-print" id="steerWeekGrid"></div>
 
       <div class="steer-week-label no-print">Vorschau &mdash; so wird gedruckt / als Word exportiert</div>
@@ -1016,7 +1022,9 @@
   // KW 35 (und über ACWR/Wellness-Baseline zusätzlich auf die Wochen davor).
   function steeringSourceWeek(){
     var target = state.steeringWeek || state.currentWeek;
-    if (weekHasLoadData(target)) return target;
+    // Steuerungs-Woche selbst nur, wenn sie vorbei ist: eine angefangene Woche (z. B. nur Montag) ergäbe künstlich
+    // niedrige Wochenlast/ACWR → fälschlich „unterbelastet, steigern“
+    if (weekHasLoadData(target) && addDays(target, 6) < isoDate(new Date())) return target;
     for (var i = 1; i <= 12; i++){
       var iso = addDays(target, -7 * i);
       if (weekHasLoadData(iso)) return iso;
@@ -1092,14 +1100,15 @@
     return { acwr: C > 0 ? A / C : null, acute: A, chronic: C, days: n, gaps: gaps, warm: n < 50 };
   }
   // Wiedereinstieg: letzte Status-Phase (≥ 5 Tage am Stück) endete in den 21 Tagen vor Wochenende
-  function lmReturnInfo(name, weekIso, m){
+  // afterPause: Steuerung der Folgewoche nach einer Status-Woche (Status bis Sonntag erlaubt, ab 3 Tagen am Stück)
+  function lmReturnInfo(name, weekIso, m, afterPause){
     var end = addDays(weekIso, 6), lastSt = null;
     for (var k = 0; k < 21; k++){ var d = addDays(end, -k); if (stGet(name, d)){ lastSt = d; break; } }
-    if (!lastSt || lastSt === end) return null;
+    if (!lastSt || (lastSt === end && !afterPause)) return null;
     var start = lastSt, len = 0;
     while (stGet(name, start) && len < 400){ len++; start = addDays(start, -1); }
     start = addDays(start, 1);
-    if (len < 5) return null;
+    if (len < (afterPause ? 3 : 5)) return null;
     var since = Math.round((new Date(end + "T00:00:00") - new Date(lastSt + "T00:00:00")) / 86400000);
     var startMon = mondayOf(new Date(start + "T00:00:00")), pre = [];
     for (var w = 1; w <= 4; w++){ var t = weekTotal(addDays(startMon, -7 * w), name); if (t !== null && t > 0) pre.push(t); }
@@ -1109,7 +1118,7 @@
       var cv = [weekIso, addDays(weekIso, -7), addDays(weekIso, -14)].map(function(x){ return weekTotal(x, name); }).filter(function(x){ return x !== null; });
       if (cv.length >= 2) chronicWeek = mean(cv);
     }
-    return { days: len, from: start, to: lastSt, weekNo: Math.min(3, Math.ceil(since / 7)), preAvg: pre.length ? mean(pre) : null,
+    return { days: len, from: start, to: lastSt, kind: stGet(name, lastSt), weekNo: afterPause ? 1 : Math.max(1, Math.min(3, Math.ceil(since / 7))), preAvg: pre.length ? mean(pre) : null,
              cap: chronicWeek ? 1.3 * chronicWeek : null };
   }
   function computeMetrics(name, weekIso){
@@ -1241,8 +1250,8 @@
       var r = metrics.ret;
       return "&#8635; <b>Wiedereinstieg</b> nach " + r.days + " Tagen Pause (" + fmtDate(r.from).slice(0, 6) + "&ndash;" + fmtDate(r.to).slice(0, 6) + "), Woche " + r.weekNo + " von 3: " +
         "Last schrittweise aufbauen, keine Spr&uuml;nge" + (r.cap ? " &mdash; Orientierung n&auml;chste Woche h&ouml;chstens &asymp; " + Math.round(r.cap) + " AU (ACWR 1,3)" : "") +
-        (r.preAvg ? "; vor der Pause &Oslash; " + Math.round(r.preAvg) + " AU/Woche" : "") + ". Freigabe und Belastbarkeit mit Arzt/Physio abstimmen. " +
-        "<span style='opacity:.8'>Kennzahlen: " + base + "</span>";
+        (r.preAvg ? "; vor der Pause &Oslash; " + Math.round(r.preAvg) + " AU/Woche" : "") + (r.kind === "away" ? ". Nach Abwesenheit Befinden und Trainingsstand abfragen. " : ". Freigabe und Belastbarkeit mit Arzt/Physio abstimmen. ") +
+        (r.afterPause ? "" : "<span style='opacity:.8'>Kennzahlen: " + base + "</span>");
     }
     return base;
   }
@@ -1717,7 +1726,7 @@
   function getSteeringWeek(iso){
     iso = iso || state.steeringWeek || state.currentWeek;
     if (!state.steering[iso]){
-      state.steering[iso] = { days: defaultSteerDays(), note: "" };
+      state.steering[iso] = { days: defaultSteerDays(), note: "", autoSync: true };
     }
     var sw = state.steering[iso];
     if (!sw.days || sw.days.length !== 7){
@@ -1789,6 +1798,31 @@
     };
   }
 
+  // Bewertung einer Spielerin für die STEUERUNGS-Woche (Kennzahlen der Bezugswoche + Status beider Wochen)
+  function steerEval(name, srcWeek){
+    srcWeek = srcWeek || steeringSourceWeek();
+    var m = computeMetrics(name, srcWeek), wm = computeWellnessMetrics(name, srcWeek);
+    var r = { m: m, wm: wm, sig: overallSignal(m, wm), tst: stWeekInfo(state.steeringWeek, name), next: false, afterPause: false, sick: 0 };
+    if (r.tst.days >= 3){ r.next = true; return r; }               // Status für die Steuerungs-Woche schon eingetragen → individuell
+    if (srcWeek === state.steeringWeek) return r;
+    if (r.sig.pause){
+      // Bezugswoche überwiegend Status, Steuerungs-Woche ohne Status → Wiedereinstieg Woche 1 statt „Individuell“
+      var ret = lmReturnInfo(name, srcWeek, m, true);
+      if (!ret){
+        var ds = [];
+        for (var i = 0; i < 7; i++) if (stGet(name, addDays(srcWeek, i))) ds.push(addDays(srcWeek, i));
+        ret = { days: ds.length, from: ds[0], to: ds[ds.length - 1], kind: m.st.kind, weekNo: 1, preAvg: null, cap: null };
+      }
+      ret.afterPause = true; m.ret = ret; m.pause = false;
+      r.sig = { zone: "a", dir: "under", ret: true }; r.afterPause = true;
+      return r;
+    }
+    var sick = 0;
+    for (var j = 0; j < 7; j++){ var c = stGet(name, addDays(srcWeek, j)); if (c === "ill" || c === "inj") sick++; }
+    if (sick && r.sig.dir === "under" && !r.sig.ret){ r.sig = { zone: "a", dir: "under" }; r.sick = sick; }   // Rückgang krankheitsbedingt → nicht steigern
+    return r;
+  }
+
   function computeTeamLoadSignal(weekIso){
     weekIso = weekIso || steeringSourceWeek();
     var counts = { r:0, a:0, g:0, idle:0 };
@@ -1796,7 +1830,8 @@
     var selP = steerPlayers();
     var total = selP.length;
     selP.forEach(function(name){
-      var sig = overallSignal(computeMetrics(name, weekIso), computeWellnessMetrics(name, weekIso));
+      // Status/Wiedereinstieg/kurz krank = Einzelfall, beeinflusst den Team-Plan nicht
+      var ev = steerEval(name, weekIso), sig = (ev.next || ev.sig.pause || ev.sig.ret || ev.sick) ? { zone: "idle", dir: null } : ev.sig;
       counts[sig.zone] = (counts[sig.zone] || 0) + 1;
       if (sig.zone !== "idle"){
         dataCount++;
@@ -1806,9 +1841,10 @@
     });
     var shift = 0;
     if (total > 0 && dataCount > 0){
-      if (counts.r / total >= 0.25 || (counts.r + counts.a) / total >= 0.5){
+      // Anteile bezogen auf Spielerinnen mit Daten (krank/ohne Daten verdünnen den Anteil sonst)
+      if (counts.r / dataCount >= 0.25 || (counts.r + counts.a) / dataCount >= 0.5){
         shift = -1; // Team überwiegend rot/gelb -> Wochenplan vorsichtiger anlegen
-      } else if (overCount === 0 && underCount / total >= 0.34){
+      } else if (overCount === 0 && underCount / dataCount >= 0.34){
         shift = 1; // Kein Überlastungssignal, mind. ein Drittel deutlich unterbelastet/erholt -> Plan darf intensiver sein
       }
     }
@@ -1843,14 +1879,18 @@
     if (!steerPlayers().length) return "Keine Spielerin für die Empfehlung ausgewählt.";
     var srcWeek = steeringSourceWeek();
     var teamSig = computeTeamLoadSignal(srcWeek);
-    var namesOver = [], namesAmberOver = [], namesUnder = [];
+    var namesOver = [], namesAmberOver = [], namesUnder = [], namesRet = [], namesNext = [], namesSick = [];
     steerPlayers().forEach(function(name){
-      var sig = overallSignal(computeMetrics(name, srcWeek), computeWellnessMetrics(name, srcWeek));
-      if (sig.zone === "r" && sig.dir === "under") namesUnder.push(name);
+      var ev = steerEval(name, srcWeek), sig = ev.sig;
+      if (ev.next) namesNext.push(name + " (" + ((LM_ST[ev.tst.kind] || {}).l || "Status") + ")");
+      else if (sig.pause) namesNext.push(name + " (" + ((LM_ST[ev.m.st.kind] || {}).l || "Status") + ")");
+      else if (sig.ret) namesRet.push(name + (sig.zone === "r" && sig.dir === "over" ? " (Last aktuell zu hoch)" : ""));
+      else if (ev.sick) namesSick.push(name);
+      else if (sig.zone === "r" && sig.dir === "under") namesUnder.push(name);
       else if (sig.zone === "r") namesOver.push(name);
       else if (sig.zone === "a" && sig.dir !== "under") namesAmberOver.push(name);
     });
-    var c = teamSig.counts, total = teamSig.total;
+    var c = teamSig.counts, total = teamSig.dataCount;
     if (teamSig.dataCount === 0) return "Noch nicht genug Daten (mind. 2 Tage/Woche und einige Vorwochen je Spielerin nötig).";
 
     var parts = [];
@@ -1877,6 +1917,9 @@
     if (namesOver.length) parts.push("Belastung reduzieren bei: " + namesOver.join(", ") + ".");
     if (namesAmberOver.length) parts.push("Nicht steigern / beobachten bei: " + namesAmberOver.join(", ") + ".");
     if (namesUnder.length) parts.push("Deutlich unter chronischer Last, vorsichtig steigerbar: " + namesUnder.join(", ") + ".");
+    if (namesRet.length) parts.push("Wiedereinstieg nach Krankheit/Verletzung/Pause &mdash; schrittweise, höchstens mittlere Stufen, nicht voll im Team-Plan: " + namesRet.join(", ") + ".");
+    if (namesSick.length) parts.push("Last nur wegen Krankheits-/Verletzungstagen gesunken &mdash; nicht steigern, Befinden prüfen: " + namesSick.join(", ") + ".");
+    if (namesNext.length) parts.push("Status eingetragen, keine Steuerung aus den Kennzahlen (individuell mit Arzt/Physio): " + namesNext.join(", ") + ".");
 
     if (teamSig.shift < 0){
       parts.push((c.r / total >= 0.25 ? "Mehr als ein Viertel des Kaders in Rot" : "Über die Hälfte des Kaders in Rot/Gelb") + " &mdash; team-weite Reduktion von Volumen und Intensität für die kommende Woche empfohlen.");
@@ -2145,6 +2188,26 @@
   function renderWeekSteering(){
     renderSteerSel();
     var sw = getSteeringWeek();
+    // Team-Plan ↔ Datenlage: neue Wochen folgen automatisch, bis ein Pfeil von Hand geändert wird
+    var autoDays = applyAutoTeamPlan(JSON.parse(JSON.stringify(sw.days)));
+    var planDiff = sw.days.some(function(d, i){ return d.type === "training" && (d.vol !== autoDays[i].vol || d.int !== autoDays[i].int); });
+    if (planDiff && sw.autoSync){ sw.days = autoDays; planDiff = false; save(); }
+    var hintEl = document.getElementById("steerAutoHint");
+    if (hintEl){
+      var ts = computeTeamLoadSignal();
+      var want = ts.shift < 0 ? "team-weit reduzieren (alle Aufbau-Tage eine Stufe niedriger)" : ts.shift > 0 ? "intensiver möglich (Aufbau-Tage eine Stufe höher)" : "normaler Wechsel hart/moderat";
+      if (planDiff){
+        hintEl.className = "steer-auto-hint warn no-print";
+        hintEl.innerHTML = "&#9888; Die Pfeile passen nicht zur aktuellen Datenlage &mdash; Daten-Empfehlung: <b>" + want + "</b>." +
+          " <button type='button' class='btn' id='steerAutoApply'>An Daten anpassen</button>" +
+          " <span style='opacity:.75'>(oder bewusst so lassen, z. B. wegen Spielplan)</span>";
+        document.getElementById("steerAutoApply").onclick = function(){ sw.days = autoDays; sw.autoSync = true; save(); renderWeekSteering(); };
+      } else {
+        hintEl.className = "steer-auto-hint ok no-print";
+        hintEl.innerHTML = sw.autoSync ? "Pfeile folgen automatisch den Daten (" + want + ") &mdash; bis du einen Pfeil von Hand änderst."
+          : "Pfeile von Hand gesetzt, entsprechen der Daten-Empfehlung (" + want + ").";
+      }
+    }
     renderPrintHeader();
     renderSteerTargetControls();
     renderSteerPlanTable(sw);
@@ -2184,6 +2247,7 @@
       btn.addEventListener("click", function(){
         var i = parseInt(btn.dataset.day), kind = btn.dataset.kind;
         sw.days[i][kind] = (sw.days[i][kind] + 1) % 3;
+        sw.autoSync = false;
         save(); renderWeekSteering();
       });
     });
@@ -2246,9 +2310,7 @@
       var srcWeek = steeringSourceWeek();
       if (!steerPlayers().length) rows = "<tr><td colspan='10' style='color:var(--ink-faint)'>Keine Spielerin ausgewählt (oben unter „Spielerinnen für Team-Empfehlung“).</td></tr>";
       steerPlayers().forEach(function(name){
-        var m = computeMetrics(name, srcWeek);
-        var wm = computeWellnessMetrics(name, srcWeek);
-        var sig = overallSignal(m, wm);
+        var ev = steerEval(name, srcWeek), m = ev.m, wm = ev.wm, sig = ev.sig;
         var zone = sig.zone;
         var effZone = (zone === "idle") ? "g" : zone; // keine Daten -> keine zusätzliche Einschränkung
         var effDir = (zone === "idle") ? null : sig.dir;
@@ -2256,11 +2318,15 @@
         if (effDir === "under" && !sig.ret) zoneLabel += " (U)";
         if (sig.ret) zoneLabel += " &middot; R&uuml;ckkehr";
         // Status in der Steuerungs-Woche (vorab eingetragen) oder in der Bezugswoche → keine Pfeile aus den Kennzahlen
-        var tst = stWeekInfo(state.steeringWeek, name), stPaused = sig.pause || tst.days >= 3;
-        if (stPaused) zoneLabel = (LM_ST[(sig.pause ? m.st.kind : tst.kind)] || { l: "Pause" }).l;
+        var tst = ev.tst, stPaused = ev.next || sig.pause;
+        if (stPaused) zoneLabel = (LM_ST[(ev.next ? tst.kind : m.st.kind)] || { l: "Pause" }).l;
+        if (ev.sick) zoneLabel = zoneLabel.replace(" (U)", "") + " &middot; nach Krankheit";
+        var rtxt = ev.next
+          ? "&#9208; Für " + weekKeyLabel(state.steeringWeek) + " an " + tst.days + " Tagen <b>" + ((LM_ST[tst.kind] || {}).l || "Status") + "</b> eingetragen &mdash; keine Laststeuerung aus den Kennzahlen, individuell mit Arzt/Physio."
+          : ev.sick ? "Last in der Bezugswoche nur wegen " + ev.sick + " Krankheits-/Verletzungstag" + (ev.sick === 1 ? "" : "en") + " gesunken &mdash; <b>nicht steigern</b>, Team-Plan normal, Befinden vor intensiven Einheiten prüfen."
+          : recoText(zone, m, wm, sig.dir);
         recos += "<div class='row" + (zone === "idle" ? " idle" : "") + "'><span class='nm'>" + esc(name) +
-          ":</span> <span class='status-pill " + zone + "'>" + zoneLabel + "</span> " +
-          recoText(zone, m, wm, sig.dir) + "</div>";
+          ":</span> <span class='status-pill " + zone + "'>" + zoneLabel + "</span> " + rtxt + "</div>";
         var dayCells = "";
         sw.days.forEach(function(day, di){
           var dst = stGet(name, addDays(state.steeringWeek, di));
@@ -2273,6 +2339,7 @@
           } else {
             var av = adjustSteerLevel(day.vol, effZone, effDir);
             var ai = adjustSteerLevel(day.int, effZone, effDir);
+            if (sig.ret){ av = Math.min(av, 1); ai = Math.min(ai, 1); }   // Wiedereinstieg: höchstens mittel
             dayCells += "<td class='arrows'><span class='icon-pair'>" +
               clockIcon(av, "Volumen: " + STEER_LEVEL_LABEL[av]) + battIcon(ai, "Intensität: " + STEER_LEVEL_LABEL[ai]) +
               "</span></td>";
@@ -2280,6 +2347,7 @@
         });
         var noteTxt = stPaused ? "Individuell (Arzt/Physio)" : sig.ret ? "Wiedereinstieg: schrittweise, nicht über Team-Plan"
           : effZone === "r" ? (effDir === "under" ? "Unterbelastet, vorsichtig steigern" : "Belastung reduzieren")
+          : ev.sick ? "Nach Krankheit: nicht steigern"
           : effZone === "a" ? (effDir === "under" ? "Leicht rückläufig, beobachten" : "Nicht steigern, beobachten")
           : "Team-Plan";
         rows += "<tr" + (zone === "idle" ? " class='steer-row-idle'" : "") + "><td>" + esc(name) + "</td><td><span class='status-pill " + zone + "' title='" + (effDir === "under" ? "Unterlastung" : "") + "'>" + zoneLabel + "</span></td>" +
