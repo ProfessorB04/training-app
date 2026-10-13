@@ -101,7 +101,10 @@ th:first-child, td:first-child{ text-align:left; }
 
 .load-empty{ color:var(--ink-soft); }
 .load-ok{ color:var(--ok); font-weight:700; }
-.load-high{ color:var(--warn); font-weight:700; }
+.load-low{ color:var(--ink-soft); font-weight:600; }
+.load-high{ color:#c77700; font-weight:700; }
+.load-vhigh{ color:var(--warn); font-weight:800; }
+.lm-up{ color:var(--warn); font-weight:800; margin-left:2px; }
 .muted{ color:var(--ink-soft); font-style:italic; }
 .notice{ background:#e8f4ee; border:1px solid #c9e6d8; color:#1c6b47; padding:10px 14px; border-radius:9px; }
 .hint{ font-size:.8rem; color:var(--ink-soft); margin-top:8px; }

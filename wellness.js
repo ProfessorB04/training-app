@@ -106,7 +106,7 @@ async function renderWellnessOverview(profile) {
     WELL_GROUP = '';
     people = (profRes.data || []).map(p => ({ name: p.name, userId: p.id }));
   }
-  const cls = (v) => v === null ? 'load-empty' : (v < 2.5 ? 'load-high' : (v < 3.5 ? 'well-mid' : 'load-ok'));
+  const cls = (v) => v === null ? 'load-empty' : (v < 2.5 ? 'load-vhigh' : (v < 3.5 ? 'well-mid' : 'load-ok'));
   const rows = people.length ? people.map(a => {
     if (!a.userId) return `<tr class="no-access"><td>${esc(a.name)}</td><td colspan="7" class="muted">kein App-Zugang</td></tr>`;
     return `<tr><td>${esc(a.name)}</td>${days.map(d => {

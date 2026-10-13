@@ -515,16 +515,30 @@ function renderMenu(profile) {
 // ---------------- Trainer-Ansicht: Load Management ----------------
 let LOAD_GROUP = '';   // gewählte Gruppe in der Load-Management-Übersicht ('' = alle mit App-Zugang)
 let LOAD_WEEK = 0;     // gewählte Kalenderwoche relativ zur aktuellen (0 = diese Woche, −1 = Vorwoche …)
+// feste Stufen der Tageslast (AU) – Praxis-Orientierung Teamsport (z. B. 90 min × RPE 6 = 540 = normal), kein Studien-Grenzwert
+const LOAD_TIER = au => au < 300 ? { cls: 'load-low', label: 'leicht (< 300)' } : au < 700 ? { cls: 'load-ok', label: 'normal (300–699)' }
+  : au < 1000 ? { cls: 'load-high', label: 'hoch (700–999)' } : { cls: 'load-vhigh', label: 'sehr hoch (≥ 1000)' };
 
 async function renderTrainerDashboard(profile) {
   const days = weekDates(LOAD_WEEK);
   const dayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
+  // zusätzlich 4 Vorwochen laden: persönliches Tagesmittel für den ↑-Pfeil (ungewöhnlich hoch für diese Person)
+  const m0 = new Date(days[0] + 'T00:00:00'), baseFrom = localIso(new Date(m0.getFullYear(), m0.getMonth(), m0.getDate() - 28));
+  const sbAll = async (mk) => {   // seitenweise (Supabase liefert max. 1000 Zeilen je Abfrage)
+    let out = [];
+    for (let from = 0; ; from += 1000) {
+      const r = await mk().range(from, from + 999);
+      if (r.error) return r;
+      out = out.concat(r.data || []);
+      if (!r.data || r.data.length < 1000) return { data: out };
+    }
+  };
   const [profRes, entRes, mgmt, manRes, multiRes] = await Promise.all([
     sb.from('profiles').select('id, name').eq('role', 'athlete').order('name'),
-    sb.from('load_entries').select('user_id, entry_date, srpe, duration_min').in('entry_date', days),
+    sbAll(() => sb.from('load_entries').select('user_id, entry_date, srpe, duration_min').gte('entry_date', baseFrom).lte('entry_date', days[6]).order('entry_date')),
     loadAthleteData().catch(() => null),
-    sb.from('load_manual').select('*').in('entry_date', days),
+    sbAll(() => sb.from('load_manual').select('*').gte('entry_date', baseFrom).lte('entry_date', days[6]).order('entry_date')),
     sb.from('load_manual').select('session_no').limit(1),
   ]);
   // manuelle Nachträge/Korrekturen: je Person und Tag beliebig viele Sessions (Liste nach session_no);
@@ -574,12 +588,18 @@ async function renderTrainerDashboard(profile) {
           if (ms && ms.length) { const keepApp = !!e && ms.some(m => m.count_app);
             return { au: ms.reduce((n, m) => n + m.au, 0) + (keepApp ? e.au : 0), man: true, ms, keepApp, app: e, n: ms.length + (keepApp ? e.list.length : 0) }; }
           return e ? { au: e.au, app: e, n: e.list.length } : null; };
+        // persönliches Tagesmittel der 4 Vorwochen (nur Tage mit Eintrag, mind. 6 Tage) → ↑ ab 1,5-fach
+        const baseVals = Array.from({ length: 28 }, (_, i) => val(localIso(new Date(m0.getFullYear(), m0.getMonth(), m0.getDate() - 28 + i)))).filter(v => v && v.au > 0);
+        const baseAvg = baseVals.length >= 6 ? baseVals.reduce((n, v) => n + v.au, 0) / baseVals.length : null;
         const cells = days.map(d => {
           const v = val(d);
-          const cls = v === null ? 'load-empty' : (v.au >= 500 ? 'load-high' : 'load-ok');
-          const tip = v && v.man ? [v.keepApp ? 'App: ' + appTxt(v.app) : '', ...v.ms.map((m, i) => `manuell${v.n > 1 ? ' ' + (i + 1) : ''}: ${sessTxt(m)}`)].filter(Boolean).join(' | ')
-            : (v ? 'App: ' + appTxt(v.app) : '');
-          return `<td class="${cls}${canManual ? ' lm-edit' : ''}${v && v.man ? ' lm-man' : ''}" data-pk="${pk}" data-d="${d}" title="${esc(tip)}${canManual ? (tip ? ' · ' : '') + 'klicken zum Nachtragen/Korrigieren' : ''}">${v === null ? '–' : v.au}${v && v.man ? '<sup>&#9998;</sup>' : ''}${v && v.n > 1 ? `<span class="lm-nsess">${v.n}&times;</span>` : ''}</td>`;
+          const cls = v === null ? 'load-empty' : LOAD_TIER(v.au).cls;
+          const up = v && baseAvg && v.au >= 1.5 * baseAvg;
+          const tip = (v && v.man ? [v.keepApp ? 'App: ' + appTxt(v.app) : '', ...v.ms.map((m, i) => `manuell${v.n > 1 ? ' ' + (i + 1) : ''}: ${sessTxt(m)}`)].filter(Boolean).join(' | ')
+            : (v ? 'App: ' + appTxt(v.app) : ''))
+            + (v ? ` · ${LOAD_TIER(v.au).label}` : '')
+            + (up ? ` · ↑ ${(v.au / baseAvg).toFixed(1).replace('.', ',')}× des persönlichen Tagesmittels (Ø ${Math.round(baseAvg)} AU, 4 Vorwochen)` : '');
+          return `<td class="${cls}${canManual ? ' lm-edit' : ''}${v && v.man ? ' lm-man' : ''}" data-pk="${pk}" data-d="${d}" title="${esc(tip)}${canManual ? (tip ? ' · ' : '') + 'klicken zum Nachtragen/Korrigieren' : ''}">${v === null ? '–' : v.au}${up ? '<span class="lm-up">&uarr;</span>' : ''}${v && v.man ? '<sup>&#9998;</sup>' : ''}${v && v.n > 1 ? `<span class="lm-nsess">${v.n}&times;</span>` : ''}</td>`;
         }).join('');
         const vals = days.map(val).filter(Boolean);
         const sum = vals.reduce((n, v) => n + v.au, 0);
@@ -611,7 +631,9 @@ async function renderTrainerDashboard(profile) {
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <p class="hint">Wert je Zelle = sRPE &times; Trainingsdauer in Minuten (Session-Load nach Foster). Ab 500 farblich hervorgehoben. &Sigma; Woche = Wochen-Load, Tage = Tage mit Eintrag. Mit &larr; &rarr; bzw. der Auswahl jede Kalenderwoche ansehen.
+      <p class="hint">Wert je Zelle = sRPE &times; Trainingsdauer in Minuten (Session-Load nach Foster). Farbe = Tageslast:
+      <span class="load-low">&lt; 300 leicht</span> &middot; <span class="load-ok">300&ndash;699 normal</span> &middot; <span class="load-high">700&ndash;999 hoch</span> &middot; <span class="load-vhigh">&ge; 1000 sehr hoch</span>
+      (Praxis-Orientierung Teamsport, kein Studien-Grenzwert). <span class="lm-up">&uarr;</span> = ungew&ouml;hnlich hoch f&uuml;r diese Person: mind. 1,5-fach ihres Tagesmittels der 4 Vorwochen (Tage mit Eintrag, ab 6 Tagen Daten).&Sigma; Woche = Wochen-Load, Tage = Tage mit Eintrag. Mit &larr; &rarr; bzw. der Auswahl jede Kalenderwoche ansehen.
       ${canManual ? '<b>Zelle anklicken</b>, um einen Wert nachzutragen oder zu korrigieren &ndash; auch mehrere Sessions pro Tag (&#9998; = manuell, 2&times; = Anzahl Sessions; die Tagessumme wird mit &bdquo;Aus App &uuml;bernehmen&ldquo; ins Load-Management-Tool &uuml;bertragen).' : '<i>Manuelle Nachtr&auml;ge: Datenbank-Erweiterung fehlt noch (supabase_migration_load_manual.sql).</i>'}
       Gruppen kommen aus der Athletenverwaltung; Werte tragen die Athlet:innen mit ihrem App-Zugang selbst ein.</p>
     </div>
