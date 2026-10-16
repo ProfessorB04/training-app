@@ -209,6 +209,7 @@ function renderShell(profile, activeKey, title, contentHtml, back) {
         <div class="sidebar-footer">
           <div class="sidebar-user"><b>${esc(profile.name)}</b>${ROLE_LABELS[profile.role] || ''}</div>
           <button type="button" id="logoutBtn" title="Abmelden"><span class="lbl">Abmelden</span><span class="ic-only">&#10162;</span></button>
+          <div class="sidebar-legal"><a href="datenschutz.html">Datenschutz</a> &middot; <a href="datenschutz.html#impressum">Impressum</a></div>
         </div>
       </aside>
       <div class="main-area">
@@ -281,6 +282,7 @@ function renderAuth() {
           <a href="#" id="forgotToggle">Passwort vergessen?</a>
         </p>
         <p class="hint" style="text-align:center;">Kein Zugang? Wende dich an deinen Trainer — Konten werden ausschließlich persönlich vergeben, es gibt keine Selbstregistrierung.</p>
+        <p class="hint" style="text-align:center;margin-bottom:0;"><a href="datenschutz.html">Datenschutz</a> &middot; <a href="datenschutz.html#impressum">Impressum</a></p>
       </div>
     </main>
   `;

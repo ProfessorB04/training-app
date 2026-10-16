@@ -642,3 +642,10 @@ td.lm-man sup{ font-size:.65em; margin-left:2px; }
 .cd-seqrest{ color:var(--ink-soft); font-size:.85rem; }
 .cd-grid input.cd-auto{ background:#f1f4f8; color:var(--ink-soft); }
 @media (max-width:560px){ .cd-seq{ columns:1; } }
+
+/* Datenschutz/Impressum-Links (2026-10-16) */
+.sidebar-legal{ margin-top:8px; text-align:center; font-size:.72rem; color:rgba(0,17,61,.6); }
+.sidebar-legal a{ color:rgba(0,17,61,.75); text-decoration:none; }
+.sidebar-legal a:hover{ text-decoration:underline; }
+.shell.collapsed .sidebar-legal{ display:none; }
+@media (max-width:860px){ .shell.collapsed .sidebar-legal{ display:block; } }
