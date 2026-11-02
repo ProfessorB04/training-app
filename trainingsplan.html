@@ -3001,5 +3001,222 @@ if(window.__tpSeedInfo){
   AthletePicker.attach(Object.assign({ after: "btnAddAthlete", className: "small", label: "👥 Aus Athletenverwaltung" }, opts));
 })();
 </script>
+<script>
+/* ---------------------------------------------------------------------
+   Reiter „Planung | Aktuelle Pläne“ (2026-11-02, nur Admin/Trainer)
+   Laufende App-Pläne (tp_plans/tp_plan_versions) direkt in der Trainingsplanung ansehen,
+   ohne Seitenwechsel – Übungen einzeln oder ganze Tage per Klick in den geöffneten Entwurf übernehmen.
+--------------------------------------------------------------------- */
+(function(){
+  const LS_KEY = 'tp_curview_v1';
+  let pref = {}; try { pref = JSON.parse(localStorage.getItem(LS_KEY) || '{}') || {}; } catch(e){}
+  const savePref = () => { try { localStorage.setItem(LS_KEY, JSON.stringify(pref)); } catch(e){} };
+  let DATA = null, loading = false, week = null, lastKey = null, added = 0;
+
+  async function init(){
+    for(let k=0; k<100 && !window.appRole; k++) await new Promise(r=>setTimeout(r,100));
+    if(window.appRole !== 'admin' && window.appRole !== 'trainer') return;
+    const wrap = document.querySelector('.wrap'), head = wrap && wrap.querySelector('header.top');
+    if(!head) return;
+    const st = document.createElement('style');
+    st.textContent = `
+      .tpv-bar{ position:sticky; top:0; z-index:30; display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:0 0 16px; padding:8px 0; background:var(--bg, #f5f7fa); }
+      .tpv-bar .tab{ font-size:14px; padding:9px 18px; }
+      .tpv-badge{ display:inline-block; margin-left:6px; background:#1f7a45; color:#fff; border-radius:20px; padding:1px 7px; font-size:11px; }
+      .wrap.tpv-cur > :not(.tpv-bar):not(#tpvCur):not(header.top){ display:none !important; }
+      .wrap:not(.tpv-cur) > #tpvCur{ display:none; }
+      .tpv-tools{ display:flex; flex-wrap:wrap; gap:10px 14px; align-items:flex-end; }
+      .tpv-tools label{ display:block; font-size:10.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; margin-bottom:4px; }
+      .tpv-tools select{ min-width:0; }
+      .tpv-who{ flex:1 1 300px; } .tpv-who select{ width:100%; }
+      .tpv-week{ display:flex; align-items:center; gap:6px; font-weight:600; font-size:13px; }
+      .tpv-week button{ padding:7px 11px; }
+      .tpv-days{ display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px; margin-top:14px; }
+      .tpv-day{ border:1px solid var(--border); border-radius:12px; background:#fff; overflow:hidden; }
+      .tpv-dhead{ display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; background:var(--surface-2); font-weight:700; font-size:14px; }
+      .tpv-cat{ display:flex; align-items:center; gap:7px; padding:8px 12px 2px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:var(--text-2); }
+      .tpv-cat .dot{ width:9px; height:9px; border-radius:50%; flex:none; }
+      .tpv-cat span.pr{ font-weight:500; text-transform:none; letter-spacing:0; color:var(--muted); }
+      .tpv-ex{ display:flex; align-items:flex-start; gap:8px; padding:6px 12px; border-top:1px solid var(--surface-3); font-size:13px; }
+      .tpv-ex .nm{ flex:1; min-width:0; } .tpv-ex .nm small{ display:block; color:var(--muted); font-size:11.5px; }
+      .tpv-ex button{ flex:none; padding:4px 10px; font-size:12px; }
+      .tpv-ex.have button{ background:#e7f5ec; border-color:#bfe3cc; color:#1f7a45; }
+      .tpv-empty{ padding:10px 12px; color:var(--muted); font-size:12.5px; }
+      @media (max-width:700px){ .tpv-days{ grid-template-columns:1fr; } }`;
+    document.head.appendChild(st);
+
+    const bar = document.createElement('div');
+    bar.className = 'tpv-bar';
+    bar.innerHTML = `<div class="tab" data-v="plan">📋 Planung<span class="tpv-badge" id="tpvBadge" hidden></span></div>
+      <div class="tab" data-v="cur">👀 Aktuelle Pläne</div>`;
+    head.after(bar);
+    const view = document.createElement('div');
+    view.id = 'tpvCur';
+    view.innerHTML = `<div class="card"><p class="hint" style="margin:0;">Lade …</p></div>`;
+    wrap.appendChild(view);
+    bar.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => show(t.dataset.v)));
+    show(pref.view === 'cur' ? 'cur' : 'plan');
+  }
+
+  function show(v){
+    pref.view = v; savePref();
+    document.querySelector('.wrap').classList.toggle('tpv-cur', v === 'cur');
+    document.querySelectorAll('.tpv-bar .tab').forEach(t => t.classList.toggle('active', t.dataset.v === v));
+    if(v === 'plan'){ added = 0; const b = document.getElementById('tpvBadge'); if(b) b.hidden = true; }
+    if(v === 'cur'){ if(DATA) render(); else load(); }
+    window.scrollTo({ top: 0 });
+  }
+
+  async function load(){
+    if(loading) return; loading = true;
+    const sb = window.appSb;
+    const [pRes, aRes, vRes, prRes] = await Promise.all([
+      sb.from('tp_plans').select('*').eq('archived', false).order('created_at', { ascending: false }),
+      sb.from('tp_assignments').select('plan_id, user_id').eq('active', true),
+      sb.from('tp_plan_versions').select('*').order('from_week'),
+      sb.from('profiles').select('id, name'),
+    ]);
+    loading = false;
+    const err = [pRes, aRes, vRes, prRes].map(r => r.error).filter(Boolean)[0];
+    if(err){ document.getElementById('tpvCur').innerHTML = `<div class="card"><p style="color:#b0281c;">Fehler beim Laden: ${escapeHtml(err.message)}</p><button type="button" id="tpvRetry">↻ Nochmal</button></div>`; document.getElementById('tpvRetry').onclick = load; return; }
+    const names = Object.fromEntries((prRes.data || []).map(p => [p.id, p.name || 'Unbekannt']));
+    const plans = (pRes.data || []).map(p => ({ p, versions: (vRes.data || []).filter(v => v.plan_id === p.id),
+      members: (aRes.data || []).filter(a => a.plan_id === p.id).map(a => a.user_id) })).filter(x => x.members.length);
+    const people = [];
+    plans.forEach(x => x.members.forEach(u => people.push({ key: 'u:' + u + ':' + x.p.id, uid: u, name: names[u] || 'Unbekannt', plan: x })));
+    people.sort((a, b) => a.name.localeCompare(b.name, 'de') || (a.plan.p.title || '').localeCompare(b.plan.p.title || '', 'de'));
+    DATA = { plans, people };
+    render();
+  }
+
+  // gültiger Plan-Inhalt für Woche + Person (wie tpContentFor in der App: höchste „ab Woche“, Variante hat Vorrang)
+  function contentFor(versions, w, uid){
+    let best = null;
+    versions.forEach(v => {
+      if((v.user_ids && !v.user_ids.includes(uid)) || v.from_week > w) return;
+      if(!best || v.from_week > best.from_week || (v.from_week === best.from_week && v.user_ids && !best.user_ids)
+        || (v.from_week === best.from_week && !!v.user_ids === !!best.user_ids && v.id > best.id)) best = v;
+    });
+    return best ? best.content : null;
+  }
+  function curWeek(p){
+    if(!p.start_date) return 1;
+    const d = Math.floor((Date.now() - new Date(p.start_date + 'T00:00:00').getTime()) / 86400000);
+    return d < 0 ? 1 : Math.min(p.weeks, Math.floor(d / 7) + 1);
+  }
+  const exKey = ex => [ex.name, ex.position, ex.option].map(s => String(s || '').trim().toLowerCase()).join('|');
+  const exLabel = ex => [ex.name, ex.position, ex.option].filter(Boolean).join(' · ');
+  // Vorauswahl: gemerkte Auswahl, sonst die Person aus „Für wen? (Athlet)“
+  function pickedEntry(){
+    const sel = pref.sel || '';
+    if(sel.startsWith('g:')){ const x = DATA.plans.find(y => 'g:' + y.p.id === sel); if(x) return { key: sel, uid: null, name: null, plan: x }; }
+    let e = DATA.people.find(y => y.key === sel);
+    if(!e && state.athleteIdx){
+      const a = ATHLETES.find(z => z.id === state.athleteIdx);
+      const n = a ? (a.first + ' ' + a.last).trim().toLowerCase() : '';
+      e = n && DATA.people.find(y => y.name.trim().toLowerCase() === n);
+    }
+    return e || DATA.people[0] || (DATA.plans[0] && { key: 'g:' + DATA.plans[0].p.id, uid: null, name: null, plan: DATA.plans[0] }) || null;
+  }
+  function targetDay(d){
+    const t = pref.target || 'same';
+    if(t === 'same') return d <= state.days ? d : state.activeDay;
+    return Math.min(parseInt(t, 10) || 1, state.days);
+  }
+
+  function render(){
+    const el = document.getElementById('tpvCur');
+    const e = pickedEntry();
+    if(!e){ el.innerHTML = `<div class="card"><h2>Keine laufenden Pläne</h2><p class="hint">Sobald ein Plan „📲 In App veröffentlicht“ ist, erscheint er hier.</p></div>`; return; }
+    const p = e.plan.p;
+    if(e.key !== lastKey){ week = curWeek(p); lastKey = e.key; }
+    week = Math.max(1, Math.min(p.weeks, week || 1));
+    const content = contentFor(e.plan.versions, week, e.uid);
+    const isVar = !!e.uid && e.plan.versions.some(v => v.user_ids && v.user_ids.includes(e.uid) && v.from_week <= week);
+    const optsPeople = DATA.people.map(x => `<option value="${escapeAttr(x.key)}"${x.key === e.key ? ' selected' : ''}>${escapeHtml(x.name)} — ${escapeHtml(x.plan.p.title || 'Ohne Titel')}</option>`).join('');
+    const optsGroups = DATA.plans.map(x => `<option value="g:${x.p.id}"${'g:' + x.p.id === e.key ? ' selected' : ''}>${escapeHtml(x.p.title || 'Ohne Titel')}${x.p.team ? ' · ' + escapeHtml(x.p.team) : ''} (Gruppenplan)</option>`).join('');
+    let tgt = `<option value="same"${(pref.target || 'same') === 'same' ? ' selected' : ''}>gleicher Tag wie im Plan</option>`;
+    for(let d = 1; d <= state.days; d++) tgt += `<option value="${d}"${pref.target === String(d) ? ' selected' : ''}>Tag ${d}</option>`;
+    // vorhandene Übungen im Entwurf (für ✓-Markierung)
+    const have = {};
+    for(let d = 1; d <= state.days; d++){ ensureDayStructure(d); CATS.forEach(c => (state.plan[d][c.key] || []).forEach(ex => { have[d + '|' + c.key + '|' + exKey(ex)] = true; })); }
+    const plan = (content && content.plan) || {};
+    let days = '';
+    for(let d = 1; d <= p.days; d++){
+      const dp = plan[d] || plan[String(d)] || {};
+      const t = targetDay(d);
+      let body = '', n = 0;
+      CATS.forEach(c => {
+        const list = dp[c.key] || [];
+        if(!list.length) return;
+        const pr = (content.prescription || {})[c.key];
+        const prt = pr ? [pr.sets ? pr.sets + ' Sätze' : '', pr.reps ? pr.reps + ' Wdh.' : ''].filter(Boolean).join(' × ') : '';
+        body += `<div class="tpv-cat"><span class="dot" style="background:${c.color}"></span>${escapeHtml(c.label)}${prt ? ` <span class="pr">${escapeHtml(prt)}</span>` : ''}</div>`;
+        list.forEach((ex, i) => {
+          n++;
+          const h = have[t + '|' + c.key + '|' + exKey(ex)];
+          const sub = [ex.preset, ex.note].filter(Boolean).join(' · ');
+          body += `<div class="tpv-ex${h ? ' have' : ''}"><div class="nm">${escapeHtml(exLabel(ex))}${sub ? `<small>${escapeHtml(sub)}</small>` : ''}</div>
+            <button type="button" data-add="${d}|${c.key}|${i}" title="${h ? 'Schon in Tag ' + t + ' – nochmal hinzufügen' : 'In Tag ' + t + ' der Planung übernehmen'}">${h ? '✓ Tag ' + t : '+ Tag ' + t}</button></div>`;
+        });
+      });
+      days += `<div class="tpv-day"><div class="tpv-dhead"><span>Tag ${d}</span>${n ? `<button type="button" class="small" data-addday="${d}" title="Alle Übungen dieses Tages in Tag ${t} der Planung übernehmen (Vorhandenes bleibt)">⇢ ganzer Tag → Tag ${t}</button>` : ''}</div>${body || '<div class="tpv-empty">Keine Übungen</div>'}</div>`;
+    }
+    el.innerHTML = `<div class="card">
+      <div class="tpv-tools">
+        <div class="tpv-who"><label>Athlet:in / Plan</label><select id="tpvSel">${optsPeople ? `<optgroup label="Athlet:innen">${optsPeople}</optgroup>` : ''}<optgroup label="Gruppenpläne">${optsGroups}</optgroup></select></div>
+        <div><label>Woche</label><div class="tpv-week"><button type="button" id="tpvPrev"${week <= 1 ? ' disabled' : ''}>‹</button>${week} / ${p.weeks}${week === curWeek(p) ? ' <span class="hint" style="margin:0;">(aktuell)</span>' : ''}<button type="button" id="tpvNext"${week >= p.weeks ? ' disabled' : ''}>›</button></div></div>
+        <div><label>Übernehmen in (Planung)</label><select id="tpvTarget">${tgt}</select></div>
+        <div><button type="button" id="tpvReload" title="Pläne neu aus der App laden">↻</button>
+          <button type="button" id="tpvEdit" title="Ganzen Plan zum Bearbeiten in die Planung laden (ersetzt den Entwurf)">✎ ganzen Plan laden</button></div>
+      </div>
+      <p class="hint" style="margin:10px 0 0;">${escapeHtml(p.title || 'Ohne Titel')}${p.team ? ' · ' + escapeHtml(p.team) : ''} · ${p.days} Tage/Woche${p.start_date ? ' · ab ' + new Date(p.start_date + 'T00:00:00').toLocaleDateString('de-DE') : ''}${isVar ? ' · <b>eigene Variante</b>' : ''}
+        · Entwurf in der Planung: <b>${escapeHtml(state.title || 'ohne Titel')}</b> (${state.days} Tage). Übernommene Übungen kommen ans Ende der Kategorie, mit Position/Option/Vorgabe/Notiz.</p>
+    </div>
+    ${content ? `<div class="tpv-days">${days}</div>` : `<div class="card"><p class="hint">Für Woche ${week} gibt es keinen Planstand.</p></div>`}`;
+
+    document.getElementById('tpvSel').onchange = ev => { pref.sel = ev.target.value; savePref(); render(); };
+    document.getElementById('tpvTarget').onchange = ev => { pref.target = ev.target.value; savePref(); render(); };
+    document.getElementById('tpvPrev').onclick = () => { week--; render(); };
+    document.getElementById('tpvNext').onclick = () => { week++; render(); };
+    document.getElementById('tpvReload').onclick = () => { DATA = null; el.innerHTML = `<div class="card"><p class="hint" style="margin:0;">Lade …</p></div>`; load(); };
+    document.getElementById('tpvEdit').onclick = () => {
+      history.replaceState(null, '', location.pathname + '#edit=' + p.id + (e.uid ? '&uid=' + e.uid : ''));
+      pref.view = 'plan'; savePref(); location.reload();
+    };
+    const add = (d, catKey, list) => {
+      const t = targetDay(d);
+      ensureDayStructure(t);
+      list.forEach(ex => state.plan[t][catKey].push(Object.assign({ name: '', position: '', option: '', preset: '', note: '' }, JSON.parse(JSON.stringify(ex)))));
+      return t;
+    };
+    el.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
+      const [d, ck, i] = b.dataset.add.split('|');
+      const ex = ((plan[d] || {})[ck] || [])[+i];
+      if(!ex) return;
+      const t = add(+d, ck, [ex]);
+      done(1, `„${exLabel(ex)}“ → Tag ${t} (${CAT_MAP[ck] ? CAT_MAP[ck].label : ck})`);
+    });
+    el.querySelectorAll('[data-addday]').forEach(b => b.onclick = () => {
+      const d = +b.dataset.addday, dp = plan[d] || {};
+      let n = 0, t = targetDay(d);
+      CATS.forEach(c => { const list = dp[c.key] || []; if(list.length){ add(d, c.key, list); n += list.length; } });
+      done(n, `${n} Übung${n === 1 ? '' : 'en'} von Tag ${d} → Tag ${t} übernommen`);
+    });
+  }
+
+  function done(n, msg){
+    saveState(true);
+    renderTabs(); renderPanels();
+    added += n;
+    const b = document.getElementById('tpvBadge');
+    if(b){ b.textContent = '+' + added; b.hidden = false; b.title = added + ' übernommene Übung(en)'; }
+    toast(msg);
+    const y = window.scrollY; render(); window.scrollTo({ top: y });
+  }
+
+  init();
+})();
+</script>
 </body>
 </html>
