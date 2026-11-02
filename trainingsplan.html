@@ -2428,6 +2428,11 @@ async function openPublishDialog(){
   const normT = t => String(t || '').trim().toLowerCase();
   const lastPub = plans.find(p => p.id === state.publishedPlanId);
   let planSel = lastPub && (state.editingFromApp || normT(lastPub.title) === normT(state.title)) ? lastPub.id : '__new';
+  // Regel (2026-11-02): Freigabe an einzelne Personen darf nie den Plan anderer ändern.
+  // Gespeicherten Plan geöffnet (nicht „✎ … ändern“ aus der App) und Auswahl ≠ alle im laufenden Plan → als neuen Plan veröffentlichen.
+  const membersOf = pid => [...new Set((asg.data||[]).filter(a => a.plan_id === pid && a.active).map(a => a.user_id))];
+  const othersIn = pid => membersOf(pid).filter(u => !picked[u]);
+  if(planSel !== '__new' && !state.editingFromApp && Object.keys(picked).length && othersIn(planSel).length) planSel = '__new';
   let mode = 'all';
   // aus der Übersicht „Nur für <Person> ändern“ geöffnet: Variante nur für diese Person vorwählen
   if(state.editingFromApp && state.editTargetUid && planSel === state.publishedPlanId){ Object.keys(picked).forEach(k=>delete picked[k]); picked[state.editTargetUid] = true; mode = 'variant'; }
@@ -2437,9 +2442,16 @@ async function openPublishDialog(){
     const d = Math.floor((Date.now() - new Date(p.start_date + 'T00:00:00').getTime()) / 86400000);
     return d < 0 ? 1 : Math.min(p.weeks, Math.floor(d / 7) + 1);
   };
+  let modeFor = null;
   function render(){
     const p = plans.find(x=>x.id===planSel);
     const weeksN = p ? p.weeks : state.weeks;
+    // Sicherheit (2026-11-02): betrifft die Auswahl nur einen Teil des laufenden Plans, ist „nur für die Ausgewählten“ vorgewählt
+    if(p && modeFor !== p.id){
+      modeFor = p.id;
+      const mem = membersOf(p.id), ids = Object.keys(picked);
+      if(ids.length && mem.some(u => !picked[u])) mode = 'variant';
+    }
     box.innerHTML = `
       <h2 style="margin:0 0 4px;font-size:18px;">&#128242; In App ver&ouml;ffentlichen</h2>
       <p style="margin:0 0 14px;color:#52514e;font-size:13px;">Die ausgew&auml;hlten Athlet:innen sehen den Plan unter <b>&bdquo;Mein Trainingsplan&ldquo;</b> und tragen dort S&auml;tze, Wiederholungen und Gewicht ein.</p>
@@ -2451,9 +2463,10 @@ async function openPublishDialog(){
       ${p ? `
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:12px;font-size:13px;">
         <label>Gilt ab Woche <select id="pubWeek" style="width:auto;">${Array.from({length:weeksN},(_,i)=>`<option value="${i+1}" ${i+1===curWeekOf(p)?'selected':''}>${i+1}${i+1===curWeekOf(p)?' (aktuell)':''}</option>`).join('')}</select></label>
-        <label><input type="radio" name="pubMode" value="all" ${mode==='all'?'checked':''}> f&uuml;r alle im Plan</label>
+        <label id="pubAllLbl"><input type="radio" name="pubMode" value="all" ${mode==='all'?'checked':''}> f&uuml;r alle im Plan</label>
         <label><input type="radio" name="pubMode" value="variant" ${mode==='variant'?'checked':''}> nur f&uuml;r die Ausgew&auml;hlten (Variante)</label>
       </div>
+      <p id="pubAllHint" style="margin:-4px 0 10px;font-size:12px;color:#1f7a45;"></p>
       <p style="margin:-4px 0 12px;color:#898781;font-size:12px;">Fr&uuml;here Wochen und bereits Eingetragenes bleiben unver&auml;ndert. Ausgew&auml;hlte, die noch nicht im Plan sind, werden hinzugef&uuml;gt.</p>
       ${normT(p.title) !== normT(state.title) ? `<p style="margin:-4px 0 12px;padding:8px 10px;border-radius:8px;background:#fdecea;color:#8a1c12;font-size:13px;">&#9888;&#65039; Der ge&ouml;ffnete Plan hei&szlig;t <b>&bdquo;${escapeHtmlSeries(state.title || 'ohne Titel')}&ldquo;</b> &ndash; damit wird der laufende Plan <b>&bdquo;${escapeHtmlSeries(p.title || 'Ohne Titel')}&ldquo;</b> ge&auml;ndert. F&uuml;r einen eigenen Plan oben &bdquo;Als neuen Plan ver&ouml;ffentlichen&ldquo; w&auml;hlen.</p>` : ''}` : ''}
       <label style="font-size:12px;font-weight:600;color:#898781;">ATHLET:INNEN (mit App-Zugang)</label>
@@ -2481,6 +2494,15 @@ async function openPublishDialog(){
       const n = Object.keys(picked).length;
       q('#pubCount').textContent = n + ' ausgewählt';
       const miss = users.filter(u=>picked[u.id] && (!u.permissions || !u.permissions.meinplan || u.permissions.meinplan==='none')).length;
+      // „für alle“ nur möglich, wenn alle Personen des laufenden Plans angehakt sind – sonst immer Variante
+      const pp = plans.find(x=>x.id===planSel), others = pp ? othersIn(pp.id) : [];
+      const rAll = q('input[name=pubMode][value=all]');
+      if(rAll){
+        rAll.disabled = others.length > 0;
+        q('#pubAllLbl').style.opacity = others.length ? '.45' : '';
+        if(others.length && mode === 'all'){ mode = 'variant'; q('input[name=pubMode][value=variant]').checked = true; }
+        q('#pubAllHint').textContent = others.length ? '🔒 Gilt nur für die Angehakten – ' + others.length + ' weitere Person(en) im Plan bleiben unverändert. „Für alle“ geht nur, wenn alle im Plan angehakt sind.' : '';
+      }
       q('#pubWarn').textContent = miss ? miss + ' Person(en) fehlt das Recht „Mein Trainingsplan“ – in der Nutzerverwaltung unter „Rechte“ auf „eintragen“ stellen, sonst sehen sie den Plan nicht.' : '';
     };
     q('#pubPlan').addEventListener('change', e => { planSel = e.target.value; render(); });
@@ -2502,6 +2524,12 @@ async function openPublishDialog(){
     const ids = Object.keys(picked);
     if(!p && !ids.length){ alert('Bitte mindestens eine Athletin / einen Athleten auswählen.'); return; }
     if(p && mode === 'variant' && !ids.length){ alert('Für eine Variante bitte die betroffenen Athlet:innen auswählen.'); return; }
+    if(p && mode === 'all' && othersIn(p.id).length){ alert('„Für alle im Plan“ geht nur, wenn alle Personen des Plans angehakt sind. Es wird nichts veröffentlicht.'); return; }
+    if(p && mode === 'all'){
+      const nm = Object.fromEntries(users.map(u => [u.id, u.name]));
+      const all = membersOf(p.id).map(u => nm[u] || 'Unbekannt');
+      if(all.length > 1 && !confirm('Änderung gilt für ALLE ' + all.length + ' Personen im Plan:\n\n' + all.join(', ') + '\n\nVeröffentlichen?')) return;
+    }
     if(p && normT(p.title) !== normT(state.title) && !confirm('Achtung: Der geöffnete Plan „' + (state.title || 'ohne Titel') + '“ wird in den laufenden Plan „' + (p.title || 'Ohne Titel') + '“ geschrieben.\n\nWirklich den bestehenden Plan ändern? (Abbrechen → oben „Als neuen Plan veröffentlichen“ wählen)')) return;
     const content = JSON.parse(JSON.stringify({ plan: state.plan, prescription: state.prescription, cooldown: state.cooldown,
       prepNote: state.prepNote, lang: state.lang, days: state.days, weeks: state.weeks, title: state.title, team: state.team, layout: state.layout }));
@@ -2531,7 +2559,10 @@ async function openPublishDialog(){
         if(a.error) throw a.error;
       }
       if(!p) state.appTargets = { title: state.title || '', ids: ids.slice() };
-      state.publishedPlanId = planId; state.editingFromApp = false; state.editTargetUid = ''; state.editTargetName = ''; saveState(true);
+      state.publishedPlanId = planId;
+      if(userIds && userIds.length === 1){ state.editingFromApp = true; state.editTargetUid = userIds[0]; state.editTargetName = (users.find(u => u.id === userIds[0]) || {}).name || ''; }
+      else { state.editingFromApp = false; state.editTargetUid = ''; state.editTargetName = ''; }
+      saveState(true);
       close();
       toast(!p ? 'Plan veröffentlicht für ' + ids.length + ' Athlet:innen' : (userIds ? 'Variante ab Woche ' + fromWeek + ' für ' + ids.length + ' Athlet:innen' : 'Änderung ab Woche ' + fromWeek + ' veröffentlicht'));
     } catch(e){
