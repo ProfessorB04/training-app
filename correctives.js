@@ -142,8 +142,10 @@ async function renderCrEditor(profile, prog) {
   const [prRes] = await Promise.all([sb.from('profiles').select('id, name, role').eq('role', 'athlete').order('name'), crLoadLib()]);
   const people = prRes.data || [];
   const P = prog ? JSON.parse(JSON.stringify(prog)) : { user_id: '', title: 'Homework & Corrective Exercises', start_date: crToday(), end_date: null, active: true, content: {} };
-  const C = P.content = Object.assign({ priorities: ['', '', ''], note: CR_NOTE_DEFAULT, tips: '', items: [] }, P.content || {});
-  while (C.priorities.length < 3) C.priorities.push('');
+  // Ziele: standardmäßig ein Feld, weitere mit „+ Priorität“ (leere beim Öffnen entfernen, mind. eins)
+  const C = P.content = Object.assign({ priorities: [''], note: CR_NOTE_DEFAULT, tips: '', items: [] }, P.content || {});
+  C.priorities = (C.priorities || []).filter(t => String(t || '').trim());
+  if (!C.priorities.length) C.priorities.push('');
   C.items.forEach(it => { const m = crLibMatch(it.name); if (m && !String(it.desc || '').trim()) it.desc = m.desc; if (m && !it.region) it.region = m.region; if (it.expl == null) it.expl = ''; });
 
   const dl = (id, list) => `<datalist id="${id}">${list.map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
@@ -168,6 +170,7 @@ async function renderCrEditor(profile, prog) {
       </div>
     </div>`;
   const draw = () => {
+    if (!C.priorities.length) C.priorities.push('');
     const html = `
       <div class="card">
         <div class="cr-form">
@@ -178,8 +181,9 @@ async function renderCrEditor(profile, prog) {
         </div>
         <h2 style="margin-top:16px;">Ziele &amp; Schwerpunkte</h2>
         <div class="cr-form cr-prioform">
-          ${C.priorities.map((t, i) => `<label>Priorit&auml;t ${i + 1}<input data-prio="${i}" list="crDl_prio" value="${esc(t)}" placeholder="z. B. ${esc(CR_PRIOS[i])}"></label>`).join('')}
+          ${C.priorities.map((t, i) => `<label>Priorit&auml;t ${i + 1}<span class="cr-prio-row"><input data-prio="${i}" list="crDl_prio" value="${esc(t)}" placeholder="z. B. ${esc(CR_PRIOS[i % CR_PRIOS.length])}">${C.priorities.length > 1 ? `<button type="button" class="secondary small-btn" data-prio-rm="${i}" title="Priorit&auml;t entfernen">&#10005;</button>` : ''}</span></label>`).join('')}
         </div>
+        <button type="button" class="secondary small-btn" id="crPrioAdd" style="margin-top:8px;">+ Priorit&auml;t</button>
         <div class="cr-form cr-two">
           <label>Hinweis f&uuml;r die Athlet:in<textarea id="crNote" rows="3">${esc(C.note)}</textarea></label>
           <label>Zus&auml;tzliche Empfehlungen (optional)<textarea id="crTips" rows="3" placeholder="z. B. Schlafroutine, Reduzieren: maximale Sprungbelastungen bis zur Verbesserung &hellip;">${esc(C.tips)}</textarea></label>
@@ -239,6 +243,8 @@ async function renderCrEditor(profile, prog) {
         catch (e) { toast('Fehler: ' + e.message); }
       };
     });
+    document.getElementById('crPrioAdd').onclick = () => { readForm(); C.priorities.push(''); dirty = true; draw(); const n = appEl.querySelectorAll('[data-prio]'); if (n.length) n[n.length - 1].focus(); };
+    appEl.querySelectorAll('[data-prio-rm]').forEach(b => b.onclick = () => { readForm(); C.priorities.splice(+b.dataset.prioRm, 1); dirty = true; draw(); });
     document.getElementById('crAddLib').onclick = () => { readForm(); crPickFromLib(list => { list.forEach(ex => C.items.push({ id: crUid(), name: ex.name, type: ex.type, region: ex.region, desc: ex.desc, expl: ex.expl || '', dosage: ex.dosage, freq: 'täglich', src: ex.src })); dirty = true; draw(); }); };
     document.getElementById('crAddOwn').onclick = () => { readForm(); C.items.push({ id: crUid(), name: '', type: 'Mobilisation', region: '', desc: '', expl: '', dosage: '', freq: 'täglich', src: 'BER' }); dirty = true; draw(); };
     document.getElementById('crFreqAllBtn').onclick = () => { const v = document.getElementById('crFreqAll').value.trim(); if (!v) return; readForm(); C.items.forEach(it => { it.freq = v; }); dirty = true; draw(); };
@@ -248,6 +254,7 @@ async function renderCrEditor(profile, prog) {
       readForm();
       if (!P.user_id) { alert('Bitte eine Athlet:in wählen.'); return; }
       C.items = C.items.filter(it => (it.name || '').trim());
+      C.priorities = C.priorities.filter(t => String(t || '').trim());
       if (!C.items.length) { alert('Bitte mindestens eine Übung hinzufügen.'); return; }
       const btn = document.getElementById('crSave'); btn.disabled = true;
       const row = { user_id: P.user_id, title: P.title || 'Homework', content: C, start_date: P.start_date, end_date: P.end_date, active: P.active !== false, updated_at: new Date().toISOString() };
