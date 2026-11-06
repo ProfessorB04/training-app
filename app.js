@@ -86,6 +86,7 @@ const NAV_ITEMS = [
   { key: 'trainingsplan', label: 'Trainingsplanung', icon: '&#128203;', show: p => can(p, 'trainingsplan') },
   { key: 'meinplan', label: 'Mein Trainingsplan', icon: '&#127947;', show: p => !isStaff(p) && can(p, 'meinplan') },
   { key: 'condition', label: 'Conditioning', icon: '&#9201;&#65039;', show: p => !isStaff(p) && can(p, 'condition') },
+  { key: 'correctives', label: 'Correctives', icon: '&#129496;', show: p => !isStaff(p) && !!p._crHas },   // nur mit aktivem Homework-Programm
   { key: 'loadmanagement', label: 'Load Management', icon: '&#128200;', show: p => isStaff(p) },
   { key: 'srpe', label: 'Session-RPE', icon: '&#128200;', show: p => !isStaff(p) && can(p, 'srpe') },
   { key: 'wellness', label: 'Wellness-Check', icon: '&#128154;', show: p => !isStaff(p) && can(p, 'wellness') },
@@ -100,6 +101,7 @@ const NAV_ITEMS = [
 function navigate(profile, key) {
   const item = NAV_ITEMS.find(x => x.key === key);
   if (key === 'condition' && isStaff(profile)) { renderConditionHub(profile); return; }   // Staff: Conditioning liegt in der Trainingsplanung
+  if (key === 'correctives' && isStaff(profile)) { renderCrHub(profile); return; }      // Staff: Correctives liegt in der Trainingsplanung
   if (!item || !item.show(profile)) { renderMenu(profile); return; }
   if (key === 'menu') renderMenu(profile);
   else if (key === 'trainingsplan') { if (isStaff(profile)) renderTpHub(profile); else window.location.href = 'trainingsplan.html'; }
@@ -107,6 +109,7 @@ function navigate(profile, key) {
   else if (key === 'warmup') window.location.href = 'warmup.html';
   else if (key === 'loadmanagement') renderLoadHub(profile);
   else if (key === 'condition') { if (isStaff(profile)) renderConditionHub(profile); else renderMyConditionList(profile); }
+  else if (key === 'correctives') renderMyCorrectives(profile);
   else if (key === 'srpe') renderAthleteDashboard(profile);
   else if (key === 'wellness') renderWellnessPage(profile);
   else if (key === 'testungen') renderTestingPage(profile);
@@ -415,6 +418,7 @@ async function renderDashboard(user) {
   }
 
   if (window.appIdleStart) window.appIdleStart(sb, profile.role);   // Auto-Abmeldung nur Admin/Trainer
+  if (!isStaff(profile) && typeof crHasProgram === 'function') profile._crHas = await crHasProgram(profile);   // Menüpunkt „Correctives“
   const hashKey = (window.location.hash || '').slice(1);
   if (hashKey) {
     history.replaceState(null, '', window.location.pathname);
@@ -487,6 +491,7 @@ const MENU_TILES = [
   { key: 'trainingsplan', tint: 'tint-plan', icon: '&#128203;', title: 'Trainingsplanung', sub: 'Pl&auml;ne erstellen, in der App ver&ouml;ffentlichen, Auswertung (bewegte Last, Ampel)' },
   { key: 'meinplan', tint: 'tint-plan', icon: '&#127947;', title: 'Mein Trainingsplan', sub: 'Dein Plan: S&auml;tze, Wiederholungen und Gewicht eintragen' },
   { key: 'condition', tint: 'tint-cond', icon: '&#9201;&#65039;', title: 'Conditioning', sub: 'Ausdauer- &amp; Konditionseinheiten &mdash; individuell nach Tempo (vIFT) und Herzfrequenz' },
+  { key: 'correctives', tint: 'tint-ath', icon: '&#129496;', title: 'Correctives', sub: 'Deine Hausaufgaben: Mobilit&auml;t, Atmung, Stabilit&auml;t &mdash; abhaken, was du gemacht hast' },
   { key: 'loadmanagement', tint: 'tint-load', icon: '&#128200;', title: 'Load Management', sub: 'Rohdaten-Import, Ampel, Wochensteuerung, sRPE &amp; Wellness aus der App' },
   { key: 'srpe', tint: 'tint-load', icon: '&#128200;', title: 'Session-RPE', sub: 'Einheit eintragen: Anstrengung (1&ndash;10) und Dauer' },
   { key: 'wellness', tint: 'tint-ath', icon: '&#128154;', title: 'Wellness-Check', sub: 'Morgens vor dem Training &ndash; 4 kurze Fragen' },
