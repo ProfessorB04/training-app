@@ -712,3 +712,8 @@ td.lm-man sup{ font-size:.65em; margin-left:2px; }
 .cr-li-expl{ display:block; color:#7a5a00; font-size:.8rem; margin-top:2px; font-style:italic; }
 .cr-ath-expl{ margin-top:6px; padding:6px 10px; background:#fffbea; border-left:3px solid #f0c56b; border-radius:0 8px 8px 0; font-size:.88rem; line-height:1.4; }
 .cr-prio-row{ display:flex; gap:6px; align-items:center; } .cr-prio-row input{ flex:1; min-width:0; }
+/* Correctives: Vorlagen-Leiste (2026-11-06 f) */
+.cr-tplbar{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:12px 16px; background:#f4f9ff; border-color:#cfe6fb; }
+.cr-tpl-lbl{ font-weight:700; font-size:.9rem; }
+.cr-tplbar select{ flex:1 1 280px; min-width:0; padding:7px 9px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; background:#fff; }
+.cr-tpl-sep{ flex:0 0 8px; }

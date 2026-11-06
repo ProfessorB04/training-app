@@ -139,8 +139,16 @@ async function renderCrEditor(profile, prog) {
   let dirty = false;
   const back = { label: 'Correctives', go: () => { if (!dirty || confirm('Ungespeicherte Änderungen verwerfen?')) renderCrHub(profile); } };
   renderShell(profile, 'trainingsplan', T, `<p class="muted">Lade&hellip;</p>`, back);
-  const [prRes] = await Promise.all([sb.from('profiles').select('id, name, role').eq('role', 'athlete').order('name'), crLoadLib()]);
+  const [prRes, , tRes, pgRes] = await Promise.all([
+    sb.from('profiles').select('id, name, role').eq('role', 'athlete').order('name'), crLoadLib(),
+    sb.from('tp_builder_store').select('data').eq('key', 'cr_templates').maybeSingle(),
+    sb.from('cr_programs').select('id, user_id, title, content, start_date, created_at').order('created_at', { ascending: false }),
+  ]);
   const people = prRes.data || [];
+  // Vorlagen: gespeicherte Vorlagen (tp_builder_store „cr_templates“) + bestehende Programme anderer Athlet:innen
+  let TPL = (tRes.data && tRes.data.data && Array.isArray(tRes.data.data.items)) ? tRes.data.data.items : [];
+  const PROGS = (pgRes.data || []).filter(x => !prog || x.id !== prog.id);
+  const pName = uid => (people.find(u => u.id === uid) || {}).name || '?';
   const P = prog ? JSON.parse(JSON.stringify(prog)) : { user_id: '', title: 'Homework & Corrective Exercises', start_date: crToday(), end_date: null, active: true, content: {} };
   // Ziele: standardmäßig ein Feld, weitere mit „+ Priorität“ (leere beim Öffnen entfernen, mind. eins)
   const C = P.content = Object.assign({ priorities: [''], note: CR_NOTE_DEFAULT, tips: '', items: [] }, P.content || {});
@@ -169,9 +177,21 @@ async function renderCrEditor(profile, prog) {
         <label class="cr-full">Instruktion / Ablauf<textarea data-f="desc" rows="3" placeholder="1. Ausgangsposition &#10;2. Ausf&uuml;hrung &#10;3. worauf achten">${esc(it.desc)}</textarea></label>
       </div>
     </div>`;
+  const tplOptions = () => `<option value="">&ndash; Vorlage w&auml;hlen &ndash;</option>
+    ${TPL.length ? `<optgroup label="Gespeicherte Vorlagen">${TPL.map(t => `<option value="t:${esc(t.id)}">${esc(t.name)} (${((t.content || {}).items || []).length} &Uuml;b.)</option>`).join('')}</optgroup>` : ''}
+    ${PROGS.length ? `<optgroup label="Programme (ver&ouml;ffentlicht)">${PROGS.map(x => `<option value="p:${x.id}">${esc(pName(x.user_id))} &ndash; ${esc(x.title || 'Homework')} (${((x.content || {}).items || []).length} &Uuml;b.${x.start_date ? ', ' + crDate(x.start_date) : ''})</option>`).join('')}</optgroup>` : ''}`;
   const draw = () => {
     if (!C.priorities.length) C.priorities.push('');
     const html = `
+      <div class="card cr-tplbar">
+        <span class="cr-tpl-lbl">&#128203; Vorlage</span>
+        <select id="crTpl">${tplOptions()}</select>
+        <button type="button" class="small-btn" id="crTplLoad">&uuml;bernehmen</button>
+        <button type="button" class="secondary small-btn" id="crTplDel" title="Ausgew&auml;hlte gespeicherte Vorlage l&ouml;schen">&#128465;</button>
+        <span class="cr-tpl-sep"></span>
+        <button type="button" class="secondary small-btn" id="crTplSave" title="Ziele, Hinweise und &Uuml;bungen dieses Programms als benannte Vorlage speichern">&#9734; Als Vorlage speichern</button>
+        <span class="hint" style="flex-basis:100%;margin:2px 0 0;">&Uuml;bernimmt Ziele, Hinweis, Empfehlungen und alle &Uuml;bungen (inkl. Erl&auml;uterung, Anzahl/Dauer, H&auml;ufigkeit) &ndash; danach individuell anpassen. Athlet:in und Zeitraum bleiben.</span>
+      </div>
       <div class="card">
         <div class="cr-form">
           <label>Athlet:in<select id="crWho"><option value="">&ndash; bitte w&auml;hlen &ndash;</option>${people.map(u => `<option value="${u.id}"${u.id === P.user_id ? ' selected' : ''}>${esc(u.name || '?')}</option>`).join('')}</select></label>
@@ -243,6 +263,48 @@ async function renderCrEditor(profile, prog) {
         catch (e) { toast('Fehler: ' + e.message); }
       };
     });
+    const tplContent = v => {
+      if (v.startsWith('t:')) { const t = TPL.find(x => x.id === v.slice(2)); return t && { title: t.title, content: t.content }; }
+      const x = PROGS.find(y => y.id === v.slice(2)); return x && { title: x.title, content: x.content };
+    };
+    document.getElementById('crTplLoad').onclick = () => {
+      const v = document.getElementById('crTpl').value, src = v && tplContent(v);
+      if (!src) { toast('Bitte eine Vorlage wählen.'); return; }
+      readForm();
+      const hasContent = C.items.length || C.priorities.some(t => String(t || '').trim());
+      if (hasContent && !confirm('Ziele, Hinweise und Übungen durch die Vorlage ersetzen?')) return;
+      const sc = JSON.parse(JSON.stringify(src.content || {}));
+      C.priorities = (sc.priorities || []).filter(t => String(t || '').trim()); if (!C.priorities.length) C.priorities.push('');
+      C.note = sc.note != null ? sc.note : C.note; C.tips = sc.tips || '';
+      C.items = (sc.items || []).map(it => Object.assign({ expl: '' }, it, { id: crUid() }));
+      if (src.title) P.title = src.title;
+      dirty = true; draw(); toast('Vorlage übernommen – jetzt individuell anpassen.');
+    };
+    document.getElementById('crTplSave').onclick = async () => {
+      readForm();
+      if (!C.items.length) { alert('Bitte zuerst Übungen hinzufügen.'); return; }
+      const name = (prompt('Name der Vorlage (z. B. „Sprunggelenk + Atmung Basis“):', P.title || '') || '').trim();
+      if (!name) return;
+      const ex = TPL.find(t => t.name.toLowerCase() === name.toLowerCase());
+      if (ex && !confirm('Vorlage „' + ex.name + '“ überschreiben?')) return;
+      const entry = { id: ex ? ex.id : crUid(), name, title: P.title, content: JSON.parse(JSON.stringify({ priorities: C.priorities.filter(t => String(t || '').trim()), note: C.note, tips: C.tips, items: C.items })), updated_at: new Date().toISOString() };
+      const items = ex ? TPL.map(t => t === ex ? entry : t) : TPL.concat([entry]);
+      const { data: { user } } = await sb.auth.getUser();
+      const r = await sb.from('tp_builder_store').upsert({ key: 'cr_templates', data: { items }, updated_at: new Date().toISOString(), updated_by: user.id });
+      if (r.error) { toast('Fehler: ' + r.error.message); return; }
+      TPL = items; draw(); toast('Vorlage „' + name + '“ gespeichert.');
+    };
+    document.getElementById('crTplDel').onclick = async () => {
+      const v = document.getElementById('crTpl').value;
+      if (!v.startsWith('t:')) { toast('Nur gespeicherte Vorlagen lassen sich hier löschen.'); return; }
+      const t = TPL.find(x => x.id === v.slice(2));
+      if (!t || !confirm('Vorlage „' + t.name + '“ löschen?')) return;
+      const items = TPL.filter(x => x !== t);
+      const { data: { user } } = await sb.auth.getUser();
+      const r = await sb.from('tp_builder_store').upsert({ key: 'cr_templates', data: { items }, updated_at: new Date().toISOString(), updated_by: user.id });
+      if (r.error) { toast('Fehler: ' + r.error.message); return; }
+      readForm(); TPL = items; draw(); toast('Vorlage gelöscht.');
+    };
     document.getElementById('crPrioAdd').onclick = () => { readForm(); C.priorities.push(''); dirty = true; draw(); const n = appEl.querySelectorAll('[data-prio]'); if (n.length) n[n.length - 1].focus(); };
     appEl.querySelectorAll('[data-prio-rm]').forEach(b => b.onclick = () => { readForm(); C.priorities.splice(+b.dataset.prioRm, 1); dirty = true; draw(); });
     document.getElementById('crAddLib').onclick = () => { readForm(); crPickFromLib(list => { list.forEach(ex => C.items.push({ id: crUid(), name: ex.name, type: ex.type, region: ex.region, desc: ex.desc, expl: ex.expl || '', dosage: ex.dosage, freq: 'täglich', src: ex.src })); dirty = true; draw(); }); };
