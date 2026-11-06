@@ -23,19 +23,36 @@ const crUid = () => 'x' + Date.now().toString(36) + Math.random().toString(36).s
 const crNl = s => esc(s || '').replace(/\n/g, '<br>');
 
 // ---------- Übungsbibliothek (Cloud: tp_builder_store „cr_library“) ----------
-let CR_LIB = null;
+let CR_LIB = null, CR_LIB_DEL = [];
+const crKey = n => String(n || '').toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
+const crSeedOf = name => CR_SEED.find(x => crKey(x.name) === crKey(name));
+// Cloud-Stand + neue Standard-Übungen (nicht gelöschte) zusammenführen; ältere Stände bekommen die
+// Schritt-Anleitungen des Standards, solange sie nur einen Stichpunkt (einzeilig) hatten.
 async function crLoadLib() {
   if (CR_LIB) return CR_LIB;
   const r = await sb.from('tp_builder_store').select('data').eq('key', 'cr_library').maybeSingle();
-  CR_LIB = (r.data && r.data.data && Array.isArray(r.data.data.items) && r.data.data.items.length) ? r.data.data.items : JSON.parse(JSON.stringify(CR_SEED));
+  const d = (r.data && r.data.data) || {};
+  CR_LIB_DEL = Array.isArray(d.deleted) ? d.deleted : [];
+  if (!Array.isArray(d.items) || !d.items.length) { CR_LIB = JSON.parse(JSON.stringify(CR_SEED)); return CR_LIB; }
+  const items = d.items.slice(), oldSeed = (d.seedV || 1) < CR_SEED_V;
+  items.forEach(x => {
+    const sd = crSeedOf(x.name);
+    if (x.expl == null) x.expl = '';
+    if (sd && (!String(x.desc || '').trim() || (oldSeed && !/\n/.test(x.desc || '')))) x.desc = sd.desc;
+  });
+  CR_SEED.forEach(sd => { if (!items.some(x => crKey(x.name) === crKey(sd.name)) && !CR_LIB_DEL.includes(crKey(sd.name))) items.push(JSON.parse(JSON.stringify(sd))); });
+  CR_LIB = items;
   return CR_LIB;
 }
-async function crSaveLib(items) {
+async function crSaveLib(items, deletedName) {
+  if (deletedName) CR_LIB_DEL = [...new Set(CR_LIB_DEL.concat([crKey(deletedName)]))];
   const { data: { user } } = await sb.auth.getUser();
-  const r = await sb.from('tp_builder_store').upsert({ key: 'cr_library', data: { items }, updated_at: new Date().toISOString(), updated_by: user.id });
+  const r = await sb.from('tp_builder_store').upsert({ key: 'cr_library', data: { items, deleted: CR_LIB_DEL, seedV: CR_SEED_V }, updated_at: new Date().toISOString(), updated_by: user.id });
   if (r.error) throw r.error;
   CR_LIB = items;
 }
+// Instruktion für eine Übung aus der Bibliothek (gleicher Name)
+const crLibMatch = name => (CR_LIB || CR_SEED).find(x => crKey(x.name) === crKey(name));
 
 // ---------- Staff: Übersicht ----------
 async function renderCrHub(profile) {
@@ -127,14 +144,15 @@ async function renderCrEditor(profile, prog) {
   const P = prog ? JSON.parse(JSON.stringify(prog)) : { user_id: '', title: 'Homework & Corrective Exercises', start_date: crToday(), end_date: null, active: true, content: {} };
   const C = P.content = Object.assign({ priorities: ['', '', ''], note: CR_NOTE_DEFAULT, tips: '', items: [] }, P.content || {});
   while (C.priorities.length < 3) C.priorities.push('');
+  C.items.forEach(it => { const m = crLibMatch(it.name); if (m && !String(it.desc || '').trim()) it.desc = m.desc; if (m && !it.region) it.region = m.region; if (it.expl == null) it.expl = ''; });
 
   const dl = (id, list) => `<datalist id="${id}">${list.map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
   const itemHtml = (it, i) => `
     <div class="cr-item" data-i="${i}">
       <div class="cr-item-head">
         <span class="cr-num">${i + 1}</span>
-        <input class="cr-name" data-f="name" value="${esc(it.name)}" placeholder="&Uuml;bung">
-        <span class="chip">${esc(it.region || '')}</span>
+        <input class="cr-name" data-f="name" list="crDl_lib" value="${esc(it.name)}" placeholder="&Uuml;bung (Name aus der Bibliothek f&uuml;llt die Instruktion)">
+        ${it.region ? `<span class="chip">${esc(it.region)}</span>` : ''}
         <span class="cr-mv">
           <button type="button" class="secondary small-btn" data-mv="-1" title="nach oben">&uarr;</button>
           <button type="button" class="secondary small-btn" data-mv="1" title="nach unten">&darr;</button>
@@ -143,9 +161,10 @@ async function renderCrEditor(profile, prog) {
         </span>
       </div>
       <div class="cr-item-grid">
-        <label class="cr-wide">Erl&auml;uterung / Ablauf<textarea data-f="desc" rows="3" placeholder="1. Ausgangsposition &#10;2. Ausf&uuml;hrung &#10;3. worauf achten">${esc(it.desc)}</textarea></label>
+        <label class="cr-expl">Erl&auml;uterung <span class="cr-sub">(individuell: warum diese &Uuml;bung, worauf achten)</span><textarea data-f="expl" rows="2" placeholder="z. B. Verbessert deine Dorsalflexion links &ndash; wichtig f&uuml;r tiefe Landungen. Ferse nicht abheben!">${esc(it.expl || '')}</textarea></label>
         <label>Anzahl / Dauer<input data-f="dosage" list="crDl_dos" value="${esc(it.dosage)}" placeholder="z. B. 3x7 pro Seite"></label>
         <label>Wie oft?<input data-f="freq" list="crDl_freq" value="${esc(it.freq)}" placeholder="z. B. t&auml;glich"></label>
+        <label class="cr-full">Instruktion / Ablauf<textarea data-f="desc" rows="3" placeholder="1. Ausgangsposition &#10;2. Ausf&uuml;hrung &#10;3. worauf achten">${esc(it.desc)}</textarea></label>
       </div>
     </div>`;
   const draw = () => {
@@ -177,7 +196,7 @@ async function renderCrEditor(profile, prog) {
         <button type="button" class="secondary" id="crPrintBtn">&#128424;&#65039; Drucken / PDF</button>
         <button type="button" id="crSave">&#128190; Speichern${isNew ? ' &amp; in App freigeben' : ''}</button>
       </div>
-      ${dl('crDl_freq', CR_FREQ)}${dl('crDl_dos', CR_DOSAGE)}${dl('crDl_prio', CR_PRIOS)}`;
+      ${dl('crDl_freq', CR_FREQ)}${dl('crDl_dos', CR_DOSAGE)}${dl('crDl_prio', CR_PRIOS)}${dl('crDl_lib', (CR_LIB || []).map(x => x.name).sort((a, b) => a.localeCompare(b, 'de')))}`;
     renderShell(profile, 'trainingsplan', T, html, back);
     wire();
   };
@@ -195,6 +214,16 @@ async function renderCrEditor(profile, prog) {
     appEl.querySelectorAll('.cr-item').forEach(row => {
       const it = C.items[+row.dataset.i];
       row.querySelectorAll('[data-f]').forEach(inp => inp.addEventListener('input', () => { it[inp.dataset.f] = inp.value; dirty = true; }));
+      row.querySelector('.cr-name').addEventListener('change', () => {
+        const m = crLibMatch(it.name);
+        if (!m || (String(it.desc || '').trim() && String(it.dosage || '').trim())) return;
+        readForm();
+        if (!String(it.desc || '').trim()) it.desc = m.desc;
+        if (!String(it.dosage || '').trim()) it.dosage = m.dosage;
+        if (!String(it.expl || '').trim()) it.expl = m.expl || '';
+        it.region = it.region || m.region; it.type = m.type; it.src = m.src;
+        draw(); toast('Instruktion aus der Bibliothek übernommen.');
+      });
       row.querySelectorAll('[data-mv]').forEach(b => b.onclick = () => {
         const i = +row.dataset.i, j = i + (+b.dataset.mv);
         if (j < 0 || j >= C.items.length) return;
@@ -204,14 +233,14 @@ async function renderCrEditor(profile, prog) {
       row.querySelector('[data-star]').onclick = async () => {
         const lib = await crLoadLib();
         const ex = lib.find(x => x.name.trim().toLowerCase() === (it.name || '').trim().toLowerCase());
-        const entry = { id: ex ? ex.id : crUid(), name: it.name, type: it.type || (ex && ex.type) || 'Mobilisation', region: it.region || (ex && ex.region) || 'Ganzkörper', desc: it.desc, dosage: it.dosage, src: (ex && ex.src) || 'BER' };
-        if (ex && !confirm('„' + it.name + '“ steht schon in der Bibliothek. Mit Erläuterung und Dosierung von hier überschreiben?')) return;
+        const entry = { id: ex ? ex.id : crUid(), name: it.name, type: it.type || (ex && ex.type) || 'Mobilisation', region: it.region || (ex && ex.region) || 'Ganzkörper', desc: it.desc, expl: it.expl || '', dosage: it.dosage, src: (ex && ex.src) || 'BER' };
+        if (ex && !confirm('„' + it.name + '“ steht schon in der Bibliothek. Mit Instruktion, Erläuterung und Dosierung von hier überschreiben?')) return;
         try { await crSaveLib(ex ? lib.map(x => x === ex ? entry : x) : lib.concat([entry])); toast(ex ? 'Bibliothek aktualisiert.' : 'In die Bibliothek übernommen.'); }
         catch (e) { toast('Fehler: ' + e.message); }
       };
     });
-    document.getElementById('crAddLib').onclick = () => { readForm(); crPickFromLib(list => { list.forEach(ex => C.items.push({ id: crUid(), name: ex.name, type: ex.type, region: ex.region, desc: ex.desc, dosage: ex.dosage, freq: 'täglich', src: ex.src })); dirty = true; draw(); }); };
-    document.getElementById('crAddOwn').onclick = () => { readForm(); C.items.push({ id: crUid(), name: '', type: 'Mobilisation', region: '', desc: '', dosage: '', freq: 'täglich', src: 'BER' }); dirty = true; draw(); };
+    document.getElementById('crAddLib').onclick = () => { readForm(); crPickFromLib(list => { list.forEach(ex => C.items.push({ id: crUid(), name: ex.name, type: ex.type, region: ex.region, desc: ex.desc, expl: ex.expl || '', dosage: ex.dosage, freq: 'täglich', src: ex.src })); dirty = true; draw(); }); };
+    document.getElementById('crAddOwn').onclick = () => { readForm(); C.items.push({ id: crUid(), name: '', type: 'Mobilisation', region: '', desc: '', expl: '', dosage: '', freq: 'täglich', src: 'BER' }); dirty = true; draw(); };
     document.getElementById('crFreqAllBtn').onclick = () => { const v = document.getElementById('crFreqAll').value.trim(); if (!v) return; readForm(); C.items.forEach(it => { it.freq = v; }); dirty = true; draw(); };
     document.getElementById('crCancel').onclick = back.go;
     document.getElementById('crPrintBtn').onclick = () => { readForm(); crPrint(P, (people.find(u => u.id === P.user_id) || {}).name || ''); };
@@ -260,7 +289,7 @@ async function crPickFromLib(onPick) {
       .sort((a, b) => a.name.localeCompare(b.name, 'de'));
     q('#crList').innerHTML = rows.map(x => `<label class="cr-li"><input type="checkbox" data-id="${esc(x.id)}"${picked.has(x.id) ? ' checked' : ''}>
       <span><b>${esc(x.name)}</b> <span class="chip">${esc(x.type)}</span> <span class="chip">${esc(x.region)}</span> <span class="muted-inline">${esc(x.dosage || '')}</span>
-      ${x.desc ? `<span class="cr-li-desc">${esc(x.desc).replace(/\n/g, ' · ')}</span>` : ''}</span></label>`).join('') || '<p class="muted">Keine Treffer.</p>';
+      ${x.expl ? `<span class="cr-li-expl">${esc(x.expl)}</span>` : ''}${x.desc ? `<span class="cr-li-desc">${esc(x.desc).replace(/\n/g, ' · ')}</span>` : ''}</span></label>`).join('') || '<p class="muted">Keine Treffer.</p>';
     q('#crList').querySelectorAll('input').forEach(cb => cb.onchange = () => { cb.checked ? picked.add(cb.dataset.id) : picked.delete(cb.dataset.id); cnt(); });
     cnt();
   };
@@ -294,11 +323,11 @@ async function renderCrLibrary(profile) {
           <span class="muted-inline">${rows.length} von ${lib.length}</span>
         </div>
         <div class="tablewrap"><table class="cr-table"><thead><tr><th>&Uuml;bung</th><th>Typ</th><th>Region</th><th>Anzahl/Dauer</th><th>Quelle</th><th></th></tr></thead><tbody>
-        ${rows.map(x => `<tr><td><b>${esc(x.name)}</b>${x.desc ? `<div class="cr-li-desc">${esc(x.desc).replace(/\n/g, ' · ')}</div>` : ''}</td><td>${esc(x.type)}</td><td>${esc(x.region)}</td><td>${esc(x.dosage)}</td>
+        ${rows.map(x => `<tr><td><b>${esc(x.name)}</b>${x.expl ? `<div class="cr-li-expl">${esc(x.expl)}</div>` : ''}${x.desc ? `<div class="cr-li-desc">${esc(x.desc).replace(/\n/g, ' · ')}</div>` : ''}</td><td>${esc(x.type)}</td><td>${esc(x.region)}</td><td>${esc(x.dosage)}</td>
           <td title="${esc(CR_SRC_LABEL[x.src] || x.src || '')}">${esc(x.src || '')}</td>
           <td style="white-space:nowrap;"><button type="button" class="secondary small-btn" data-ed="${esc(x.id)}">&#9998;</button> <button type="button" class="danger small-btn" data-dl="${esc(x.id)}">&#128465;</button></td></tr>`).join('')}
         </tbody></table></div>
-        <p class="hint">Quellen: BER = Maik Berger (Homework-Bl&auml;tter), FT = Functional Training, FMS = Functional Movement Screen / Gray Cook, sonst Autor bzw. System als Orientierung (Cook, Boyle, Starrett, McGill, Dan John, Cressey, DNS, Janda).</p>
+        <p class="hint">Quellen: BER = Maik Berger (Homework-Bl&auml;tter), FT = Functional Training, FMS = Functional Movement Screen / Gray Cook, Starrett S. xxx = Kelly Starrett „Werde ein geschmeidiger Leopard“ (Seite der dt. Ausgabe), Starrett = Starrett-Mobilisation ohne Seitenangabe, Triggerball/Foam Roller = Selbstmassage mit Lacrosse-/Tennisball bzw. Rolle, sonst Autor bzw. System als Orientierung (Cook, Boyle, McGill, Dan John, Cressey, DNS, Janda).</p>
       </div>`;
     renderShell(profile, 'trainingsplan', T, html, back);
     const q = document.getElementById('crLQ');
@@ -310,6 +339,7 @@ async function renderCrLibrary(profile) {
       const miss = CR_SEED.filter(s => !lib.some(x => x.name.trim().toLowerCase() === s.name.trim().toLowerCase()));
       const choice = prompt('Standard-Bibliothek:\n1 = fehlende Standard-Übungen ergänzen (' + miss.length + ')\n2 = komplett auf Standard zurücksetzen (eigene Übungen/Änderungen gehen verloren)', '1');
       if (choice !== '1' && choice !== '2') return;
+      if (choice === '2') CR_LIB_DEL = [];
       lib = choice === '2' ? JSON.parse(JSON.stringify(CR_SEED)) : lib.concat(JSON.parse(JSON.stringify(miss)));
       await save('Bibliothek aktualisiert.');
     };
@@ -317,12 +347,12 @@ async function renderCrLibrary(profile) {
     appEl.querySelectorAll('[data-dl]').forEach(b => b.onclick = async () => {
       const x = lib.find(y => y.id === b.dataset.dl);
       if (!confirm('„' + x.name + '“ aus der Bibliothek löschen? (Bestehende Programme behalten ihre Kopie.)')) return;
-      lib = lib.filter(y => y !== x); await save('Gelöscht.');
+      lib = lib.filter(y => y !== x); await save('Gelöscht.', x.name);
     });
   };
-  const save = async msg => { try { await crSaveLib(lib); toast(msg); } catch (e) { toast('Fehler: ' + e.message); } draw(); };
+  const save = async (msg, deletedName) => { try { await crSaveLib(lib, deletedName); toast(msg); } catch (e) { toast('Fehler: ' + e.message); } draw(); };
   const edit = ex => {
-    const x = ex ? Object.assign({}, ex) : { id: crUid(), name: '', type: 'Mobilisation', region: 'Hüfte', desc: '', dosage: '', src: 'BER' };
+    const x = ex ? Object.assign({ expl: '' }, ex) : { id: crUid(), name: '', type: 'Mobilisation', region: 'Hüfte', desc: '', expl: '', dosage: '', src: 'BER' };
     const host = document.createElement('div');
     host.className = 'modal-scrim';
     host.innerHTML = `<div class="modal"><h2>${ex ? '&Uuml;bung bearbeiten' : 'Neue &Uuml;bung'}</h2>
@@ -330,7 +360,8 @@ async function renderCrLibrary(profile) {
         <label style="grid-column:1/-1;">Name (Englisch)<input id="eN" value="${esc(x.name)}"></label>
         <label>Typ<select id="eT">${CR_TYPES.map(t => `<option${t === x.type ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
         <label>Region<select id="eR">${CR_REGIONS.map(t => `<option${t === x.region ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
-        <label style="grid-column:1/-1;">Erl&auml;uterung / Ablauf<textarea id="eD" rows="5" class="cr-ta">${esc(x.desc)}</textarea></label>
+        <label style="grid-column:1/-1;">Instruktion / Ablauf<textarea id="eD" rows="5" class="cr-ta">${esc(x.desc)}</textarea></label>
+        <label style="grid-column:1/-1;">Erl&auml;uterung (Standard, z. B. Ziel / worauf achten &ndash; im Programm individuell &auml;nderbar)<textarea id="eE" rows="2" class="cr-ta">${esc(x.expl)}</textarea></label>
         <label>Anzahl / Dauer (Standard)<input id="eS" value="${esc(x.dosage)}"></label>
         <label>Quelle<input id="eQ" value="${esc(x.src)}" placeholder="z. B. BER, Cook/FMS, Boyle"></label>
       </div>
@@ -340,7 +371,7 @@ async function renderCrLibrary(profile) {
     q('#eX').onclick = () => host.remove();
     q('#eOk').onclick = async () => {
       x.name = q('#eN').value.trim(); if (!x.name) { alert('Bitte einen Namen eingeben.'); return; }
-      x.type = q('#eT').value; x.region = q('#eR').value; x.desc = q('#eD').value; x.dosage = q('#eS').value.trim(); x.src = q('#eQ').value.trim();
+      x.type = q('#eT').value; x.region = q('#eR').value; x.desc = q('#eD').value; x.expl = q('#eE').value; x.dosage = q('#eS').value.trim(); x.src = q('#eQ').value.trim();
       lib = ex ? lib.map(y => y.id === ex.id ? x : y) : lib.concat([x]);
       host.remove(); await save('Gespeichert.');
     };
@@ -396,7 +427,7 @@ function crPrint(prog, name) {
   <div class="meta"><span>Name: <b>${esc(name || '')}</b></span><span>Datum: <b>ab ${crDate(prog.start_date) || '–'}${prog.end_date ? ' bis ' + crDate(prog.end_date) : ''}</b></span></div>
   ${prios.length ? `<div class="prio"><b>Ziele &amp; Schwerpunkte zur Verbesserung dysfunktionaler Bewegungen:</b>${prios.map((t, i) => `<div>Priorit&auml;t ${i + 1}: ${esc(t)}</div>`).join('')}</div>` : ''}
   <table><thead><tr><th>Exercise</th><th>K&ouml;rperregion</th><th>Bemerkung</th><th>Dauer/Anzahl</th><th>Wie oft?</th></tr></thead><tbody>
-  ${(C.items || []).map(it => `<tr><td class="n">${esc(it.name)}</td><td class="r">${esc(it.region || '')}</td><td>${crNl(it.desc)}</td><td class="d">${esc(it.dosage || '')}</td><td class="f">${esc(it.freq || '')}</td></tr>`).join('')}
+  ${(C.items || []).map(it => `<tr><td class="n">${esc(it.name)}</td><td class="r">${esc(it.region || '')}</td><td>${it.expl ? `<b>${crNl(it.expl)}</b>${it.desc ? '<br>' : ''}` : ''}${crNl(it.desc)}</td><td class="d">${esc(it.dosage || '')}</td><td class="f">${esc(it.freq || '')}</td></tr>`).join('')}
   </tbody></table>
   ${C.note ? `<div class="note">${crNl(C.note)}</div>` : ''}
   ${C.tips ? `<div class="note"><b>Zus&auml;tzliche Empfehlungen:</b><br>${crNl(C.tips)}</div>` : ''}
@@ -446,6 +477,7 @@ async function renderMyCorrectives(profile) {
         <button type="button" class="cr-check" data-p="${p.id}" data-it="${esc(it.id)}" aria-pressed="${done.has(it.id)}">${done.has(it.id) ? '&#10003;' : ''}</button>
         <div class="cr-ath-body"><div class="cr-ath-name">${esc(it.name)}</div>
           <div class="cr-ath-meta">${it.dosage ? `<span class="chip">${esc(it.dosage)}</span>` : ''}${it.freq ? ` <span class="chip cr-freq">${esc(it.freq)}</span>` : ''}${it.region ? ` <span class="muted-inline">${esc(it.region)}</span>` : ''}</div>
+          ${it.expl ? `<div class="cr-ath-expl">${crNl(it.expl)}</div>` : ''}
           ${it.desc ? `<details class="cr-how"><summary>So geht&rsquo;s</summary><div>${crNl(it.desc)}</div></details>` : ''}</div></div>`).join('')}
       <label class="cr-notelbl">Notiz (optional, z. B. Schmerzen, Fragen)<input type="text" data-note="${p.id}" value="${esc((lg && lg.note) || '')}" placeholder="&hellip;"></label>
       ${C.note ? `<div class="hint cr-hint">${crNl(C.note)}</div>` : ''}

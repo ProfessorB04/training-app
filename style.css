@@ -705,3 +705,9 @@ td.lm-man sup{ font-size:.65em; margin-left:2px; }
   .cr-form, .cr-form.cr-prioform, .cr-form.cr-two, .cr-item-grid{ grid-template-columns:1fr; }
   .cr-item-head{ flex-wrap:wrap; } .cr-item-head .cr-name{ flex-basis:calc(100% - 40px); }
 }
+/* Correctives: eigenes Feld Erläuterung (2026-11-06 b) */
+.cr-item-grid .cr-full{ grid-column:1/-1; }
+.cr-sub{ font-weight:400; color:var(--ink-soft); }
+.cr-item-grid .cr-expl textarea{ background:#fffbea; border-color:#f0dc9a; }
+.cr-li-expl{ display:block; color:#7a5a00; font-size:.8rem; margin-top:2px; font-style:italic; }
+.cr-ath-expl{ margin-top:6px; padding:6px 10px; background:#fffbea; border-left:3px solid #f0c56b; border-radius:0 8px 8px 0; font-size:.88rem; line-height:1.4; }
