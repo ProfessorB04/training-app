@@ -71,9 +71,11 @@ function isoWeek(iso) {
 // admin   = volle Rechte inkl. Nutzerverwaltung (Einladen, Rollen ändern)
 // trainer = alle Inhalte (Team-Übersichten, Trainingsplanung …), aber keine Nutzerverwaltung
 // athlete = eigene Einträge
-const ROLE_LABELS = { admin: 'Admin', trainer: 'Trainer:in', athlete: 'Athlet:in' };
+const ROLE_LABELS = { admin: 'Admin', trainer: 'Trainer:in', athlete: 'Athlet:in', coach: 'Coach (Scouting)' };
 const isAdmin = (profile) => profile.role === 'admin';
 const isStaff = (profile) => profile.role === 'admin' || profile.role === 'trainer';
+const isCoach = (profile) => profile.role === 'coach';       // Scouting-Coach: sieht nur Scouting + Mein Konto
+const isAthlete = (profile) => profile.role === 'athlete';
 
 // ---------------- App-Shell (Sidebar + Kopfzeile) ----------------
 // Tool-Rechte je Athlet:in (profiles.permissions); Admin + Trainer:innen haben immer vollen Zugriff
@@ -83,15 +85,16 @@ const can = (profile, tool) => perm(profile, tool) !== 'none';
 
 const NAV_ITEMS = [
   { key: 'menu', label: 'Dashboard', icon: '&#127968;', show: () => true },
-  { key: 'trainingsplan', label: 'Trainingsplanung', icon: '&#128203;', show: p => can(p, 'trainingsplan') },
-  { key: 'meinplan', label: 'Mein Trainingsplan', icon: '&#127947;', show: p => !isStaff(p) && can(p, 'meinplan') },
-  { key: 'condition', label: 'Conditioning', icon: '&#9201;&#65039;', show: p => !isStaff(p) && can(p, 'condition') },
-  { key: 'correctives', label: 'Correctives', icon: '&#129496;', show: p => !isStaff(p) && !!p._crHas },   // nur mit aktivem Homework-Programm
+  { key: 'trainingsplan', label: 'Trainingsplanung', icon: '&#128203;', show: p => !isCoach(p) && can(p, 'trainingsplan') },
+  { key: 'meinplan', label: 'Mein Trainingsplan', icon: '&#127947;', show: p => isAthlete(p) && can(p, 'meinplan') },
+  { key: 'condition', label: 'Conditioning', icon: '&#9201;&#65039;', show: p => isAthlete(p) && can(p, 'condition') },
+  { key: 'correctives', label: 'Correctives', icon: '&#129496;', show: p => isAthlete(p) && !!p._crHas },   // nur mit aktivem Homework-Programm
   { key: 'loadmanagement', label: 'Load Management', icon: '&#128200;', show: p => isStaff(p) },
-  { key: 'srpe', label: 'Session-RPE', icon: '&#128200;', show: p => !isStaff(p) && can(p, 'srpe') },
-  { key: 'wellness', label: 'Wellness-Check', icon: '&#128154;', show: p => !isStaff(p) && can(p, 'wellness') },
+  { key: 'srpe', label: 'Session-RPE', icon: '&#128200;', show: p => isAthlete(p) && can(p, 'srpe') },
+  { key: 'wellness', label: 'Wellness-Check', icon: '&#128154;', show: p => isAthlete(p) && can(p, 'wellness') },
   { key: 'testungen', label: 'Testungen & Assessments', icon: '&#129514;', show: p => isStaff(p) },
-  { key: 'warmup', label: 'Warm-Up', icon: '&#128293;', show: p => can(p, 'warmup') },
+  { key: 'warmup', label: 'Warm-Up', icon: '&#128293;', show: p => !isCoach(p) && can(p, 'warmup') },
+  { key: 'scouting', label: 'Scouting', icon: '&#127936;', show: p => isStaff(p) || isCoach(p) || (isAthlete(p) && !!p._scHas) },
   { key: 'athleten', label: 'Athletenverwaltung', icon: '&#127939;', show: p => isStaff(p) },
   { key: 'team', label: 'Nutzerverwaltung', icon: '&#128101;', show: p => isAdmin(p) },
   { key: 'konto', label: 'Mein Konto', icon: '&#128100;', show: () => true },
@@ -110,6 +113,7 @@ function navigate(profile, key) {
   else if (key === 'loadmanagement') renderLoadHub(profile);
   else if (key === 'condition') { if (isStaff(profile)) renderConditionHub(profile); else renderMyConditionList(profile); }
   else if (key === 'correctives') renderMyCorrectives(profile);
+  else if (key === 'scouting') { if (isStaff(profile) || isCoach(profile)) renderScHub(profile); else renderMyScouting(profile); }
   else if (key === 'srpe') renderAthleteDashboard(profile);
   else if (key === 'wellness') renderWellnessPage(profile);
   else if (key === 'testungen') renderTestingPage(profile);
@@ -418,7 +422,8 @@ async function renderDashboard(user) {
   }
 
   if (window.appIdleStart) window.appIdleStart(sb, profile.role);   // Auto-Abmeldung nur Admin/Trainer
-  if (!isStaff(profile) && typeof crHasProgram === 'function') profile._crHas = await crHasProgram(profile);   // Menüpunkt „Correctives“
+  if (isAthlete(profile) && typeof crHasProgram === 'function') profile._crHas = await crHasProgram(profile);   // Menüpunkt „Correctives“
+  if (isAthlete(profile) && typeof scHasShared === 'function') profile._scHas = await scHasShared(profile);     // Menüpunkt „Scouting“ (freigegebene Reports)
   const hashKey = (window.location.hash || '').slice(1);
   if (hashKey) {
     history.replaceState(null, '', window.location.pathname);
@@ -426,6 +431,7 @@ async function renderDashboard(user) {
     navigate(profile, hashKey === 'loadmanagement' && !isStaff(profile) ? 'srpe' : hashKey);
     return;
   }
+  if (isCoach(profile)) { navigate(profile, 'scouting'); return; }   // Coach landet direkt im Scouting
   renderMenu(profile);
 }
 
@@ -496,6 +502,7 @@ const MENU_TILES = [
   { key: 'srpe', tint: 'tint-load', icon: '&#128200;', title: 'Session-RPE', sub: 'Einheit eintragen: Anstrengung (1&ndash;10) und Dauer' },
   { key: 'wellness', tint: 'tint-ath', icon: '&#128154;', title: 'Wellness-Check', sub: 'Morgens vor dem Training &ndash; 4 kurze Fragen' },
   { key: 'testungen', tint: 'tint-test', icon: '&#129514;', title: 'Testungen &amp; Assessments', sub: 'Performance-Test, 30-15 IFT, 10m Sprint' },
+  { key: 'scouting', tint: 'tint-test', icon: '&#127936;', title: 'Scouting', sub: 'Gegner-Scouting Basketball: Kader, Scouting-Reports, Video-Clips' },
   { key: 'warmup', tint: 'tint-warm', icon: '&#128293;', title: 'Warm-Up', sub: 'Mobility-, Dynamic-, Runner&rsquo;s-ABC-Bibliothek, Warm-Up-Sessions' },
   { key: 'athleten', tint: 'tint-ath', icon: '&#127939;', title: 'Athletenverwaltung', sub: 'Athlet:innen &amp; Gruppen zentral verwalten, Import aus der Trainingsplanung' },
   { key: 'team', tint: 'tint-team', icon: '&#128101;', title: 'Nutzerverwaltung', sub: 'Zug&auml;nge anlegen, Rollen &amp; Tool-Rechte verwalten' },
@@ -779,7 +786,7 @@ async function renderTeamPage(profile) {
     .order('role')
     .order('name');
 
-  const roleOrder = { admin: 0, trainer: 1, athlete: 2 };
+  const roleOrder = { admin: 0, trainer: 1, coach: 2, athlete: 3 };
   const sorted = (users || []).slice().sort((a, b) =>
     (roleOrder[a.role] - roleOrder[b.role]) || a.name.localeCompare(b.name, 'de'));
 
@@ -790,6 +797,7 @@ async function renderTeamPage(profile) {
           : `<select class="role-select" data-user="${u.id}">
                <option value="athlete" ${u.role === 'athlete' ? 'selected' : ''}>Athlet:in</option>
                <option value="trainer" ${u.role === 'trainer' ? 'selected' : ''}>Trainer:in</option>
+               <option value="coach" ${u.role === 'coach' ? 'selected' : ''}>Coach (nur Scouting)</option>
              </select>`;
         const resetCell = u.role === 'admin' ? ''
           : `<button type="button" class="secondary small-btn" data-reset="${u.id}">Einmalpasswort</button>
@@ -801,7 +809,7 @@ async function renderTeamPage(profile) {
              ${mAthletes.filter(a => !a.profile_id || a.profile_id === u.id).map(a =>
                `<option value="${a.id}" ${linked && linked.id === a.id ? 'selected' : ''}>${esc(a.last_name)}, ${esc(a.first_name)}</option>`).join('')}
            </select>`;
-        const permCell = u.role !== 'athlete' ? '<span class="muted">alle Tools</span>' :
+        const permCell = u.role === 'coach' ? '<span class="muted">nur Scouting</span>' : u.role !== 'athlete' ? '<span class="muted">alle Tools</span>' :
           `<div class="chips">${permSummary(u.permissions)}</div><button type="button" class="secondary small-btn" data-perm="${u.id}" style="margin-top:4px;">Rechte</button>`;
         const unameCell = `<div class="uname">${u.username ? '&#128100; ' + esc(u.username) : '<span class="muted">kein Benutzername</span>'}
             <button type="button" class="link-btn" data-uname="${u.id}" title="Benutzername f&uuml;r die Anmeldung festlegen">${u.username ? '&auml;ndern' : 'festlegen'}</button></div>`;
@@ -828,6 +836,7 @@ async function renderTeamPage(profile) {
           <select id="inviteRole">
             <option value="athlete">Athlet:in</option>
             <option value="trainer">Trainer:in</option>
+            <option value="coach">Coach (nur Scouting)</option>
           </select>
         </label>
         <button type="submit">Zugang anlegen</button>
