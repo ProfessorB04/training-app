@@ -22,6 +22,12 @@ const scDate = iso => iso ? new Date(iso + 'T00:00:00').toLocaleDateString('de-D
 const scNl = s => esc(s || '').replace(/\n/g, '<br>');
 const scPName = p => [p.first_name, p.last_name].filter(Boolean).join(' ');
 const scUid = () => 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+// Automatische Aktualisierung: Liga bzw. Kader werden beim Öffnen neu geladen, wenn der letzte Stand älter als 12 h ist
+// (Zeitstempel in sc_teams.notes.synced / notes.roster_synced). Pro Sitzung höchstens ein Versuch je Liga/Team.
+const SC_SYNC_MS = 12 * 3600 * 1000;
+const scAutoTried = {};
+const scStale = iso => !iso || Date.now() - new Date(iso).getTime() > SC_SYNC_MS;
+const scStand = iso => iso ? 'Stand: ' + new Date(iso).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' Uhr' : '';
 
 async function scDbb(path, payload) {
   const { data, error } = await sb.functions.invoke('invite-user', { body: { action: 'dbb', path, payload } });
@@ -50,7 +56,7 @@ async function scImportLeague(leagueId, onStep) {
   (have || []).forEach(t => { idOf[t.dbb_team_id] = t; });
   for (const [dbbId, t] of Object.entries(teamsDbb)) {
     const ex = idOf[dbbId];
-    const notes = Object.assign({}, ex ? ex.notes : {}, t.table ? { table: t.table } : {});
+    const notes = Object.assign({}, ex ? ex.notes : {}, t.table ? { table: t.table } : {}, { synced: new Date().toISOString() });
     const row = { name: t.name, short_name: t.short, league_id: leagueId, league_name: leagueName, season, dbb_team_id: +dbbId, notes, updated_at: new Date().toISOString() };
     if (ex) { const r = await sb.from('sc_teams').update(row).eq('id', ex.id); if (r.error) throw r.error; }
     else { const r = await sb.from('sc_teams').insert(row).select('id, dbb_team_id, notes').single(); if (r.error) throw r.error; idOf[dbbId] = r.data; }
@@ -114,6 +120,8 @@ async function scImportRoster(team, onStep) {
       added++;
     }
   }
+  const { data: tNow } = await sb.from('sc_teams').select('notes').eq('id', team.id).single();
+  await sb.from('sc_teams').update({ notes: Object.assign({}, (tNow && tNow.notes) || team.notes || {}, { roster_synced: new Date().toISOString() }) }).eq('id', team.id);
   return { players: Object.keys(seen).length, added, games: (games || []).length };
 }
 
@@ -136,13 +144,14 @@ async function renderScHub(profile) {
   const count = {}; (pRes.data || []).forEach(p => { count[p.team_id] = (count[p.team_id] || 0) + 1; });
   const tName = id => (teams.find(t => t.id === id) || {}).name || '–';
   const reports = rRes.data || [];
+  const lastSync = lt.map(t => t.notes.synced).filter(Boolean).sort().pop();
   const sorted = lt.slice().sort((a, b) => ((a.notes.table || {}).rang || 99) - ((b.notes.table || {}).rang || 99) || a.name.localeCompare(b.name, 'de'));
   const content = `
     <div class="sc-top">
       <select id="scLeague">${SC_LEAGUES.map(l => `<option value="${l.id}"${l.id === league ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select>
       <button type="button" class="secondary" id="scImport">&#8635; Liga von DBB laden</button>
       <button type="button" id="scNewReport">&#10133; Neuer Scouting-Report</button>
-      <span id="scStatus" class="muted-inline"></span>
+      <span id="scStatus" class="muted-inline">${scStand(lastSync)}</span>
     </div>
     <div class="card">
       <h2>Scouting-Reports</h2>
@@ -157,16 +166,21 @@ async function renderScHub(profile) {
       ${sorted.length ? `<div class="tablewrap"><table class="sc-table"><thead><tr><th>#</th><th>Team</th><th>Bilanz</th><th>K&ouml;rbe</th><th>Kader</th><th></th></tr></thead><tbody>
         ${sorted.map(t => { const tb = t.notes.table || {}; return `<tr data-team="${t.id}"${t.is_own ? ' class="sc-own"' : ''}><td>${tb.rang || ''}</td><td><b>${esc(t.name)}</b>${t.is_own ? ' <span class="chip sc-pub">eigenes Team</span>' : ''}</td><td>${tb.s != null ? tb.s + ':' + tb.n : ''}</td><td>${tb.koerbe != null ? tb.koerbe + ':' + tb.gegen : ''}</td><td>${count[t.id] || 0}</td><td><button type="button" class="secondary small-btn" data-open="${t.id}">&Ouml;ffnen</button></td></tr>`; }).join('')}
       </tbody></table></div>` : '<p class="muted">Noch keine Teams &ndash; &bdquo;Liga von DBB laden&ldquo; holt Tabelle, Teams und Spielplan.</p>'}
-      <p class="hint">Quelle: DBB-Spielbetrieb (basketball-bund.net). F&uuml;r die 2. DBBL liefert der DBB Kader und Ergebnisse, aber keine Einzelstatistik &ndash; Statistik bei Bedarf in den Spielerinnen-Profilen eintragen.</p>
+      <p class="hint">Quelle: DBB-Spielbetrieb (basketball-bund.net). Tabelle, Spielplan und Ergebnisse werden beim &Ouml;ffnen automatisch aktualisiert, wenn der letzte Stand &auml;lter als 12 Stunden ist. F&uuml;r die 2. DBBL liefert der DBB Kader und Ergebnisse, aber keine Einzelstatistik &ndash; Statistik bei Bedarf in den Spielerinnen-Profilen eintragen.</p>
     </div>`;
   renderShell(profile, 'scouting', T, content);
   document.getElementById('scLeague').onchange = e => { scLs('sc_league', e.target.value); renderScHub(profile); };
-  document.getElementById('scImport').onclick = async () => {
+  const runImport = async auto => {
     const st = document.getElementById('scStatus'), b = document.getElementById('scImport');
     b.disabled = true;
-    try { const r = await scImportLeague(league, t => { st.textContent = t; }); toast(r.leagueName + ' ' + r.season + ': ' + r.teams + ' Teams, ' + r.games + ' Spiele geladen.'); renderScHub(profile); }
-    catch (e) { st.textContent = ''; b.disabled = false; toast('Fehler: ' + e.message); }
+    try {
+      const r = await scImportLeague(league, t => { st.textContent = (auto ? 'Automatische Aktualisierung: ' : '') + t; });
+      if (!auto) toast(r.leagueName + ' ' + r.season + ': ' + r.teams + ' Teams, ' + r.games + ' Spiele geladen.');
+      if (document.getElementById('scImport') === b) renderScHub(profile);
+    } catch (e) { st.textContent = scStand(lastSync); b.disabled = false; if (!auto) toast('Fehler: ' + e.message); }
   };
+  document.getElementById('scImport').onclick = () => runImport(false);
+  if (scStale(lastSync) && !scAutoTried['L' + league]) { scAutoTried['L' + league] = 1; runImport(true); }
   document.getElementById('scNewReport').onclick = () => renderScReport(profile, null, null);
   appEl.querySelectorAll('[data-rep]').forEach(b => b.onclick = () => renderScReport(profile, b.dataset.rep));
   appEl.querySelectorAll('[data-open]').forEach(b => b.onclick = () => renderScTeam(profile, b.dataset.open));
@@ -200,7 +214,7 @@ async function renderScTeam(profile, teamId) {
         <button type="button" id="scRoster">&#8635; Kader aus Spielberichten laden</button>
         <button type="button" class="secondary" id="scAddPl">+ Spielerin</button>
         ${team.is_own ? '' : `<button type="button" class="secondary" id="scRepTeam">&#10133; Scouting-Report gegen ${esc(team.short_name || team.name)}</button>`}
-        <span id="scStatus" class="muted-inline"></span>
+        <span id="scStatus" class="muted-inline">${scStand(team.notes.roster_synced)}</span>
       </div>
     </div>
     <div class="card"><h2>Kader (${players.length})</h2>
@@ -214,11 +228,16 @@ async function renderScTeam(profile, teamId) {
         return `<tr><td>${scDate(g.game_date)}</td><td>${home ? 'vs' : '@'} ${esc(opp || '')}</td><td>${res}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Keine Spiele &ndash; Liga in der &Uuml;bersicht laden.</p>'}</div>`;
   renderShell(profile, 'scouting', team.name, content, back);
   document.getElementById('scOwn').onchange = async e => { const r = await sb.from('sc_teams').update({ is_own: e.target.checked }).eq('id', teamId); toast(r.error ? 'Fehler: ' + r.error.message : 'Gespeichert.'); renderScTeam(profile, teamId); };
-  document.getElementById('scRoster').onclick = async () => {
+  const runRoster = async auto => {
     const st = document.getElementById('scStatus'), b = document.getElementById('scRoster'); b.disabled = true;
-    try { const r = await scImportRoster(team, t => { st.textContent = t; }); toast(r.players + ' Spielerinnen aus ' + r.games + ' Spielberichten (' + r.added + ' neu).'); renderScTeam(profile, teamId); }
-    catch (e) { b.disabled = false; st.textContent = ''; toast('Fehler: ' + e.message); }
+    try {
+      const r = await scImportRoster(team, t => { st.textContent = (auto ? 'Automatische Aktualisierung: ' : '') + t; });
+      if (!auto || r.added) toast(r.players + ' Spielerinnen aus ' + r.games + ' Spielberichten (' + r.added + ' neu).');
+      if (document.getElementById('scRoster') === b) renderScTeam(profile, teamId);
+    } catch (e) { b.disabled = false; st.textContent = scStand(team.notes.roster_synced); if (!auto) toast('Fehler: ' + e.message); }
   };
+  document.getElementById('scRoster').onclick = () => runRoster(false);
+  if (team.dbb_team_id && games.some(g => g.result) && scStale(team.notes.roster_synced) && !scAutoTried['T' + teamId]) { scAutoTried['T' + teamId] = 1; runRoster(true); }
   document.getElementById('scAddPl').onclick = () => scEditPlayer({ team_id: teamId, first_name: '', last_name: '', stats: {}, notes: {}, active: true }, () => renderScTeam(profile, teamId));
   const rt = document.getElementById('scRepTeam'); if (rt) rt.onclick = () => renderScReport(profile, null, teamId);
   appEl.querySelectorAll('[data-pl]').forEach(b => b.onclick = () => scEditPlayer(players.find(p => p.id === b.dataset.pl), () => renderScTeam(profile, teamId)));

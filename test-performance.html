@@ -383,6 +383,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <span style="flex:1"></span>
       <button class="btn" id="printBtn">🖨️ Als PDF exportieren</button>
       <button class="btn" id="wordBtn">📄 Als Word exportieren</button>
+      <button class="btn" id="sheetBtn" title="Leeres Datenblatt (DIN A4 quer) mit den eingeblendeten Spalten zum Eintragen per Hand">📝 Erfassungsbogen (Word)</button>
       <button class="btn primary" id="excelBtn">📊 Als Excel exportieren</button>
     </div>
   </div>
@@ -1628,6 +1629,94 @@ function exportWord(){
   document.body.appendChild(a2); a2.click(); document.body.removeChild(a2);
 }
 document.getElementById("wordBtn").addEventListener("click", exportWord);
+
+// ---------- Erfassungsbogen (leeres Datenblatt zum Eintragen per Hand, Word, DIN A4 quer) ----------
+// Spalten = aktuell eingeblendete Spalten, Zeilen = Spielerinnen der Export-Auswahl (+ Leerzeilen).
+// Name, Geburtsdatum, Alter, Position sind vorausgefüllt, alle Messfelder bleiben leer.
+// Passen nicht alle Spalten auf eine Seite, wird blockweise auf mehrere Seiten verteilt (Name jeweils wiederholt).
+var SHEET_EXTRA_ROWS = 3;
+function exportSheet(){
+  if(!exportEntries().length){ alert('Keine Spielerin für den Export ausgewählt (siehe „Spielerinnen für Export").'); return; }
+  state.athletes.forEach(computeFields);
+  var PREFILL = { geburtsdatum:1, alter:1, position:1 };
+  var unitW = function(f){ return f.wide ? 3 : 1; };
+  var CAP = 15;                       // Platz je Seite in „Spalten-Einheiten“ (Notiz = 3)
+  // Blöcke mit sichtbaren Spalten → Seiten (greedy, Blöcke bleiben möglichst zusammen)
+  var pages = [], cur = [], used = 0;
+  GROUPS.forEach(function(g){
+    var fs = visFields(g);
+    if(!fs.length) return;
+    var w = fs.reduce(function(s, f){ return s + unitW(f); }, 0);
+    if(used && used + w > CAP){ pages.push(cur); cur = []; used = 0; }
+    var part = { g:g, fields:[] };
+    fs.forEach(function(f){
+      if(used + unitW(f) > CAP && used){ if(part.fields.length) cur.push(part); pages.push(cur); cur = []; used = 0; part = { g:g, fields:[] }; }
+      part.fields.push(f); used += unitW(f);
+    });
+    if(part.fields.length) cur.push(part);
+  });
+  if(cur.length || !pages.length) pages.push(cur);
+
+  var entries = exportEntries();
+  var hd = "background:#004397;color:#fff;font-weight:bold;";
+  var html = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>";
+  html += "<head><meta charset='utf-8'><title>Erfassungsbogen Performance-Test</title>";
+  html += "<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->";
+  html += "<style>@page Section1{size:841.9pt 595.3pt;mso-page-orientation:landscape;margin:1.2cm 1cm 1.2cm 1cm;}" +
+    "div.Section1{page:Section1;} body{font-family:Calibri,Arial,sans-serif;font-size:9pt;color:#1a1a1a;}" +
+    "table{border-collapse:collapse;} td,th{border:1px solid #777;padding:2px 4px;vertical-align:middle;}" +
+    "tr.row td{height:0.6cm;padding-top:0;padding-bottom:0;} th{font-size:8pt;}</style></head><body><div class='Section1'>";
+
+  var head = function(pi){
+    return "<table style='width:100%;border:none;margin-bottom:6px;'><tr>" +
+      "<td style='background:#ee7105;padding:6px 10px;width:60px;border:none;'><img src='data:image/png;base64," + CLUB_LOGO_B64 + "' style='height:36px;background:#fff;padding:2px;'></td>" +
+      "<td style='background:#ee7105;padding:6px 10px;color:#fff;border:none;'>" +
+      "<div style='font-size:14pt;font-weight:bold;text-transform:uppercase;'>Performance-Test &middot; Erfassungsbogen" + (pages.length > 1 ? " <span style='font-size:9pt;'>(Blatt " + (pi + 1) + "/" + pages.length + ")</span>" : "") + "</div>" +
+      "<div style='font-size:9pt;'>Datum: " + (state.meta.date ? esc(deFmt(state.meta.date)) : "______________") +
+      " &nbsp;&middot;&nbsp; Tester:in: " + (state.meta.tester ? esc(state.meta.tester) : "______________________") +
+      " &nbsp;&middot;&nbsp; Ort: " + (state.meta.ort ? esc(state.meta.ort) : "______________________") + "</div>" +
+      "</td></tr></table>";
+  };
+
+  pages.forEach(function(parts, pi){
+    if(pi) html += "<br clear=all style='page-break-before:always'>";
+    html += head(pi);
+    html += "<table style='width:100%;'><thead>";
+    // Zeile 1: Blocknamen
+    html += "<tr><th rowspan='2' style='" + hd + "width:0.8cm;'>Nr.</th><th rowspan='2' style='" + hd + "width:3.2cm;text-align:left;'>Nachname</th><th rowspan='2' style='" + hd + "width:2.6cm;text-align:left;'>Vorname</th>";
+    parts.forEach(function(p){ html += "<th colspan='" + p.fields.length + "' style='" + hd + "'>" + esc(p.g.label) + "</th>"; });
+    html += "</tr><tr>";
+    parts.forEach(function(p){ p.fields.forEach(function(f){
+      var calc = (f.type === "computed" || f.type === "hybrid") && !PREFILL[f.key];
+      var lbl = esc(f.label) + (f.type === "ampel" ? "<br><span style='font-weight:normal;font-size:7pt;'>rot / gelb / grün</span>" : "") +
+        (calc ? "<br><span style='font-weight:normal;font-size:7pt;'>(wird berechnet)</span>" : "");
+      html += "<th style='background:" + (calc ? "#eef1f4" : "#e6e9e7") + ";" + (f.wide ? "width:5cm;" : "") + "'>" + lbl + "</th>";
+    }); });
+    html += "</tr></thead><tbody>";
+    var rows = entries.map(function(e){ return e.a; });
+    for(var k = 0; k < SHEET_EXTRA_ROWS; k++) rows.push(null);
+    rows.forEach(function(a, ri){
+      html += "<tr class='row'><td style='text-align:center;'>" + (ri + 1) + "</td>" +
+        "<td style='font-weight:bold;'>" + (a ? esc(a.nachname || "") : "") + "</td><td>" + (a ? esc(a.vorname || "") : "") + "</td>";
+      parts.forEach(function(p){ p.fields.forEach(function(f){
+        var calc = (f.type === "computed" || f.type === "hybrid") && !PREFILL[f.key];
+        var v = a && PREFILL[f.key] ? (f.key === "geburtsdatum" ? deFmt(a[f.key]) : fmt(a[f.key])) : "";
+        html += "<td style='text-align:center;" + (calc ? "background:#f4f6f8;" : "") + "'>" + esc(v || "") + "</td>";
+      }); });
+      html += "</tr>";
+    });
+    html += "</tbody></table>";
+  });
+  html += "<p style='margin-top:6px;font-size:7.5pt;color:#888;'>Sprint/Lane Agility in Sekunden, Reach und Knee-to-Wall in cm. Graue Spalten werden im Tool automatisch berechnet und müssen nicht eingetragen werden.</p>";
+  html += "</div></body></html>";
+
+  var blob = new Blob(["﻿" + html], {type:"application/msword"});
+  var a2 = document.createElement("a");
+  a2.href = URL.createObjectURL(blob);
+  a2.download = "Performance_Test_Erfassungsbogen_" + (state.meta.date || "Termin") + ".doc";
+  document.body.appendChild(a2); a2.click(); document.body.removeChild(a2);
+}
+document.getElementById("sheetBtn").addEventListener("click", exportSheet);
 
 // ---------- Vergleich (Testverlauf über mehrere Termine) ----------
 function switchMainTab(name){
