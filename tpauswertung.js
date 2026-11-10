@@ -41,6 +41,7 @@ function renderTpHub(profile) {
 }
 
 let TP_EVAL_PLAN = '';
+let TP_EVAL_USER = '';   // Filter „Athlet:in“ in der Auswertung (leer = alle)
 async function renderTpEval(profile) {
   const back = { label: 'Trainingsplanung', go: () => renderTpHub(profile) };
   renderShell(profile, 'trainingsplan', 'Auswertung Trainingspläne', `<p class="muted">Lade&hellip;</p>`, back);
@@ -61,10 +62,20 @@ async function renderTpEval(profile) {
     appEl.querySelectorAll('[data-cdres]').forEach(b => b.onclick = () => renderCdResults(profile, CD0.sessions.find(s => s.id === b.dataset.cdres), names0, { label: 'Auswertung', go: () => renderTpEval(profile) }));
     return;
   }
-  if (!plans.some(p => p.id === TP_EVAL_PLAN)) TP_EVAL_PLAN = plans[0].id;
-  const plan = plans.find(p => p.id === TP_EVAL_PLAN);
   const names = Object.fromEntries((prRes.data || []).map(p => [p.id, p.name]));
-  const members = (aRes.data || []).filter(a => a.plan_id === plan.id);
+  // Filter Athlet:in: nur Personen mit einem (nicht archivierten) Plan; Pläne der Person, aktiver Plan zuerst gewählt
+  const planIds = new Set(plans.map(p => p.id));
+  const allAsg = (aRes.data || []).filter(a => planIds.has(a.plan_id));
+  const people = [...new Set(allAsg.map(a => a.user_id))].sort((x, y) => (names[x] || '').localeCompare(names[y] || '', 'de'));
+  if (TP_EVAL_USER && !people.includes(TP_EVAL_USER)) TP_EVAL_USER = '';
+  const myAsg = TP_EVAL_USER ? allAsg.filter(a => a.user_id === TP_EVAL_USER) : [];
+  const shownPlans = TP_EVAL_USER ? plans.filter(p => myAsg.some(a => a.plan_id === p.id)) : plans;
+  if (!shownPlans.some(p => p.id === TP_EVAL_PLAN)) {
+    const act = myAsg.find(a => a.active);
+    TP_EVAL_PLAN = act ? act.plan_id : shownPlans[0].id;
+  }
+  const plan = plans.find(p => p.id === TP_EVAL_PLAN);
+  const members = (aRes.data || []).filter(a => a.plan_id === plan.id && (!TP_EVAL_USER || a.user_id === TP_EVAL_USER));
   const [{ data: logs }, CD] = await Promise.all([
     sb.from('tp_logs').select('*').eq('plan_id', plan.id),
     typeof cdLoadAll === 'function' ? cdLoadAll().catch(() => ({ sessions: [], asg: [], logs: [] })) : { sessions: [], asg: [], logs: [] },
@@ -97,7 +108,13 @@ async function renderTpEval(profile) {
   const content = `
     <div class="card">
       <div class="ath-toolbar">
-        <select id="tpPlanSel">${plans.map(p => `<option value="${p.id}" ${p.id === plan.id ? 'selected' : ''}>${esc(p.title || 'Ohne Titel')}${p.team ? ' · ' + esc(p.team) : ''} (${new Date(p.created_at).toLocaleDateString('de-DE')})</option>`).join('')}</select>
+        <label class="tp-user-filter">Athlet:in
+          <select id="tpUserSel"><option value="">Alle Athlet:innen</option>${people.map(u => `<option value="${u}" ${u === TP_EVAL_USER ? 'selected' : ''}>${esc(names[u] || 'Unbekannt')}</option>`).join('')}</select>
+        </label>
+        <label class="tp-user-filter">Plan${TP_EVAL_USER ? ` <span class="muted-inline">(${shownPlans.length} von ${esc(names[TP_EVAL_USER] || '')})</span>` : ''}
+        <select id="tpPlanSel">${shownPlans.map(p => `<option value="${p.id}" ${p.id === plan.id ? 'selected' : ''}>${esc(p.title || 'Ohne Titel')}${p.team ? ' · ' + esc(p.team) : ''} (${new Date(p.created_at).toLocaleDateString('de-DE')})${TP_EVAL_USER && myAsg.some(a => a.plan_id === p.id && a.active) ? ' – aktiv' : ''}</option>`).join('')}</select>
+        </label>
+        ${TP_EVAL_USER ? `<button type="button" id="tpUserOpen">&#128202; &Uuml;bersicht ${esc(names[TP_EVAL_USER] || '')} &ouml;ffnen</button>` : ''}
         <span class="spacer"></span>
         <button type="button" class="secondary" id="tpEdit">&#9998; Plan bearbeiten</button>
         <button type="button" class="secondary" id="tpArchive">Plan archivieren</button>
@@ -108,8 +125,11 @@ async function renderTpEval(profile) {
       </table></div>
       <p class="hint">Je Woche: erledigte Einheiten / geplante Einheiten und bewegte Last (&Sigma; Wdh &times; kg). Ampel gegen&uuml;ber der Vorwoche: &#9650; Steigerung (&gt; +2 %) &middot; &#9644; gleich &middot; &#9660; R&uuml;ckschritt (&lt; &minus;2 %). &#9201;&#65039; = Conditioning-Einheiten der Woche (nach Datum) mit Session-Load in AU (sRPE &times; Minuten). Zeile anklicken f&uuml;r die Details je &Uuml;bung und Conditioning-Einheit.</p>
     </div>
-    ${cdEvalHtml(CD, names)}`;
+    ${cdEvalHtml(TP_EVAL_USER ? { ...CD, asg: CD.asg.filter(a => a.user_id === TP_EVAL_USER), logs: CD.logs.filter(l => l.user_id === TP_EVAL_USER) } : CD, names)}`;
   renderShell(profile, 'trainingsplan', 'Auswertung Trainingspläne', content, back);
+  document.getElementById('tpUserSel').onchange = (e) => { TP_EVAL_USER = e.target.value; renderTpEval(profile); };
+  const uo = document.getElementById('tpUserOpen');
+  if (uo) uo.onclick = () => renderTpAthlete(profile, plan, TP_EVAL_USER, names[TP_EVAL_USER] || '');
   document.getElementById('tpPlanSel').onchange = (e) => { TP_EVAL_PLAN = e.target.value; renderTpEval(profile); };
   document.getElementById('tpEdit').onclick = () => { window.location.href = 'trainingsplan.html#edit=' + plan.id; };
   document.getElementById('tpArchive').onclick = async () => {

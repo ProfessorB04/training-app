@@ -757,3 +757,8 @@ td.lm-man sup{ font-size:.65em; margin-left:2px; }
 .scr-view .tablewrap, .scr-view{ overflow-x:auto; }
 @media (max-width:760px){ .sc-form, .sc-two{ grid-template-columns:1fr; } .sc-statrow{ grid-template-columns:repeat(3, 1fr); } }
 .sc-table td, .scr-table td, .scr-table th, .sc-table th{ text-align:left; }
+
+/* Auswertung: Filter Athlet:in (2026-11-10) */
+.tp-user-filter { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; font-weight: 600; color: #5a6072; }
+.tp-user-filter select { min-width: 200px; }
+.ath-toolbar:has(.tp-user-filter) { align-items: flex-end; flex-wrap: wrap; }
