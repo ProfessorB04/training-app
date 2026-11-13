@@ -284,6 +284,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   table.ov-table td.ov-best{ background:var(--zone-g-soft, #e2eee7); color:#2f6e4f; font-weight:700; }
   table.ov-table tr.ov-avg td{ background:#eff2f5; font-weight:700; border-top:2px solid var(--blue); }
   .ov-print-title{ display:none; }
+  table.ov-table .ov-pos{ font-size:.68rem; color:var(--ink-faint); margin-left:4px; }
 
   @media print{
     @page{ size: landscape; margin:8mm; }
@@ -495,7 +496,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <div class="legend-row" style="margin-top:10px;">
         <span><b style="color:#1c7a3d;">Grün</b> = Verbesserung</span>
         <span><b style="color:#b0281c;">Rot</b> = Verschlechterung</span>
-        <span>Δ / Δ % = Veränderung zwischen erstem und letztem ausgewähltem Test (absolut / prozentual)</span>
+        <span>Δ = Veränderung zwischen erstem und letztem ausgewähltem Test · Δ % = Leistungsveränderung (+ = besser, bei Zeiten also schneller)</span>
       </div>
     </div>
   </div>
@@ -518,7 +519,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <div class="legend-row" style="margin-top:10px;">
         <span><b style="color:#1c7a3d;">Grün</b> = Verbesserung bzw. Bestwert des Testtags</span>
         <span><b style="color:#b0281c;">Rot</b> = Verschlechterung</span>
-        <span>Δ / Δ % = Veränderung vom ersten zum letzten vorhandenen Wert der Spielerin · — = nicht teilgenommen · Spaltenkopf antippen = sortieren</span>
+        <span>Δ = Veränderung vom ersten zum letzten vorhandenen Wert der Spielerin · Δ % = Leistungsveränderung (+ = besser, bei Zeiten also schneller) · — = nicht teilgenommen · Spaltenkopf antippen = sortieren</span>
       </div>
     </div>
   </div>
@@ -1878,7 +1879,8 @@ function renderCompareTable(){
     var first = values[0], last = values[values.length-1];
     var delta = (first!==null && last!==null) ? Math.round((last-first)*100)/100 : null;
     var cls = betterClass(f.better, delta);
-    var pct = (first!==null && last!==null && first!==0) ? Math.round((last-first)/Math.abs(first)*1000)/10 : null;
+    // Δ % = Leistungsveränderung: + = besser (bei Zeiten also schneller), − = schlechter
+    var pct = (first!==null && last!==null && first!==0) ? Math.round((last-first)/Math.abs(first)*1000)/10 * (f.better==="low" ? -1 : 1) : null;
     html += "<td class='" + cls + "'>" + (delta===null ? "—" : (delta>0?"+":"") + delta) + "</td>";
     html += "<td class='" + cls + "'>" + (pct===null ? "—" : (pct>0?"+":"") + String(pct).replace(".", ",") + " %") + "</td></tr>";
   });
@@ -1906,7 +1908,8 @@ var OV_FIELDS = COMPARE_FIELDS.concat([
 ]);
 var OV = (function(){
   var d = null; try { d = JSON.parse(localStorage.getItem("perf_overview_v1")); } catch(e){}
-  return Object.assign({ metrics:["s10best","s30best","vJump","laBest","iftVift","vo2max"], tests:null, delta:true, pct:true, avg:true, best:true, search:"", sort:null }, d || {});
+  return Object.assign({ metrics:["s10best","s30best","vJump","laBest","iftVift","vo2max"], tests:null, delta:true, pct:true, avg:true, best:true, search:"", sort:null,
+    hideEmpty:true, pos:[], only:null }, d || {});
 })();
 function ovSave(){ try { localStorage.setItem("perf_overview_v1", JSON.stringify(OV)); } catch(e){} }
 function ovTests(){
@@ -1926,8 +1929,8 @@ function ovData(){
     (t.athletes || []).forEach(function(a){
       var k = a.mgmtId || athleteFullName(a).toLowerCase();
       if(!k) return;
-      if(!people[k]){ people[k] = { key:k, nachname:a.nachname||"", vorname:a.vorname||"", vals:{} }; order.push(k); }
-      else { people[k].nachname = a.nachname || people[k].nachname; people[k].vorname = a.vorname || people[k].vorname; }
+      if(!people[k]){ people[k] = { key:k, nachname:a.nachname||"", vorname:a.vorname||"", position:a.position||"", vals:{} }; order.push(k); }
+      else { people[k].nachname = a.nachname || people[k].nachname; people[k].vorname = a.vorname || people[k].vorname; people[k].position = a.position || people[k].position; }
       computeFields(a);
       fields.forEach(function(f){
         var v = a[f.key];
@@ -1949,12 +1952,17 @@ function ovData(){
       if(seq.length >= 2){
         var first = seq[0], last = seq[seq.length - 1];
         p.vals[f.key + "|d"] = ovRound(last - first);
-        p.vals[f.key + "|p"] = first ? (last - first) / Math.abs(first) * 100 : null;
+        // Leistungsveränderung: + = besser (bei Zeiten also schneller)
+        p.vals[f.key + "|p"] = first ? (last - first) / Math.abs(first) * 100 * (f.better === "low" ? -1 : 1) : null;
       }
     });
   });
+  var allRows = rows.slice();
   var q = (OV.search || "").trim().toLowerCase();
   if(q) rows = rows.filter(function(p){ return (p.vorname + " " + p.nachname).toLowerCase().indexOf(q) !== -1; });
+  if(OV.only) rows = rows.filter(function(p){ return OV.only.indexOf(p.key) !== -1; });
+  if(OV.pos && OV.pos.length) rows = rows.filter(function(p){ return OV.pos.indexOf(p.position || "(ohne)") !== -1; });
+  if(OV.hideEmpty) rows = rows.filter(function(p){ return cols.some(function(c){ return c.kind === "val" && p.vals[c.id] != null; }); });
   if(OV.sort && OV.sort.key){
     var sk = OV.sort.key, dir = OV.sort.dir || 1;
     rows.sort(function(a, b){
@@ -1972,15 +1980,17 @@ function ovData(){
     var hi = c.kind === "val" ? c.f.better === "high" : (c.f.better === "high");   // Δ: bei „low“ ist der kleinste (negativste) Wert der beste
     best[c.id] = hi ? Math.max.apply(null, vs) : Math.min.apply(null, vs);
   });
-  return { tests:tests, fields:fields, cols:cols, rows:rows, best:best, avg:avg };
+  return { tests:tests, fields:fields, cols:cols, rows:rows, best:best, avg:avg, all:allRows };
 }
 function ovCellClass(c, v, D){
   if(v == null) return "ov-empty";
   var cls = "";
-  if(c.kind !== "val") cls = betterClass(c.f.better, v);
+  if(c.kind !== "val") cls = ovBetterCls(c, v);
   if(OV.best && D.best[c.id] != null && v === D.best[c.id] && c.kind === "val") cls += " ov-best";
   return cls;
 }
+// Färbung: Δ wie bisher (bei Zeiten ist weniger besser), Δ % ist schon Leistungsveränderung (+ = besser)
+function ovBetterCls(c, v){ return betterClass(c.kind === "p" && c.f.better ? "high" : c.f.better, v); }
 function ovCellText(c, v){ return c.kind === "p" ? ovPctFmt(v) : c.kind === "d" ? ovDeltaFmt(v) : ovFmt(v); }
 
 function renderOverview(){
@@ -1993,6 +2003,7 @@ function renderOverview(){
       "<button type='button' class='btn' id='ovMAll' style='padding:4px 10px;font-size:.75rem;'>alle</button><button type='button' class='btn' id='ovMNone' style='padding:4px 10px;font-size:.75rem;'>keine</button></div></div>" +
     "<div class='field' style='margin-top:10px;'><label>Testtage</label><div class='compare-select'>" +
       all.map(function(t){ var on = selT.indexOf(t.id) !== -1; return "<label class='compare-chip" + (on ? " checked" : "") + "'><input type='checkbox' data-ovt='" + t.id + "'" + (on ? " checked" : "") + "> " + esc(testLabel(t)) + "</label>"; }).join("") + "</div></div>" +
+    "<div class='field' style='margin-top:10px;'><label>Spielerinnen</label><div class='compare-select' id='ovPeopleBox'></div></div>" +
     "<div class='field' style='margin-top:10px;'><label>Vergleichsspalten &amp; Ansicht</label><div class='compare-select'>" +
       [["delta","Δ (erster → letzter Wert)"],["pct","Δ % (Steigerung / Verschlechterung)"],["avg","Teamschnitt"],["best","Bestwert je Testtag grün"]].map(function(o){
         return "<label class='compare-chip" + (OV[o[0]] ? " checked" : "") + "'><input type='checkbox' data-ovo='" + o[0] + "'" + (OV[o[0]] ? " checked" : "") + "> " + o[1] + "</label>"; }).join("") +
@@ -2009,9 +2020,41 @@ function renderOverview(){
     if(cb.checked && i === -1) ids.push(cb.dataset.ovt); if(!cb.checked && i !== -1) ids.splice(i, 1);
     OV.tests = ids.length === db.tests.length ? null : ids; ovSave(); renderOverview(); }; });
   box.querySelectorAll("[data-ovo]").forEach(function(cb){ cb.onchange = function(){ OV[cb.dataset.ovo] = cb.checked; ovSave(); renderOverview(); }; });
+  renderOvPeople();
   var se = document.getElementById("ovSearch");
   se.oninput = function(){ OV.search = se.value; ovSave(); renderOverviewTable(); };
   renderOverviewTable();
+}
+// Spielerinnen-Filter: ohne Werte ausblenden, Position, einzelne Spielerinnen
+function renderOvPeople(){
+  var box = document.getElementById("ovPeopleBox"); if(!box) return;
+  var D = ovData(), all = D.all.slice().sort(function(a, b){ return (a.nachname + a.vorname).localeCompare(b.nachname + b.vorname, "de"); });
+  var posList = []; all.forEach(function(p){ var x = p.position || "(ohne)"; if(posList.indexOf(x) === -1) posList.push(x); });
+  var order = ["Guard","Forward","Center"]; posList.sort(function(a, b){ var ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 9 : ia) - (ib < 0 ? 9 : ib) || a.localeCompare(b, "de"); });
+  var chip = function(on, attr, txt){ return "<label class='compare-chip" + (on ? " checked" : "") + "'><input type='checkbox' " + attr + (on ? " checked" : "") + "> " + txt + "</label>"; };
+  var nSel = OV.only ? OV.only.length : all.length;
+  box.innerHTML = chip(OV.hideEmpty, "data-ovh='1'", "ohne Werte ausblenden") +
+    "<span style='align-self:center;font-size:.75rem;color:var(--ink-faint);margin-left:6px;'>Position:</span>" +
+    posList.map(function(x){ return chip(OV.pos.indexOf(x) !== -1, "data-ovp='" + esc(x) + "'", esc(x)); }).join("") +
+    "<details class='col-picker' style='margin-left:6px;'><summary>Einzelne Spielerinnen (" + nSel + " von " + all.length + ")</summary><div class='cp-body'>" +
+      "<div class='cp-actions'><button type='button' class='btn' id='ovPAll'>Alle</button><button type='button' class='btn' id='ovPNone'>Keine</button></div>" +
+      "<div class='cp-fields' style='max-height:240px;overflow:auto;'>" +
+      all.map(function(p){ var on = !OV.only || OV.only.indexOf(p.key) !== -1; return "<label><input type='checkbox' data-ovk='" + esc(p.key) + "'" + (on ? " checked" : "") + "> " + esc(p.nachname + ", " + p.vorname) + (p.position ? " <span style='color:var(--ink-faint);font-size:.75em;'>" + esc(p.position) + "</span>" : "") + "</label>"; }).join("") +
+    "</div></div></details>";
+  var wasOpen = renderOvPeople._open;
+  var det = box.querySelector("details"); if(wasOpen) det.open = true;
+  det.addEventListener("toggle", function(){ renderOvPeople._open = det.open; });
+  box.querySelector("[data-ovh]").onchange = function(e){ OV.hideEmpty = e.target.checked; ovSave(); renderOvPeople(); renderOverviewTable(); };
+  box.querySelectorAll("[data-ovp]").forEach(function(cb){ cb.onchange = function(){
+    var x = cb.dataset.ovp, i = OV.pos.indexOf(x);
+    if(cb.checked && i === -1) OV.pos.push(x); if(!cb.checked && i !== -1) OV.pos.splice(i, 1);
+    ovSave(); renderOvPeople(); renderOverviewTable(); }; });
+  box.querySelectorAll("[data-ovk]").forEach(function(cb){ cb.onchange = function(){
+    var keys = OV.only ? OV.only.slice() : all.map(function(p){ return p.key; }), i = keys.indexOf(cb.dataset.ovk);
+    if(cb.checked && i === -1) keys.push(cb.dataset.ovk); if(!cb.checked && i !== -1) keys.splice(i, 1);
+    OV.only = keys.length === all.length ? null : keys; ovSave(); renderOvPeople(); renderOverviewTable(); }; });
+  document.getElementById("ovPAll").onclick = function(){ OV.only = null; ovSave(); renderOvPeople(); renderOverviewTable(); };
+  document.getElementById("ovPNone").onclick = function(){ OV.only = []; ovSave(); renderOvPeople(); renderOverviewTable(); };
 }
 function renderOverviewTable(){
   var D = ovData(), tbl = document.getElementById("ovTable");
@@ -2026,7 +2069,7 @@ function renderOverviewTable(){
   });
   h += "</tr></thead><tbody>";
   D.rows.forEach(function(p){
-    h += "<tr><td class='ov-name'><b>" + esc(p.nachname) + "</b>, " + esc(p.vorname) + "</td>";
+    h += "<tr><td class='ov-name'><b>" + esc(p.nachname) + "</b>, " + esc(p.vorname) + (p.position ? " <span class='ov-pos'>" + esc(p.position) + "</span>" : "") + "</td>";
     D.cols.forEach(function(c, i){
       var v = p.vals[c.id], first = i === 0 || D.cols[i - 1].f !== c.f;
       h += "<td class='" + ovCellClass(c, v, D) + (first ? " ov-gstart" : "") + "'>" + ovCellText(c, v) + "</td>";
@@ -2078,7 +2121,7 @@ async function ovExportExcel(){
       cell.alignment = { horizontal:"center" };
       if(v != null){
         var font = { size:9, bold:!!bold };
-        if(col.kind !== "val"){ var bc = betterClass(col.f.better, v); if(bc === "delta-up") font.color = { argb:"FF1C7A3D" }; if(bc === "delta-down") font.color = { argb:"FFB0281C" }; font.bold = true; }
+        if(col.kind !== "val"){ var bc = ovBetterCls(col, v); if(bc === "delta-up") font.color = { argb:"FF1C7A3D" }; if(bc === "delta-down") font.color = { argb:"FFB0281C" }; font.bold = true; }
         if(!bold && OV.best && col.kind === "val" && D.best[col.id] === v){ cell.fill = fill("FFE2EEE7"); font.color = { argb:"FF2F6E4F" }; font.bold = true; }
         cell.font = font;
       }
@@ -2087,7 +2130,7 @@ async function ovExportExcel(){
   };
   D.rows.forEach(function(p){ put(r++, { name:p.nachname + ", " + p.vorname, v:p.vals }); });
   if(OV.avg){ put(r, { name:"Teamschnitt (Ø)", v:D.avg }, true); for(var i = 1; i <= n; i++) ws.getCell(r, i).fill = fill("FFEFF2F5"); r++; }
-  ws.getCell(r + 1, 1).value = "Grün = Verbesserung bzw. Bestwert des Testtags · Rot = Verschlechterung · Δ / Δ % = Veränderung vom ersten zum letzten vorhandenen Wert der Spielerin · — = nicht teilgenommen";
+  ws.getCell(r + 1, 1).value = "Grün = Verbesserung bzw. Bestwert des Testtags · Rot = Verschlechterung · Δ = Veränderung vom ersten zum letzten vorhandenen Wert · Δ % = Leistungsveränderung (+ = besser, bei Zeiten schneller) · — = nicht teilgenommen";
   ws.getCell(r + 1, 1).font = { size:8, color:{ argb:"FF888888" } };
   ws.views = [{ state:"frozen", xSplit:1, ySplit:sr }];
   ws.pageSetup = { orientation:"landscape", fitToPage:true, fitToWidth:1, fitToHeight:0, paperSize:9 };
@@ -2112,7 +2155,7 @@ function ovExportWord(){
     var s = "<tr><td style='text-align:left;font-weight:bold;" + (bold ? "background:#eff2f5;" : "") + "'>" + esc(name) + "</td>";
     D.cols.forEach(function(c){
       var v = vals[c.id], st = bold ? "background:#eff2f5;font-weight:bold;" : "";
-      if(v != null && c.kind !== "val"){ var bc = betterClass(c.f.better, v); st += "font-weight:bold;" + (bc === "delta-up" ? "color:#1c7a3d;" : bc === "delta-down" ? "color:#b0281c;" : "color:#888;"); }
+      if(v != null && c.kind !== "val"){ var bc = ovBetterCls(c, v); st += "font-weight:bold;" + (bc === "delta-up" ? "color:#1c7a3d;" : bc === "delta-down" ? "color:#b0281c;" : "color:#888;"); }
       if(v != null && !bold && OV.best && c.kind === "val" && D.best[c.id] === v) st += "background:#e2eee7;color:#2f6e4f;font-weight:bold;";
       if(v == null) st += "color:#aaa;";
       s += "<td style='" + st + "'>" + esc(ovCellText(c, v)) + "</td>";
@@ -2121,7 +2164,7 @@ function ovExportWord(){
   };
   D.rows.forEach(function(p){ html += row(p.nachname + ", " + p.vorname, p.vals); });
   if(OV.avg) html += row("Teamschnitt (Ø)", D.avg, true);
-  html += "</tbody></table><p style='font-size:7pt;color:#888;margin-top:6px;'>Grün = Verbesserung bzw. Bestwert des Testtags · Rot = Verschlechterung · Δ / Δ % = Veränderung vom ersten zum letzten vorhandenen Wert der Spielerin · — = nicht teilgenommen</p></div></body></html>";
+  html += "</tbody></table><p style='font-size:7pt;color:#888;margin-top:6px;'>Grün = Verbesserung bzw. Bestwert des Testtags · Rot = Verschlechterung · Δ = Veränderung vom ersten zum letzten vorhandenen Wert · Δ % = Leistungsveränderung (+ = besser, bei Zeiten schneller) · — = nicht teilgenommen</p></div></body></html>";
   var a2 = document.createElement("a");
   a2.href = URL.createObjectURL(new Blob(["﻿" + html], { type:"application/msword" }));
   a2.download = "Performance_Gesamtuebersicht_" + new Date().toISOString().slice(0, 10) + ".doc";
