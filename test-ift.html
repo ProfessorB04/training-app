@@ -2174,6 +2174,30 @@ AthletePicker.attach({
 });
 </script>
 
+<script src="cloud-store.js?v=20261113a"></script>
+<script>
+/* Cloud-Speicherung (2026-11-13): Teams, Kader und Testdurchgänge geräteübergreifend (PC, iPad, Handy).
+   Während ein Test läuft, wird nichts neu gezeichnet; Änderungen anderer Geräte erscheinen danach. */
+CloudStore.attach({
+  tool: "ift",
+  state: function(){ return state; },
+  collections: { teams:{}, athletes:{}, sessions:{ sub:{ results:"athleteId" } } },
+  saveLocal: saveState,
+  wrap: function(fn){ saveState = fn; },
+  render: function(){
+    if(!state.teams.some(function(t){ return t.id === state.activeTeamId; })){
+      var withAth = state.teams.find(function(t){ return state.athletes.some(function(a){ return a.teamId === t.id; }); });
+      state.activeTeamId = (withAth || state.teams[0] || {}).id || null;
+    }
+    renderAll();
+  },
+  canRender: function(){ return !timerState; },
+  isBlank: function(kind, rec, st){
+    return kind === "teams" && !st.athletes.some(function(a){ return a.teamId === rec.id; }) && !st.sessions.some(function(x){ return x.teamId === rec.id; });
+  },
+  anchor: "team-delete"
+});
+</script>
 <script src="stammdaten-sync.js?v=20261113b"></script>
 <script>
 /* Stammdaten-Abgleich mit der Athletenverwaltung (gilt für den Kader aller Teams) */
