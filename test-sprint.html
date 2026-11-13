@@ -1233,3 +1233,22 @@ AthletePicker.attach({
   }
 });
 </script>
+
+<script src="stammdaten-sync.js?v=20261111a"></script>
+<script>
+/* Stammdaten-Abgleich mit der Athletenverwaltung: Name, Vorname, Geschlecht, Jahrgang (aus dem Geburtsdatum) */
+StammdatenSync.attach({
+  anchor: "btnAddAthlete",
+  list: function(){
+    return state.athletes.map(function(a){ return { a:a, fields:{ first_name:"master", last_name:"master", birthdate:"master", gender:"master" } }; });
+  },
+  read: function(a){ return { first_name:a.vorname, last_name:a.name, birthdate:a._bd || null, gender:a.geschlecht }; },
+  write: function(a, p){
+    if("first_name" in p) a.vorname = p.first_name;
+    if("last_name" in p) a.name = p.last_name;
+    if("birthdate" in p){ a._bd = p.birthdate; a.jahrgang = parseInt(p.birthdate.slice(0, 4), 10); }
+    if("gender" in p && (p.gender === "w" || p.gender === "m")) a.geschlecht = p.gender;
+  },
+  persist: function(){ save(); populateFilterOptions(); renderRoster(); }
+});
+</script>

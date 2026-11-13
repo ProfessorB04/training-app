@@ -482,7 +482,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     </div>
   </div>
 
-  <footer>Testwerte werden in diesem Browser gespeichert (localStorage). Athlet:innen kommen aus der Athletenverwaltung der Trainings-App.</footer>
+  <footer>Testwerte werden bei jeder Eingabe gespeichert – auf diesem Gerät und in der Cloud (für PC, iPad und Handy). Athlet:innen kommen aus der Athletenverwaltung der Trainings-App.</footer>
 <div id="ptModal"></div>
 </div>
 
@@ -2031,6 +2031,40 @@ renderTestSelector();
 syncMeta();
 renderGroupToggles();
 renderTable();
+</script>
+
+<script src="perftest-cloud.js?v=20261113a"></script>
+<script src="stammdaten-sync.js?v=20261111a"></script>
+<script>
+/* Stammdaten-Abgleich mit der Athletenverwaltung: Name, Vorname, Geburtsdatum, Position in allen Tests;
+   Größe/Gewicht nur im neuesten Test (leere Felder werden gefüllt, Eingaben dort aktualisieren die Athletenverwaltung) */
+StammdatenSync.attach({
+  anchor: "tabBtnProtokoll",
+  list: function(){
+    var newest = db.tests.slice().sort(function(x, y){ return String((y.meta||{}).date||"").localeCompare(String((x.meta||{}).date||"")); })[0];
+    var out = [];
+    db.tests.forEach(function(t){
+      (t.athletes || []).forEach(function(a){
+        var f = { first_name:"master", last_name:"master", birthdate:"master", position:"master" };
+        if(t === newest){ f.height_cm = "fill"; f.weight_kg = "fill"; }
+        out.push({ a:a, fields:f });
+      });
+    });
+    return out;
+  },
+  read: function(a){ return { first_name:a.vorname, last_name:a.nachname, birthdate:a.geburtsdatum, position:a.position, height_cm:a.height, weight_kg:a.weight }; },
+  write: function(a, p){
+    if("first_name" in p) a.vorname = p.first_name;
+    if("last_name" in p) a.nachname = p.last_name;
+    if("birthdate" in p) a.geburtsdatum = p.birthdate;
+    if("position" in p && ["Guard","Forward","Center"].indexOf(p.position) !== -1) a.position = p.position;
+    if("height_cm" in p) a.height = String(p.height_cm);
+    if("weight_kg" in p) a.weight = String(p.weight_kg);
+    a.name = athleteFullName(a);
+    computeFields(a);
+  },
+  persist: function(){ save(); renderTable(); }
+});
 </script>
 
 <script src="app-rail.js?v=20260929c"></script>

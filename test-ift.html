@@ -2173,3 +2173,35 @@ AthletePicker.attach({
   }
 });
 </script>
+
+<script src="stammdaten-sync.js?v=20261111a"></script>
+<script>
+/* Stammdaten-Abgleich mit der Athletenverwaltung (gilt für den Kader aller Teams) */
+StammdatenSync.attach({
+  anchor: "panel-kader",
+  list: function(){
+    return state.athletes.map(function(a){
+      return { a:a, fields:{ first_name:"master", last_name:"master", birthdate:"master", gender:"master",
+        height_cm:"master", weight_kg:"master", hr_rest:"master", hr_max:"master" } };
+    });
+  },
+  read: function(a){
+    var p2 = function(n){ return String(n).padStart(2, "0"); };
+    var bd = (a.geburtsjahr && a.geburtsmonat && a.geburtstag) ? a.geburtsjahr + "-" + p2(a.geburtsmonat) + "-" + p2(a.geburtstag) : null;
+    return { first_name:a.vorname, last_name:a.nachname, birthdate:bd, gender:a.geschlecht,
+      height_cm:a.groesse, weight_kg:a.gewicht, hr_rest:a.ruhepuls, hr_max:a.maxpuls };
+  },
+  write: function(a, p){
+    if("first_name" in p) a.vorname = p.first_name;
+    if("last_name" in p) a.nachname = p.last_name;
+    if("birthdate" in p){ var d = p.birthdate.split("-"); a.geburtsjahr = +d[0]; a.geburtsmonat = +d[1]; a.geburtstag = +d[2]; }
+    if("gender" in p && (p.gender === "w" || p.gender === "m")) a.geschlecht = p.gender;
+    if("height_cm" in p) a.groesse = +p.height_cm;
+    if("weight_kg" in p) a.gewicht = +p.weight_kg;
+    if("hr_rest" in p) a.ruhepuls = +p.hr_rest;
+    if("hr_max" in p) a.maxpuls = +p.hr_max;
+    a.name = ((a.vorname || "") + " " + (a.nachname || "")).trim();
+  },
+  persist: function(){ saveState(); renderAll(); }
+});
+</script>

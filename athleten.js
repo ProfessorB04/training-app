@@ -63,6 +63,7 @@ async function renderAthletesPage(profile, reuse) {
     if (k === 'age') return athAge(a.birthdate) === '' ? null : athAge(a.birthdate);
     if (k === 'groups') return a.groupIds.map(id => (groupsById[id] || {}).name || '').sort().join(', ').toLowerCase() || null;
     const v = a[k];
+    if (['height_cm', 'weight_kg', 'hr_rest', 'hr_max'].includes(k)) return v == null || v === '' ? null : +v;
     return v == null || v === '' ? null : String(v).toLowerCase();
   };
   list.sort((x, y) => {
@@ -96,11 +97,14 @@ async function renderAthletesPage(profile, reuse) {
         <td>${athDate(a.birthdate)}</td>
         <td>${athAge(a.birthdate)}</td>
         <td>${esc(GENDER_LABEL[a.gender] || '')}</td>
+        <td>${esc(a.position || '')}</td>
+        <td>${a.height_cm != null ? esc(String(a.height_cm)) : ''}</td>
+        <td>${a.weight_kg != null ? esc(String(a.weight_kg)) : ''}</td>
         <td><div class="chips">${a.groupIds.map(id => groupsById[id] ? `<span class="chip">${esc(groupsById[id].name)}</span>` : '').join('')}</div></td>
         <td>${a.profile_id ? '<span class="chip app-chip" title="hat einen App-Zugang (Load Management)">App ✓</span>' : ''}</td>
         <td class="nowrap"><button type="button" class="secondary small-btn" data-edit="${a.id}">Bearbeiten</button></td>
       </tr>`).join('')
-    : `<tr><td colspan="9" class="muted">Keine Athlet:innen gefunden.</td></tr>`;
+    : `<tr><td colspan="12" class="muted">Keine Athlet:innen gefunden.</td></tr>`;
 
   const content = `
     <div class="card">
@@ -131,13 +135,14 @@ async function renderAthletesPage(profile, reuse) {
         <table class="ath-table">
           <thead><tr>
             <th><input type="checkbox" id="athSelAll" ${list.length && list.every(a => st.selected.has(a.id)) ? 'checked' : ''}></th>
-            ${th('last_name', 'Nachname')}${th('first_name', 'Vorname')}${th('birthdate', 'Geburtsdatum')}${th('age', 'Alter')}${th('gender', 'Geschlecht')}${th('groups', 'Gruppen')}${th('profile_id', 'App-Zugang')}
+            ${th('last_name', 'Nachname')}${th('first_name', 'Vorname')}${th('birthdate', 'Geburtsdatum')}${th('age', 'Alter')}${th('gender', 'Geschlecht')}${th('position', 'Position')}${th('height_cm', 'Größe')}${th('weight_kg', 'Gewicht')}${th('groups', 'Gruppen')}${th('profile_id', 'App-Zugang')}
             <th></th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
       <p class="hint">${list.length} von ${athletes.length} Athlet:innen angezeigt. Spaltenkopf anklicken zum Sortieren. Mehrere per Häkchen auswählen, um sie gesammelt einer Gruppe zuzuordnen.
+      Die Stammdaten hier (Name, Geburtsdatum, Geschlecht, Position, Gr&ouml;&szlig;e, Gewicht, Puls) gelten in der ganzen App &ndash; Performance-Test, 30-15 IFT und Sprint gleichen sie automatisch ab.
       Import: Sicherung aus der Trainingsplanung (.json) oder Liste (.csv mit Vorname;Nachname;Geburtsdatum;Geschlecht;Gruppe).</p>
     </div>
     <div id="athModal"></div>
@@ -248,7 +253,12 @@ function openAthleteDialog(a, groups, done) {
               <option value="d" ${a.gender === 'd' ? 'selected' : ''}>divers</option>
             </select>
           </label>
-          <label>Position / Sportart<input type="text" id="fPos" value="${esc(a.position || '')}" placeholder="z. B. Guard, Fußball"></label>
+          <label>Position / Sportart<input type="text" id="fPos" value="${esc(a.position || '')}" placeholder="z. B. Guard, Forward, Center" list="fPosList"></label>
+          <datalist id="fPosList"><option value="Guard"><option value="Forward"><option value="Center"></datalist>
+          <label>Gr&ouml;&szlig;e (cm)<input type="number" step="1" id="fHeight" value="${a.height_cm ?? ''}"></label>
+          <label>Gewicht (kg)<input type="number" step="0.1" id="fWeight" value="${a.weight_kg ?? ''}"></label>
+          <label>Ruhepuls (bpm)<input type="number" step="1" id="fHrRest" value="${a.hr_rest ?? ''}"></label>
+          <label>Maximalpuls (bpm)<input type="number" step="1" id="fHrMax" value="${a.hr_max ?? ''}"></label>
           <label class="wide">Notiz<input type="text" id="fNotes" value="${esc(a.notes || '')}"></label>
           <div class="wide">
             <div class="lbl">Gruppen</div>
@@ -279,6 +289,9 @@ function openAthleteDialog(a, groups, done) {
       position: document.getElementById('fPos').value.trim() || null,
       notes: document.getElementById('fNotes').value.trim() || null,
     };
+    // Stammdaten für die Tests (Spalten aus supabase_migration_stammdaten.sql)
+    const num = id => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v.replace(',', '.')); };
+    if ('height_cm' in a || !a.id) Object.assign(rec, { height_cm: num('fHeight'), weight_kg: num('fWeight'), hr_rest: num('fHrRest') == null ? null : Math.round(num('fHrRest')), hr_max: num('fHrMax') == null ? null : Math.round(num('fHrMax')) });
     const wanted = [...box.querySelectorAll('.group-checks input:checked')].map(c => c.value);
     let id = a.id;
     if (id) {

@@ -803,8 +803,11 @@ async function renderTeamPage(profile) {
           : `<button type="button" class="secondary small-btn" data-reset="${u.id}">Einmalpasswort</button>
              <button type="button" class="danger small-btn" data-delete="${u.id}">L&ouml;schen</button>`;
         const linked = linkedBy[u.id];
+        const sdInfo = linked ? [linked.birthdate ? athDate(linked.birthdate) : '', linked.position || '', linked.height_cm ? linked.height_cm + ' cm' : '', linked.weight_kg ? linked.weight_kg + ' kg' : ''].filter(Boolean).join(' &middot; ') : '';
         const linkCell = u.role !== 'athlete' ? '' :
-          `<select class="link-select" data-user="${u.id}">
+          `${linked ? `<div class="sd-info">${sdInfo ? esc(sdInfo).replace(/&amp;middot;/g, '&middot;') : '<span class="muted">keine Stammdaten</span>'}
+             <button type="button" class="link-btn" data-sd="${linked.id}">Stammdaten</button></div>` : ''}
+           <select class="link-select" data-user="${u.id}">
              <option value="">– nicht verknüpft –</option>
              ${mAthletes.filter(a => !a.profile_id || a.profile_id === u.id).map(a =>
                `<option value="${a.id}" ${linked && linked.id === a.id ? 'selected' : ''}>${esc(a.last_name)}, ${esc(a.first_name)}</option>`).join('')}
@@ -839,6 +842,17 @@ async function renderTeamPage(profile) {
             <option value="coach">Coach (nur Scouting)</option>
           </select>
         </label>
+        <fieldset id="inviteSd" class="invite-sd">
+          <legend>Stammdaten (werden in der Athletenverwaltung angelegt und in alle Tests &uuml;bernommen)</legend>
+          <label>Vorname<input type="text" id="sdFirst"></label>
+          <label>Nachname<input type="text" id="sdLast"></label>
+          <label>Geburtsdatum<input type="date" id="sdBirth"></label>
+          <label>Geschlecht<select id="sdGender"><option value="">–</option><option value="w">weiblich</option><option value="m">m&auml;nnlich</option><option value="d">divers</option></select></label>
+          <label>Position<input type="text" id="sdPos" list="sdPosList" placeholder="z. B. Guard"></label>
+          <datalist id="sdPosList"><option value="Guard"><option value="Forward"><option value="Center"></datalist>
+          <label>Gr&ouml;&szlig;e (cm)<input type="number" step="1" id="sdHeight"></label>
+          <label>Gewicht (kg)<input type="number" step="0.1" id="sdWeight"></label>
+        </fieldset>
         <button type="submit">Zugang anlegen</button>
       </form>
       <p class="role-hint">Trainer:innen k&ouml;nnen alle Inhalte nutzen (Trainingsplanung, Load-Management-&Uuml;bersicht aller Athlet:innen), aber keine Nutzer einladen oder Rollen &auml;ndern.</p>
@@ -851,10 +865,11 @@ async function renderTeamPage(profile) {
       <h2>Alle Nutzer:innen</h2>
       <div class="tablewrap">
         <table class="user-table">
-          <thead><tr><th>Name</th><th>Anmeldestatus</th><th>Rolle</th><th>Tool-Rechte</th><th>Athletenverwaltung</th><th>Zugang</th></tr></thead>
+          <thead><tr><th>Name</th><th>Anmeldestatus</th><th>Rolle</th><th>Tool-Rechte</th><th>Athletenverwaltung &amp; Stammdaten</th><th>Zugang</th></tr></thead>
           <tbody>${userRows}</tbody>
         </table>
       </div>
+      <div id="athModal"></div>
       <p class="hint">Rolle &auml;ndern: einfach im Auswahlfeld umstellen, wird sofort gespeichert. &bdquo;Einmalpasswort&ldquo; erzeugt neue Zugangsdaten (z.&nbsp;B. wenn jemand nicht reinkommt) &mdash; das alte Passwort gilt dann nicht mehr. &bdquo;L&ouml;schen&ldquo; entfernt den Zugang inkl. aller Load-Eintr&auml;ge dauerhaft. Die Admin-Rolle kann nur direkt in Supabase vergeben werden.</p>
     </div>
   `;
@@ -898,7 +913,22 @@ async function renderTeamPage(profile) {
       renderTeamPage(profile);
     };
   });
-  invAth.onchange = fillFromAthlete;
+  invAth.onchange = () => { fillFromAthlete(); sdToggle(); };
+  // Stammdaten-Felder nur für neue Athlet:innen (frei eingetragen) – sonst kommen sie aus der Athletenverwaltung
+  const sdBox = document.getElementById('inviteSd');
+  const sdToggle = () => { sdBox.hidden = !(document.getElementById('inviteRole').value === 'athlete' && !invAth.value); };
+  document.getElementById('inviteRole').addEventListener('change', sdToggle);
+  sdToggle();
+  ['sdFirst', 'sdLast'].forEach(id => document.getElementById(id).addEventListener('input', () => {
+    document.getElementById('inviteName').value = `${document.getElementById('sdFirst').value.trim()} ${document.getElementById('sdLast').value.trim()}`.trim();
+    unameAuto();
+  }));
+  appEl.querySelectorAll('[data-sd]').forEach(btn => {
+    btn.onclick = () => {
+      const a = mAthletes.find(x => x.id === btn.dataset.sd);
+      if (a) openAthleteDialog(a, mgmt.groups, () => renderTeamPage(profile));
+    };
+  });
   if (preselect) { fillFromAthlete(); document.getElementById('inviteEmail').focus(); }
 
   // Tool-Rechte je Athlet:in
@@ -959,7 +989,26 @@ async function renderTeamPage(profile) {
     if (!email && !username) { msgEl.textContent = 'Bitte Benutzername und/oder E-Mail angeben.'; return; }
     msgEl.textContent = 'Lege Zugang an…';
 
-    const athleteId = document.getElementById('inviteAthlete').value || null;
+    let athleteId = document.getElementById('inviteAthlete').value || null;
+    // Neue Athlet:in frei eingetragen → Stammdaten in der Athletenverwaltung anlegen (oder gleichnamige ohne Zugang verknüpfen)
+    if (!athleteId && role === 'athlete') {
+      const v = id => document.getElementById(id).value.trim();
+      const nm = name.split(/\s+/);
+      const first = v('sdFirst') || (nm.length > 1 ? nm.slice(0, -1).join(' ') : ''), last = v('sdLast') || nm[nm.length - 1] || '';
+      const key = (f, l) => `${f} ${l}`.toLowerCase().split(/\s+/).filter(Boolean).sort().join(' ');
+      const same = mAthletes.filter(a => !a.profile_id && key(a.first_name, a.last_name) === key(first, last));
+      const num = x => x === '' ? null : parseFloat(x.replace(',', '.'));
+      const rec = { first_name: first, last_name: last, birthdate: v('sdBirth') || null, gender: v('sdGender') || null, position: v('sdPos') || null, height_cm: num(v('sdHeight')), weight_kg: num(v('sdWeight')) };
+      if (same.length === 1) {
+        athleteId = same[0].id;
+        const fill = {}; Object.keys(rec).forEach(k => { if (rec[k] != null && rec[k] !== '' && (same[0][k] == null || same[0][k] === '')) fill[k] = rec[k]; });
+        if (Object.keys(fill).length) await sb.from('athletes').update(fill).eq('id', athleteId);
+      } else {
+        const ins = await sb.from('athletes').insert(rec).select('id').single();
+        if (ins.error) { msgEl.textContent = 'Fehler Stammdaten: ' + ins.error.message; return; }
+        athleteId = ins.data.id;
+      }
+    }
     const { data, error } = await sb.functions.invoke('invite-user', {
       body: { name, email, username, role, athleteId },
     });
