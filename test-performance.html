@@ -2391,19 +2391,21 @@ StammdatenSync.attach({
     if("vift_date" in p) a._viftDate = p.vift_date;
     // VIFT nur übernehmen, wenn der IFT-Test höchstens 4 Wochen vor diesem Testtag (oder danach) lag –
     // sonst landet z. B. ein September-Wert im November-Test
-    if("vift_kmh" in p){
-      var tDate = (db.tests.slice().sort(function(x, y){ return String((y.meta||{}).date||"").localeCompare(String((x.meta||{}).date||"")); })[0].meta || {}).date;
-      var fresh = !tDate || !a._viftDate || (new Date(tDate) - new Date(a._viftDate)) <= 28 * 864e5;
-      if(fresh) a.iftVift = String(p.vift_kmh);
+    // Der ganze IFT-Block (VIFT, Ruhe-HF, HFmax → VO2max) nur, wenn die Spielerin an einem IFT-Test teilgenommen hat,
+    // der höchstens 4 Wochen vor diesem Testtag (oder danach) lag – wer nicht dabei war, bleibt leer
+    var tDate = (db.tests.slice().sort(function(x, y){ return String((y.meta||{}).date||"").localeCompare(String((x.meta||{}).date||"")); })[0].meta || {}).date;
+    var fresh = !!a._viftDate && (!tDate || (new Date(tDate) - new Date(a._viftDate)) <= 28 * 864e5);
+    if(fresh){
+      if("vift_kmh" in p) a.iftVift = String(p.vift_kmh);
+      if("hr_rest" in p) a.restHF = String(p.hr_rest);
+      if("hr_max" in p) a.hfmax = String(p.hr_max);
     }
-    if("hr_rest" in p) a.restHF = String(p.hr_rest);
-    if("hr_max" in p) a.hfmax = String(p.hr_max);
     if("gender" in p) a._gender = p.gender;
     // VO2max nach Buchheit (wie im 30-15-IFT-Tool) aus VIFT, Alter am Testtag, Gewicht, Geschlecht –
     // nur solange das Feld leer ist bzw. noch den zuletzt automatisch berechneten Wert hat
     var vift = parseFloat(String(a.iftVift || "").replace(",", ".")), kg = parseFloat(String(a.weight || "").replace(",", "."));
     var age = a.geburtsdatum ? ageFromISO(a.geburtsdatum, (state && state.meta && state.meta.date) || undefined) : null;
-    if(!isNaN(vift) && !isNaN(kg) && age != null && age !== "" && a._gender){
+    if(fresh && !isNaN(vift) && !isNaN(kg) && age != null && age !== "" && a._gender){
       var vo2 = 28.3 - 2.15 * (a._gender === "w" ? 2 : 1) - 0.741 * age - 0.0357 * kg + 0.0586 * age * vift + 1.03 * vift;
       vo2 = String(Math.round(vo2 * 10) / 10);
       if(!a.vo2max || a.vo2max === a._autoVo2) { a.vo2max = vo2; a._autoVo2 = vo2; }
