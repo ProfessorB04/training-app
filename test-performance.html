@@ -272,12 +272,29 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   table.compare td.delta-up{ color:#1c7a3d; font-weight:700; }
   table.compare td.delta-down{ color:#b0281c; font-weight:700; }
   table.compare td.delta-flat{ color:var(--ink-faint); }
+  table.ov-table{ font-size:.78rem; }
+  table.ov-table th, table.ov-table td{ padding:5px 6px; white-space:nowrap; }
+  table.ov-table thead tr:last-child th{ background:var(--blue); font-size:.66rem; }
+  table.ov-table th.ov-sort{ cursor:pointer; }
+  table.ov-table th.ov-dcol{ background:#5d6b75 !important; }
+  table.ov-table .ov-name{ text-align:left; position:sticky; left:0; background:#fff; z-index:1; }
+  table.ov-table thead .ov-name{ background:var(--dark-blue); }
+  table.ov-table .ov-gstart{ border-left:2px solid #9aa7b0; }
+  table.ov-table td.ov-empty{ color:#c3c9cd; }
+  table.ov-table td.ov-best{ background:var(--zone-g-soft, #e2eee7); color:#2f6e4f; font-weight:700; }
+  table.ov-table tr.ov-avg td{ background:#eff2f5; font-weight:700; border-top:2px solid var(--blue); }
+  .ov-print-title{ display:none; }
 
   @media print{
     @page{ size: landscape; margin:8mm; }
     *{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
-    .topbar, .no-print, .tab-bar, #tabVergleich{ display:none !important; }
+    .topbar, .no-print, .tab-bar, #tabVergleich, #tabUebersicht{ display:none !important; }
     #tabProtokoll{ display:block !important; }
+    body.print-ov #tabProtokoll, body.print-ov #printArea{ display:none !important; }
+    body.print-ov #tabUebersicht{ display:block !important; }
+    body.print-ov .ov-print-title{ display:block; }
+    body.print-ov table.ov-table{ font-size:.58rem; }
+    body.print-ov .table-scroll{ overflow:visible !important; }
     .wrap{ padding:0; max-width:none; }
     .print-header{ margin:-8mm -8mm 8px -8mm; border-radius:0; }
     table.perf{ font-size:.62rem; }
@@ -352,6 +369,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   <div class="tab-bar no-print">
     <button class="tab-btn active" id="tabBtnProtokoll">📋 Testprotokoll</button>
     <button class="tab-btn" id="tabBtnVergleich">📊 Vergleich</button>
+    <button class="tab-btn" id="tabBtnUebersicht">🗂 Gesamtübersicht</button>
   </div>
 
   <div class="tab-panel active" id="tabProtokoll">
@@ -477,7 +495,30 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <div class="legend-row" style="margin-top:10px;">
         <span><b style="color:#1c7a3d;">Grün</b> = Verbesserung</span>
         <span><b style="color:#b0281c;">Rot</b> = Verschlechterung</span>
-        <span>Δ = Veränderung zwischen erstem und letztem ausgewähltem Test</span>
+        <span>Δ / Δ % = Veränderung zwischen erstem und letztem ausgewähltem Test (absolut / prozentual)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tabUebersicht">
+    <div class="card no-print">
+      <h2>Gesamtübersicht – alle Spielerinnen &amp; Testtage</h2>
+      <div id="ovControls"></div>
+      <div class="actions" style="margin-top:12px;">
+        <span id="ovCount" style="align-self:center;font-size:.8rem;color:var(--ink-faint);"></span>
+        <span style="flex:1"></span>
+        <button class="btn" id="ovPrintBtn">🖨️ Als PDF exportieren</button>
+        <button class="btn" id="ovWordBtn">📄 Als Word exportieren</button>
+        <button class="btn primary" id="ovExcelBtn">📊 Als Excel exportieren</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2 class="ov-print-title">Performance-Test · Gesamtübersicht</h2>
+      <div class="table-scroll"><table class="compare ov-table" id="ovTable"></table></div>
+      <div class="legend-row" style="margin-top:10px;">
+        <span><b style="color:#1c7a3d;">Grün</b> = Verbesserung bzw. Bestwert des Testtags</span>
+        <span><b style="color:#b0281c;">Rot</b> = Verschlechterung</span>
+        <span>Δ / Δ % = Veränderung vom ersten zum letzten vorhandenen Wert der Spielerin · — = nicht teilgenommen · Spaltenkopf antippen = sortieren</span>
       </div>
     </div>
   </div>
@@ -1720,14 +1761,16 @@ document.getElementById("sheetBtn").addEventListener("click", exportSheet);
 
 // ---------- Vergleich (Testverlauf über mehrere Termine) ----------
 function switchMainTab(name){
-  ["Protokoll","Vergleich"].forEach(function(n){
+  ["Protokoll","Vergleich","Uebersicht"].forEach(function(n){
     document.getElementById("tabBtn"+n).classList.toggle("active", n===name);
     document.getElementById("tab"+n).classList.toggle("active", n===name);
   });
   if(name==="Vergleich") renderCompareView();
+  if(name==="Uebersicht") renderOverview();
 }
 document.getElementById("tabBtnProtokoll").addEventListener("click", function(){ switchMainTab("Protokoll"); });
 document.getElementById("tabBtnVergleich").addEventListener("click", function(){ switchMainTab("Vergleich"); });
+document.getElementById("tabBtnUebersicht").addEventListener("click", function(){ switchMainTab("Uebersicht"); });
 
 // "better": "high" = größerer Wert ist die Verbesserung, "low" = kleinerer Wert, null = neutral (keine Färbung)
 var COMPARE_FIELDS = [
@@ -1741,7 +1784,7 @@ var COMPARE_FIELDS = [
   { key:"ffmi", label:"FFMI", better:"high" },
   { key:"s10best", label:"10m Best (s)", better:"low" },
   { key:"s30best", label:"30m Best (s)", better:"low" },
-  { key:"vJump", label:"Vert. Jump (cm)", better:"high" },
+  { key:"vJump", label:"Vert. Jump (m)", better:"high" },
   { key:"laBest", label:"LA Best (s)", better:"low" },
   { key:"restHF", label:"Ruhe HF (bpm)", better:"low" },
   { key:"iftVift", label:"VIFT (km/h)", better:"high" },
@@ -1819,7 +1862,7 @@ function renderCompareTable(){
 
   var html = "<thead><tr><th>Kennzahl</th>";
   tests.forEach(function(t){ html += "<th>" + esc(deFmt(t.meta.date) || "—") + "</th>"; });
-  html += "<th>Δ</th></tr></thead><tbody>";
+  html += "<th>Δ</th><th>Δ %</th></tr></thead><tbody>";
 
   COMPARE_FIELDS.forEach(function(f){
     var values = tests.map(function(t){
@@ -1835,7 +1878,9 @@ function renderCompareTable(){
     var first = values[0], last = values[values.length-1];
     var delta = (first!==null && last!==null) ? Math.round((last-first)*100)/100 : null;
     var cls = betterClass(f.better, delta);
-    html += "<td class='" + cls + "'>" + (delta===null ? "—" : (delta>0?"+":"") + delta) + "</td></tr>";
+    var pct = (first!==null && last!==null && first!==0) ? Math.round((last-first)/Math.abs(first)*1000)/10 : null;
+    html += "<td class='" + cls + "'>" + (delta===null ? "—" : (delta>0?"+":"") + delta) + "</td>";
+    html += "<td class='" + cls + "'>" + (pct===null ? "—" : (pct>0?"+":"") + String(pct).replace(".", ",") + " %") + "</td></tr>";
   });
   html += "</tbody>";
   table.innerHTML = html;
@@ -1850,6 +1895,245 @@ function renderCompareView(){
   renderCompareTable();
 }
 document.getElementById("compareAthlete").addEventListener("change", renderCompareTable);
+
+// ---------- Gesamtübersicht: alle Spielerinnen × Testtage × Kennzahlen (2026-11-13) ----------
+// Spalten (Kennzahlen, Testtage, Δ, Δ %) frei wählbar, fehlende Teilnahme = „—“, Teamschnitt, bester Wert je Spalte grün.
+// Export: Excel, Word (A4 quer), PDF/Druck. Auswahl wird je Gerät gemerkt (localStorage perf_overview_v1).
+var OV_FIELDS = COMPARE_FIELDS.concat([
+  { key:"hfmax", label:"HFmax (bpm)", better:null },
+  { key:"ktwLi", label:"Knee-to-Wall li (cm)", better:"high" },
+  { key:"ktwRe", label:"Knee-to-Wall re (cm)", better:"high" }
+]);
+var OV = (function(){
+  var d = null; try { d = JSON.parse(localStorage.getItem("perf_overview_v1")); } catch(e){}
+  return Object.assign({ metrics:["s10best","s30best","vJump","laBest","iftVift","vo2max"], tests:null, delta:true, pct:true, avg:true, best:true, search:"", sort:null }, d || {});
+})();
+function ovSave(){ try { localStorage.setItem("perf_overview_v1", JSON.stringify(OV)); } catch(e){} }
+function ovTests(){
+  var all = db.tests.slice().sort(function(a,b){ return String(a.meta.date||"").localeCompare(String(b.meta.date||"")); });
+  return OV.tests ? all.filter(function(t){ return OV.tests.indexOf(t.id) !== -1; }) : all;
+}
+function ovFields(){ return OV_FIELDS.filter(function(f){ return OV.metrics.indexOf(f.key) !== -1; }); }
+function ovRound(v){ return v == null ? null : Math.round(v * 100) / 100; }
+function ovFmt(v){ return v == null ? "—" : String(ovRound(v)).replace(".", ","); }
+function ovPctFmt(v){ return v == null ? "—" : (v > 0 ? "+" : "") + String(Math.round(v * 10) / 10).replace(".", ",") + " %"; }
+function ovDeltaFmt(v){ return v == null ? "—" : (v > 0 ? "+" : "") + ovFmt(v); }
+
+// Daten: Zeilen je Spielerin, Spalten je Kennzahl/Test (+Δ, Δ%)
+function ovData(){
+  var tests = ovTests(), fields = ovFields(), people = {}, order = [];
+  tests.forEach(function(t){
+    (t.athletes || []).forEach(function(a){
+      var k = a.mgmtId || athleteFullName(a).toLowerCase();
+      if(!k) return;
+      if(!people[k]){ people[k] = { key:k, nachname:a.nachname||"", vorname:a.vorname||"", vals:{} }; order.push(k); }
+      else { people[k].nachname = a.nachname || people[k].nachname; people[k].vorname = a.vorname || people[k].vorname; }
+      computeFields(a);
+      fields.forEach(function(f){
+        var v = a[f.key];
+        v = (v === "" || v == null) ? null : num(v);
+        if(v != null) people[k].vals[f.key + "|" + t.id] = v;
+      });
+    });
+  });
+  var cols = [];
+  fields.forEach(function(f){
+    tests.forEach(function(t){ cols.push({ id:f.key + "|" + t.id, f:f, kind:"val", label:deFmt(t.meta.date) || "(ohne Datum)", t:t }); });
+    if(OV.delta && tests.length > 1) cols.push({ id:f.key + "|d", f:f, kind:"d", label:"Δ" });
+    if(OV.pct && tests.length > 1) cols.push({ id:f.key + "|p", f:f, kind:"p", label:"Δ %" });
+  });
+  var rows = order.map(function(k){ return people[k]; });
+  rows.forEach(function(p){
+    fields.forEach(function(f){
+      var seq = tests.map(function(t){ return p.vals[f.key + "|" + t.id]; }).filter(function(v){ return v != null; });
+      if(seq.length >= 2){
+        var first = seq[0], last = seq[seq.length - 1];
+        p.vals[f.key + "|d"] = ovRound(last - first);
+        p.vals[f.key + "|p"] = first ? (last - first) / Math.abs(first) * 100 : null;
+      }
+    });
+  });
+  var q = (OV.search || "").trim().toLowerCase();
+  if(q) rows = rows.filter(function(p){ return (p.vorname + " " + p.nachname).toLowerCase().indexOf(q) !== -1; });
+  if(OV.sort && OV.sort.key){
+    var sk = OV.sort.key, dir = OV.sort.dir || 1;
+    rows.sort(function(a, b){
+      var x = sk === "name" ? a.nachname + " " + a.vorname : a.vals[sk], y = sk === "name" ? b.nachname + " " + b.vorname : b.vals[sk];
+      if(x == null && y == null) return 0; if(x == null) return 1; if(y == null) return -1;
+      return (typeof x === "string" ? x.localeCompare(y, "de") : x - y) * dir;
+    });
+  } else rows.sort(function(a, b){ return (a.nachname + a.vorname).localeCompare(b.nachname + b.vorname, "de"); });
+  // bester Wert je Spalte + Teamschnitt
+  var best = {}, avg = {};
+  cols.forEach(function(c){
+    var vs = rows.map(function(p){ return p.vals[c.id]; }).filter(function(v){ return v != null; });
+    if(vs.length) avg[c.id] = vs.reduce(function(s, v){ return s + v; }, 0) / vs.length;
+    if(!c.f.better || !vs.length) return;
+    var hi = c.kind === "val" ? c.f.better === "high" : (c.f.better === "high");   // Δ: bei „low“ ist der kleinste (negativste) Wert der beste
+    best[c.id] = hi ? Math.max.apply(null, vs) : Math.min.apply(null, vs);
+  });
+  return { tests:tests, fields:fields, cols:cols, rows:rows, best:best, avg:avg };
+}
+function ovCellClass(c, v, D){
+  if(v == null) return "ov-empty";
+  var cls = "";
+  if(c.kind !== "val") cls = betterClass(c.f.better, v);
+  if(OV.best && D.best[c.id] != null && v === D.best[c.id] && c.kind === "val") cls += " ov-best";
+  return cls;
+}
+function ovCellText(c, v){ return c.kind === "p" ? ovPctFmt(v) : c.kind === "d" ? ovDeltaFmt(v) : ovFmt(v); }
+
+function renderOverview(){
+  var box = document.getElementById("ovControls");
+  var all = db.tests.slice().sort(function(a,b){ return String(b.meta.date||"").localeCompare(String(a.meta.date||"")); });
+  var selT = ovTests().map(function(t){ return t.id; });
+  box.innerHTML =
+    "<div class='field'><label>Kennzahlen</label><div class='compare-select'>" +
+      OV_FIELDS.map(function(f){ var on = OV.metrics.indexOf(f.key) !== -1; return "<label class='compare-chip" + (on ? " checked" : "") + "'><input type='checkbox' data-ovm='" + f.key + "'" + (on ? " checked" : "") + "> " + esc(f.label) + "</label>"; }).join("") +
+      "<button type='button' class='btn' id='ovMAll' style='padding:4px 10px;font-size:.75rem;'>alle</button><button type='button' class='btn' id='ovMNone' style='padding:4px 10px;font-size:.75rem;'>keine</button></div></div>" +
+    "<div class='field' style='margin-top:10px;'><label>Testtage</label><div class='compare-select'>" +
+      all.map(function(t){ var on = selT.indexOf(t.id) !== -1; return "<label class='compare-chip" + (on ? " checked" : "") + "'><input type='checkbox' data-ovt='" + t.id + "'" + (on ? " checked" : "") + "> " + esc(testLabel(t)) + "</label>"; }).join("") + "</div></div>" +
+    "<div class='field' style='margin-top:10px;'><label>Vergleichsspalten &amp; Ansicht</label><div class='compare-select'>" +
+      [["delta","Δ (erster → letzter Wert)"],["pct","Δ % (Steigerung / Verschlechterung)"],["avg","Teamschnitt"],["best","Bestwert je Testtag grün"]].map(function(o){
+        return "<label class='compare-chip" + (OV[o[0]] ? " checked" : "") + "'><input type='checkbox' data-ovo='" + o[0] + "'" + (OV[o[0]] ? " checked" : "") + "> " + o[1] + "</label>"; }).join("") +
+      "<input type='search' id='ovSearch' placeholder='Spielerin suchen…' value='" + esc(OV.search || "") + "' style='padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:.8rem;'></div></div>";
+  box.querySelectorAll("[data-ovm]").forEach(function(cb){ cb.onchange = function(){
+    var k = cb.dataset.ovm, i = OV.metrics.indexOf(k);
+    if(cb.checked && i === -1) OV.metrics.push(k); if(!cb.checked && i !== -1) OV.metrics.splice(i, 1);
+    OV.metrics = OV_FIELDS.map(function(f){ return f.key; }).filter(function(x){ return OV.metrics.indexOf(x) !== -1; });
+    ovSave(); renderOverview(); }; });
+  document.getElementById("ovMAll").onclick = function(){ OV.metrics = OV_FIELDS.map(function(f){ return f.key; }); ovSave(); renderOverview(); };
+  document.getElementById("ovMNone").onclick = function(){ OV.metrics = []; ovSave(); renderOverview(); };
+  box.querySelectorAll("[data-ovt]").forEach(function(cb){ cb.onchange = function(){
+    var ids = ovTests().map(function(t){ return t.id; }), i = ids.indexOf(cb.dataset.ovt);
+    if(cb.checked && i === -1) ids.push(cb.dataset.ovt); if(!cb.checked && i !== -1) ids.splice(i, 1);
+    OV.tests = ids.length === db.tests.length ? null : ids; ovSave(); renderOverview(); }; });
+  box.querySelectorAll("[data-ovo]").forEach(function(cb){ cb.onchange = function(){ OV[cb.dataset.ovo] = cb.checked; ovSave(); renderOverview(); }; });
+  var se = document.getElementById("ovSearch");
+  se.oninput = function(){ OV.search = se.value; ovSave(); renderOverviewTable(); };
+  renderOverviewTable();
+}
+function renderOverviewTable(){
+  var D = ovData(), tbl = document.getElementById("ovTable");
+  if(!D.fields.length || !D.tests.length){ tbl.innerHTML = "<tr><td style='padding:16px;color:var(--ink-faint);'>Bitte mindestens eine Kennzahl und einen Testtag wählen.</td></tr>"; return; }
+  var arrow = function(k){ return OV.sort && OV.sort.key === k ? (OV.sort.dir > 0 ? " ▲" : " ▼") : ""; };
+  var h = "<thead><tr><th rowspan='2' class='ov-name ov-sort' data-ovs='name'>Spielerin" + arrow("name") + "</th>";
+  D.fields.forEach(function(f){ var n = D.cols.filter(function(c){ return c.f === f; }).length; h += "<th colspan='" + n + "' class='ov-group'>" + esc(f.label) + "</th>"; });
+  h += "</tr><tr>";
+  D.cols.forEach(function(c, i){
+    var first = i === 0 || D.cols[i - 1].f !== c.f;
+    h += "<th class='ov-sort" + (c.kind !== "val" ? " ov-dcol" : "") + (first ? " ov-gstart" : "") + "' data-ovs='" + c.id + "'>" + esc(c.label) + arrow(c.id) + "</th>";
+  });
+  h += "</tr></thead><tbody>";
+  D.rows.forEach(function(p){
+    h += "<tr><td class='ov-name'><b>" + esc(p.nachname) + "</b>, " + esc(p.vorname) + "</td>";
+    D.cols.forEach(function(c, i){
+      var v = p.vals[c.id], first = i === 0 || D.cols[i - 1].f !== c.f;
+      h += "<td class='" + ovCellClass(c, v, D) + (first ? " ov-gstart" : "") + "'>" + ovCellText(c, v) + "</td>";
+    });
+    h += "</tr>";
+  });
+  if(OV.avg){
+    h += "<tr class='ov-avg'><td class='ov-name'>Teamschnitt (Ø)</td>";
+    D.cols.forEach(function(c, i){ var first = i === 0 || D.cols[i - 1].f !== c.f; h += "<td" + (first ? " class='ov-gstart'" : "") + ">" + ovCellText(c, D.avg[c.id] == null ? null : D.avg[c.id]) + "</td>"; });
+    h += "</tr>";
+  }
+  h += "</tbody>";
+  tbl.innerHTML = h;
+  document.getElementById("ovCount").textContent = D.rows.length + " Spielerinnen · " + D.tests.length + " Testtage · " + D.fields.length + " Kennzahlen";
+  tbl.querySelectorAll("[data-ovs]").forEach(function(th){ th.onclick = function(){
+    var k = th.dataset.ovs;
+    OV.sort = OV.sort && OV.sort.key === k ? (OV.sort.dir > 0 ? { key:k, dir:-1 } : null) : { key:k, dir:1 };
+    ovSave(); renderOverviewTable(); }; });
+}
+
+// ---- Exporte ----
+function ovHeadInfo(D){ return "Testtage: " + D.tests.map(function(t){ return deFmt(t.meta.date) || "—"; }).join(", ") + "  ·  " + D.rows.length + " Spielerinnen  ·  erstellt " + new Date().toLocaleDateString("de-DE"); }
+async function ovExportExcel(){
+  if(typeof ExcelJS === "undefined"){ alert("Excel-Bibliothek nicht geladen."); return; }
+  var D = ovData(); if(!D.cols.length){ alert("Keine Spalten gewählt."); return; }
+  var L = curLayout(), wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Gesamtübersicht");
+  var n = D.cols.length + 1;
+  ws.columns = [{ width:26 }].concat(D.cols.map(function(c){ return { width: c.kind === "p" ? 9 : 10 }; }));
+  ws.mergeCells(1, 1, 1, n);
+  var t1 = ws.getCell(1, 1); t1.value = "Performance-Test — Gesamtübersicht · " + L.org; t1.font = { bold:true, size:15, color:{ argb:"FFFFFFFF" } }; t1.fill = fill(argb(L.accent)); ws.getRow(1).height = 26;
+  ws.mergeCells(2, 1, 2, n); ws.getCell(2, 1).value = ovHeadInfo(D); ws.getCell(2, 1).font = { italic:true, size:9, color:{ argb:"FF45565F" } };
+  var hr = 4, sr = 5, hdr = function(cell){ cell.font = { bold:true, size:9, color:{ argb:"FFFFFFFF" } }; cell.fill = fill(argb(L.dark)); cell.alignment = { horizontal:"center", vertical:"middle", wrapText:true }; };
+  ws.getCell(hr, 1).value = "Spielerin"; ws.mergeCells(hr, 1, sr, 1); hdr(ws.getCell(hr, 1));
+  var c = 2;
+  D.fields.forEach(function(f){
+    var cnt = D.cols.filter(function(x){ return x.f === f; }).length;
+    ws.getCell(hr, c).value = f.label; if(cnt > 1) ws.mergeCells(hr, c, hr, c + cnt - 1); hdr(ws.getCell(hr, c));
+    c += cnt;
+  });
+  D.cols.forEach(function(col, i){ var cell = ws.getCell(sr, i + 2); cell.value = col.label; hdr(cell); cell.fill = fill(argb(L.blue)); });
+  var r = sr + 1;
+  var put = function(row, vals, bold){
+    ws.getCell(row, 1).value = vals.name; ws.getCell(row, 1).font = { bold:true, size:9 };
+    D.cols.forEach(function(col, i){
+      var v = vals.v[col.id], cell = ws.getCell(row, i + 2);
+      if(v == null){ cell.value = "—"; cell.font = { size:9, color:{ argb:"FFAAAAAA" } }; }
+      else if(col.kind === "p"){ cell.value = Math.round(v * 10) / 1000; cell.numFmt = "+0.0%;-0.0%;0.0%"; }
+      else { cell.value = ovRound(v); if(col.kind === "d") cell.numFmt = "+0.00;-0.00;0"; }
+      cell.alignment = { horizontal:"center" };
+      if(v != null){
+        var font = { size:9, bold:!!bold };
+        if(col.kind !== "val"){ var bc = betterClass(col.f.better, v); if(bc === "delta-up") font.color = { argb:"FF1C7A3D" }; if(bc === "delta-down") font.color = { argb:"FFB0281C" }; font.bold = true; }
+        if(!bold && OV.best && col.kind === "val" && D.best[col.id] === v){ cell.fill = fill("FFE2EEE7"); font.color = { argb:"FF2F6E4F" }; font.bold = true; }
+        cell.font = font;
+      }
+      cell.border = { left: (i === 0 || D.cols[i - 1].f !== col.f) ? { style:"thin", color:{ argb:"FF999999" } } : undefined };
+    });
+  };
+  D.rows.forEach(function(p){ put(r++, { name:p.nachname + ", " + p.vorname, v:p.vals }); });
+  if(OV.avg){ put(r, { name:"Teamschnitt (Ø)", v:D.avg }, true); for(var i = 1; i <= n; i++) ws.getCell(r, i).fill = fill("FFEFF2F5"); r++; }
+  ws.getCell(r + 1, 1).value = "Grün = Verbesserung bzw. Bestwert des Testtags · Rot = Verschlechterung · Δ / Δ % = Veränderung vom ersten zum letzten vorhandenen Wert der Spielerin · — = nicht teilgenommen";
+  ws.getCell(r + 1, 1).font = { size:8, color:{ argb:"FF888888" } };
+  ws.views = [{ state:"frozen", xSplit:1, ySplit:sr }];
+  ws.pageSetup = { orientation:"landscape", fitToPage:true, fitToWidth:1, fitToHeight:0, paperSize:9 };
+  var buffer = await wb.xlsx.writeBuffer();
+  var a2 = document.createElement("a");
+  a2.href = URL.createObjectURL(new Blob([buffer], { type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  a2.download = "Performance_Gesamtuebersicht_" + new Date().toISOString().slice(0, 10) + ".xlsx";
+  document.body.appendChild(a2); a2.click(); document.body.removeChild(a2);
+}
+function ovExportWord(){
+  var D = ovData(); if(!D.cols.length){ alert("Keine Spalten gewählt."); return; }
+  var L = curLayout();
+  var html = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Gesamtübersicht</title>" +
+    "<style>@page Section1{size:841.9pt 595.3pt;mso-page-orientation:landscape;margin:1cm 1cm 1cm 1cm;} div.Section1{page:Section1;}" +
+    "body{font-family:Calibri,Arial,sans-serif;font-size:8pt;} table{border-collapse:collapse;} td,th{border:1px solid #bbb;padding:2px 4px;text-align:center;} th{color:#fff;font-size:7.5pt;}</style></head><body><div class='Section1'>";
+  html += "<table style='width:100%;border:none;margin-bottom:6px;'><tr><td style='background:" + L.accent + ";border:none;width:56px;padding:6px;'><img src='data:image/png;base64," + L.logo + "' style='height:34px;background:#fff;padding:2px;'></td>" +
+    "<td style='background:" + L.accent + ";border:none;color:#fff;text-align:left;padding:6px 10px;'><div style='font-size:14pt;font-weight:bold;'>PERFORMANCE-TEST · GESAMTÜBERSICHT</div><div style='font-size:8.5pt;'>" + esc(ovHeadInfo(D)) + "</div></td></tr></table>";
+  html += "<table style='width:100%;'><thead><tr><th rowspan='2' style='background:" + L.dark + ";text-align:left;'>Spielerin</th>";
+  D.fields.forEach(function(f){ html += "<th colspan='" + D.cols.filter(function(c){ return c.f === f; }).length + "' style='background:" + L.dark + ";'>" + esc(f.label) + "</th>"; });
+  html += "</tr><tr>" + D.cols.map(function(c){ return "<th style='background:" + L.blue + ";'>" + esc(c.label) + "</th>"; }).join("") + "</tr></thead><tbody>";
+  var row = function(name, vals, bold){
+    var s = "<tr><td style='text-align:left;font-weight:bold;" + (bold ? "background:#eff2f5;" : "") + "'>" + esc(name) + "</td>";
+    D.cols.forEach(function(c){
+      var v = vals[c.id], st = bold ? "background:#eff2f5;font-weight:bold;" : "";
+      if(v != null && c.kind !== "val"){ var bc = betterClass(c.f.better, v); st += "font-weight:bold;" + (bc === "delta-up" ? "color:#1c7a3d;" : bc === "delta-down" ? "color:#b0281c;" : "color:#888;"); }
+      if(v != null && !bold && OV.best && c.kind === "val" && D.best[c.id] === v) st += "background:#e2eee7;color:#2f6e4f;font-weight:bold;";
+      if(v == null) st += "color:#aaa;";
+      s += "<td style='" + st + "'>" + esc(ovCellText(c, v)) + "</td>";
+    });
+    return s + "</tr>";
+  };
+  D.rows.forEach(function(p){ html += row(p.nachname + ", " + p.vorname, p.vals); });
+  if(OV.avg) html += row("Teamschnitt (Ø)", D.avg, true);
+  html += "</tbody></table><p style='font-size:7pt;color:#888;margin-top:6px;'>Grün = Verbesserung bzw. Bestwert des Testtags · Rot = Verschlechterung · Δ / Δ % = Veränderung vom ersten zum letzten vorhandenen Wert der Spielerin · — = nicht teilgenommen</p></div></body></html>";
+  var a2 = document.createElement("a");
+  a2.href = URL.createObjectURL(new Blob(["﻿" + html], { type:"application/msword" }));
+  a2.download = "Performance_Gesamtuebersicht_" + new Date().toISOString().slice(0, 10) + ".doc";
+  document.body.appendChild(a2); a2.click(); document.body.removeChild(a2);
+}
+document.getElementById("ovExcelBtn").addEventListener("click", function(){ ovExportExcel(); });
+document.getElementById("ovWordBtn").addEventListener("click", ovExportWord);
+document.getElementById("ovPrintBtn").addEventListener("click", function(){
+  document.body.classList.add("print-ov");
+  setTimeout(function(){ window.print(); setTimeout(function(){ document.body.classList.remove("print-ov"); }, 500); }, 50);
+});
+
 
 // Legenden beim Drucken/PDF automatisch aufklappen, danach wieder einklappen
 window.addEventListener("beforeprint", function(){ document.querySelectorAll(".pt-refs").forEach(function(d){ d.dataset.wasOpen = d.open ? "1" : ""; d.open = true; }); });
