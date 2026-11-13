@@ -20,10 +20,10 @@
 // Braucht window.appSb (setzt der Login-Schutz der Trainings-App).
 // ============================================================
 (function () {
-  var FIELDS = ["first_name", "last_name", "birthdate", "gender", "position", "height_cm", "weight_kg", "hr_rest", "hr_max"];
+  var FIELDS = ["first_name", "last_name", "birthdate", "gender", "position", "height_cm", "weight_kg", "hr_rest", "hr_max", "vift_kmh", "vift_date"];
   var LABEL = { first_name: "Vorname", last_name: "Nachname", birthdate: "Geburtsdatum", gender: "Geschlecht", position: "Position",
     height_cm: "Größe", weight_kg: "Gewicht", hr_rest: "Ruhepuls", hr_max: "Maxpuls" };
-  var NUM = { height_cm: 1, weight_kg: 1, hr_rest: 1, hr_max: 1 };
+  var NUM = { height_cm: 1, weight_kg: 1, hr_rest: 1, hr_max: 1, vift_kmh: 1 };
 
   var cfg = null, master = [], byId = {}, snap = new WeakMap(), busy = false, again = false, timer = null, lastInfo = null;
 
@@ -35,6 +35,7 @@
       var n = parseFloat(String(v).replace(",", "."));
       if (isNaN(n)) return null;
       if (k === "hr_rest" || k === "hr_max") n = Math.round(n);
+      if (k === "vift_kmh") { n = Math.round(n * 10) / 10; if (n < 8 || n > 30) return null; }
       // Grenzen wie in der Datenbank (sonst lehnt sie die ganze Änderung ab)
       if ((k === "hr_max" && (n < 120 || n > 240)) || (k === "hr_rest" && (n < 30 || n > 120))) return null;
       return n;
@@ -48,7 +49,7 @@
   }
 
   function load() {
-    return sb().from("athletes").select("id,first_name,last_name,birthdate,gender,position,height_cm,weight_kg,hr_rest,hr_max")
+    return sb().from("athletes").select("id,first_name,last_name,birthdate,gender,position,height_cm,weight_kg,hr_rest,hr_max,vift_kmh,vift_date")
       .then(function (r) {
         if (r.error) {
           // Spalten noch nicht angelegt (Migration fehlt) → mit den Grundfeldern weiterarbeiten
@@ -90,6 +91,10 @@
         if (FIELDS.indexOf(k) === -1 || !(k in m)) return;
         var lv = vals[k];
         // im Tool geändert seit dem letzten Abgleich → in die Athletenverwaltung
+        if (e.fields[k] === "up") {
+          if (!empty(lv) && !same(m[k], lv, k) && (!e.upOk || e.upOk(m, vals))) { (ups[m.id] = ups[m.id] || {})[k] = norm(lv, k); }
+          return;
+        }
         var editedHere = (k in prev) && !same(prev[k], lv, k) && !empty(lv);
         if (editedHere || (empty(m[k]) && !empty(lv))) {
           if (!same(m[k], lv, k)) { (ups[m.id] = ups[m.id] || {})[k] = norm(lv, k); }

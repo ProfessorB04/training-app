@@ -2174,7 +2174,7 @@ AthletePicker.attach({
 });
 </script>
 
-<script src="stammdaten-sync.js?v=20261111a"></script>
+<script src="stammdaten-sync.js?v=20261113b"></script>
 <script>
 /* Stammdaten-Abgleich mit der Athletenverwaltung (gilt für den Kader aller Teams) */
 StammdatenSync.attach({
@@ -2182,14 +2182,22 @@ StammdatenSync.attach({
   list: function(){
     return state.athletes.map(function(a){
       return { a:a, fields:{ first_name:"master", last_name:"master", birthdate:"master", gender:"master",
-        height_cm:"master", weight_kg:"master", hr_rest:"master", hr_max:"master" } };
+        height_cm:"master", weight_kg:"master", hr_rest:"master", hr_max:"master", vift_kmh:"up", vift_date:"up" },
+        // letzter VIFT nur übernehmen, wenn das Testdatum nicht älter ist als der Stand in der Athletenverwaltung
+        upOk: function(m, v){ return !m.vift_date || (v.vift_date && v.vift_date >= m.vift_date); } };
     });
   },
   read: function(a){
     var p2 = function(n){ return String(n).padStart(2, "0"); };
     var bd = (a.geburtsjahr && a.geburtsmonat && a.geburtstag) ? a.geburtsjahr + "-" + p2(a.geburtsmonat) + "-" + p2(a.geburtstag) : null;
+    // letzter Test mit VIFT dieser Spielerin
+    var last = null;
+    (state.sessions || []).forEach(function(se){ (se.results || []).forEach(function(r){
+      if(r.athleteId === a.id && r.vift != null && se.date && (!last || se.date >= last.date)) last = { vift:r.vift, date:se.date };
+    }); });
     return { first_name:a.vorname, last_name:a.nachname, birthdate:bd, gender:a.geschlecht,
-      height_cm:a.groesse, weight_kg:a.gewicht, hr_rest:a.ruhepuls, hr_max:a.maxpuls };
+      height_cm:a.groesse, weight_kg:a.gewicht, hr_rest:a.ruhepuls, hr_max:a.maxpuls,
+      vift_kmh: last ? last.vift : null, vift_date: last ? last.date : null };
   },
   write: function(a, p){
     if("first_name" in p) a.vorname = p.first_name;
