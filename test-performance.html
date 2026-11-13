@@ -2046,14 +2046,14 @@ StammdatenSync.attach({
     db.tests.forEach(function(t){
       (t.athletes || []).forEach(function(a){
         var f = { first_name:"master", last_name:"master", birthdate:"master", position:"master" };
-        if(t === newest){ f.height_cm = "fill"; f.weight_kg = "fill"; f.vift_kmh = "master"; f.hr_rest = "master"; f.hr_max = "master"; f.gender = "master"; }
+        if(t === newest){ f.height_cm = "fill"; f.weight_kg = "fill"; f.vift_kmh = "master"; f.vift_date = "master"; f.hr_rest = "master"; f.hr_max = "master"; f.gender = "master"; }
         out.push({ a:a, fields:f });
       });
     });
     return out;
   },
   read: function(a){ return { first_name:a.vorname, last_name:a.nachname, birthdate:a.geburtsdatum, position:a.position, height_cm:a.height, weight_kg:a.weight,
-    vift_kmh:a.iftVift, hr_rest:a.restHF, hr_max:a.hfmax, gender:a._gender || null }; },
+    vift_kmh:a.iftVift, vift_date:a._viftDate || null, hr_rest:a.restHF, hr_max:a.hfmax, gender:a._gender || null }; },
   write: function(a, p){
     if("first_name" in p) a.vorname = p.first_name;
     if("last_name" in p) a.nachname = p.last_name;
@@ -2061,7 +2061,14 @@ StammdatenSync.attach({
     if("position" in p && ["Guard","Forward","Center"].indexOf(p.position) !== -1) a.position = p.position;
     if("height_cm" in p) a.height = String(p.height_cm);
     if("weight_kg" in p) a.weight = String(p.weight_kg);
-    if("vift_kmh" in p) a.iftVift = String(p.vift_kmh);
+    if("vift_date" in p) a._viftDate = p.vift_date;
+    // VIFT nur übernehmen, wenn der IFT-Test höchstens 4 Wochen vor diesem Testtag (oder danach) lag –
+    // sonst landet z. B. ein September-Wert im November-Test
+    if("vift_kmh" in p){
+      var tDate = (db.tests.slice().sort(function(x, y){ return String((y.meta||{}).date||"").localeCompare(String((x.meta||{}).date||"")); })[0].meta || {}).date;
+      var fresh = !tDate || !a._viftDate || (new Date(tDate) - new Date(a._viftDate)) <= 28 * 864e5;
+      if(fresh) a.iftVift = String(p.vift_kmh);
+    }
     if("hr_rest" in p) a.restHF = String(p.hr_rest);
     if("hr_max" in p) a.hfmax = String(p.hr_max);
     if("gender" in p) a._gender = p.gender;
