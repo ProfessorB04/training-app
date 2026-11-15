@@ -2141,40 +2141,130 @@ async function ovExportExcel(){
   a2.download = "Performance_Gesamtuebersicht_" + new Date().toISOString().slice(0, 10) + ".xlsx";
   document.body.appendChild(a2); a2.click(); document.body.removeChild(a2);
 }
-function ovExportWord(){
-  var D = ovData(); if(!D.cols.length){ alert("Keine Spalten gewählt."); return; }
-  var L = curLayout();
-  var html = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Gesamtübersicht</title>" +
-    "<style>@page Section1{size:841.9pt 595.3pt;mso-page-orientation:landscape;margin:1cm 1cm 1cm 1cm;} div.Section1{page:Section1;}" +
-    "body{font-family:Calibri,Arial,sans-serif;font-size:8pt;} table{border-collapse:collapse;} td,th{border:1px solid #bbb;padding:2px 4px;text-align:center;} th{color:#fff;font-size:7.5pt;}</style></head><body><div class='Section1'>";
-  html += "<table style='width:100%;border:none;margin-bottom:6px;'><tr><td style='background:" + L.accent + ";border:none;width:56px;padding:6px;'><img src='data:image/png;base64," + L.logo + "' style='height:34px;background:#fff;padding:2px;'></td>" +
-    "<td style='background:" + L.accent + ";border:none;color:#fff;text-align:left;padding:6px 10px;'><div style='font-size:14pt;font-weight:bold;'>PERFORMANCE-TEST · GESAMTÜBERSICHT</div><div style='font-size:8.5pt;'>" + esc(ovHeadInfo(D)) + "</div></td></tr></table>";
-  html += "<table style='width:100%;'><thead><tr><th rowspan='2' style='background:" + L.dark + ";text-align:left;'>Spielerin</th>";
-  D.fields.forEach(function(f){ html += "<th colspan='" + D.cols.filter(function(c){ return c.f === f; }).length + "' style='background:" + L.dark + ";'>" + esc(f.label) + "</th>"; });
-  html += "</tr><tr>" + D.cols.map(function(c){ return "<th style='background:" + L.blue + ";'>" + esc(c.label) + "</th>"; }).join("") + "</tr></thead><tbody>";
-  var row = function(name, vals, bold){
-    var s = "<tr><td style='text-align:left;font-weight:bold;" + (bold ? "background:#eff2f5;" : "") + "'>" + esc(name) + "</td>";
-    D.cols.forEach(function(c){
-      var v = vals[c.id], st = bold ? "background:#eff2f5;font-weight:bold;" : "";
-      if(v != null && c.kind !== "val"){ var bc = ovBetterCls(c, v); st += "font-weight:bold;" + (bc === "delta-up" ? "color:#1c7a3d;" : bc === "delta-down" ? "color:#b0281c;" : "color:#888;");
-        if(bold) st += bc === "delta-up" ? "background:#dcefe2;" : bc === "delta-down" ? "background:#f6dfdb;" : ""; }
-      if(v != null && !bold && OV.best && c.kind === "val" && D.best[c.id] === v) st += "background:#e2eee7;color:#2f6e4f;font-weight:bold;";
-      if(v == null) st += "color:#aaa;";
-      s += "<td style='" + st + "'>" + esc(ovCellText(c, v)) + "</td>";
+// ---- echte .docx (Word, Pages, iPad, Windows zeigen Farben zuverlässig; HTML-.doc wird dort teils farblos) ----
+function zipStore(files){
+  var T = zipStore.t || (zipStore.t = (function(){ var t = [], c, n, k; for(n = 0; n < 256; n++){ c = n; for(k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })());
+  var crc = function(d){ var c = 0xFFFFFFFF; for(var i = 0; i < d.length; i++) c = T[(c ^ d[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  var enc = new TextEncoder(), parts = [], central = [], off = 0;
+  var u16 = function(v){ return [v & 255, (v >>> 8) & 255]; }, u32 = function(v){ return [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255]; };
+  files.forEach(function(f){
+    var name = enc.encode(f.name), data = typeof f.data === "string" ? enc.encode(f.data) : f.data, c = crc(data);
+    var common = [].concat(u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(c), u32(data.length), u32(data.length), u16(name.length), u16(0));
+    var local = new Uint8Array([].concat(u32(0x04034b50), common));
+    parts.push(local, name, data);
+    central.push(new Uint8Array([].concat(u32(0x02014b50), u16(20), common, u16(0), u16(0), u16(0), u32(0), u32(off))), name);
+    off += local.length + name.length + data.length;
+  });
+  var cdSize = central.reduce(function(a, x){ return a + x.length; }, 0);
+  var endRec = new Uint8Array([].concat(u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(cdSize), u32(off), u16(0)));
+  return new Blob(parts.concat(central, [endRec]), { type:"application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+}
+var DX = {
+  x: function(t){ return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); },
+  hex: function(c){ return String(c || "").replace("#", "").toUpperCase(); },
+  // r: Textlauf {t, b, i, color, sz (halbe Punkt)}
+  run: function(r){ return "<w:r><w:rPr><w:rFonts w:ascii='Calibri' w:hAnsi='Calibri' w:cs='Calibri'/>" + (r.b ? "<w:b/>" : "") + (r.i ? "<w:i/>" : "") +
+    (r.color ? "<w:color w:val='" + DX.hex(r.color) + "'/>" : "") + "<w:sz w:val='" + (r.sz || 16) + "'/></w:rPr><w:t xml:space='preserve'>" + DX.x(r.t) + "</w:t></w:r>"; },
+  p: function(runs, o){ o = o || {}; return "<w:p><w:pPr><w:spacing w:before='" + (o.before || 0) + "' w:after='" + (o.after || 0) + "' w:line='240' w:lineRule='auto'/>" + (o.align ? "<w:jc w:val='" + o.align + "'/>" : "") + "</w:pPr>" + runs.map(function(r){ return typeof r === "string" ? r : DX.run(r); }).join("") + "</w:p>"; },
+  // Zelle: {runs|t, w, span, vm ('restart'|'cont'), fill, align, nowrap}
+  tc: function(c){ return "<w:tc><w:tcPr><w:tcW w:w='" + (c.w || 0) + "' w:type='dxa'/>" + (c.span > 1 ? "<w:gridSpan w:val='" + c.span + "'/>" : "") +
+    (c.vm ? (c.vm === "restart" ? "<w:vMerge w:val='restart'/>" : "<w:vMerge/>") : "") + (c.fill ? "<w:shd w:val='clear' w:color='auto' w:fill='" + DX.hex(c.fill) + "'/>" : "") +
+    (c.nowrap ? "<w:noWrap/>" : "") + "<w:vAlign w:val='center'/></w:tcPr>" + DX.p(c.runs || [], { align:c.align || "center" }) + "</w:tc>"; }
+};
+function docxBlob(bodyXml, logoB64){
+  var ns = "xmlns:w='http://schemas.openxmlformats.org/wordprocessingml/2006/main' xmlns:r='http://schemas.openxmlformats.org/officeDocument/2006/relationships' xmlns:wp='http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing' xmlns:a='http://schemas.openxmlformats.org/drawingml/2006/main' xmlns:pic='http://schemas.openxmlformats.org/drawingml/2006/picture'";
+  var doc = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><w:document " + ns + "><w:body>" + bodyXml +
+    "<w:sectPr><w:pgSz w:w='16838' w:h='11906' w:orient='landscape'/><w:pgMar w:top='567' w:right='567' w:bottom='567' w:left='567' w:header='0' w:footer='0' w:gutter='0'/></w:sectPr></w:body></w:document>";
+  var styles = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><w:styles xmlns:w='http://schemas.openxmlformats.org/wordprocessingml/2006/main'><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii='Calibri' w:hAnsi='Calibri' w:cs='Calibri' w:eastAsia='Calibri'/><w:sz w:val='16'/><w:lang w:val='de-DE'/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after='0' w:line='240' w:lineRule='auto'/></w:pPr></w:pPrDefault></w:docDefaults></w:styles>";
+  var bin = atob(logoB64 || ""), img = new Uint8Array(bin.length); for(var i = 0; i < bin.length; i++) img[i] = bin.charCodeAt(i);
+  var files = [
+    { name:"[Content_Types].xml", data:"<?xml version='1.0' encoding='UTF-8' standalone='yes'?><Types xmlns='http://schemas.openxmlformats.org/package/2006/content-types'><Default Extension='rels' ContentType='application/vnd.openxmlformats-package.relationships+xml'/><Default Extension='xml' ContentType='application/xml'/><Default Extension='png' ContentType='image/png'/><Override PartName='/word/document.xml' ContentType='application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml'/><Override PartName='/word/styles.xml' ContentType='application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml'/></Types>" },
+    { name:"_rels/.rels", data:"<?xml version='1.0' encoding='UTF-8' standalone='yes'?><Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'><Relationship Id='rId1' Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument' Target='word/document.xml'/></Relationships>" },
+    { name:"word/_rels/document.xml.rels", data:"<?xml version='1.0' encoding='UTF-8' standalone='yes'?><Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'><Relationship Id='rIdSt' Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles' Target='styles.xml'/><Relationship Id='rIdLogo' Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/image' Target='media/logo.png'/></Relationships>" },
+    { name:"word/document.xml", data:doc },
+    { name:"word/styles.xml", data:styles },
+    { name:"word/media/logo.png", data:img }
+  ];
+  return zipStore(files);
+}
+function docxLogoRun(hEmu, ratio){
+  var cy = Math.round(hEmu), cx = Math.round(hEmu * (ratio || 1));
+  return "<w:r><w:drawing><wp:inline distT='0' distB='0' distL='0' distR='0'><wp:extent cx='" + cx + "' cy='" + cy + "'/><wp:docPr id='1' name='Logo'/>" +
+    "<a:graphic><a:graphicData uri='http://schemas.openxmlformats.org/drawingml/2006/picture'><pic:pic><pic:nvPicPr><pic:cNvPr id='1' name='logo.png'/><pic:cNvPicPr/></pic:nvPicPr>" +
+    "<pic:blipFill><a:blip r:embed='rIdLogo'/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x='0' y='0'/><a:ext cx='" + cx + "' cy='" + cy + "'/></a:xfrm><a:prstGeom prst='rect'><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>";
+}
+function docxTable(grid, rows, borderHex){
+  var b = function(n){ return "<w:" + n + " w:val='single' w:sz='4' w:space='0' w:color='" + (borderHex || "BBBBBB") + "'/>"; };
+  return "<w:tbl><w:tblPr><w:tblW w:w='" + grid.reduce(function(a, x){ return a + x; }, 0) + "' w:type='dxa'/><w:tblBorders>" + ["top","left","bottom","right","insideH","insideV"].map(b).join("") + "</w:tblBorders>" +
+    "<w:tblLayout w:type='fixed'/><w:tblCellMar><w:top w:w='25' w:type='dxa'/><w:left w:w='45' w:type='dxa'/><w:bottom w:w='25' w:type='dxa'/><w:right w:w='45' w:type='dxa'/></w:tblCellMar></w:tblPr><w:tblGrid>" +
+    grid.map(function(w){ return "<w:gridCol w:w='" + w + "'/>"; }).join("") + "</w:tblGrid>" + rows.join("") + "</w:tbl>";
+}
+// Legende (Überschrift fett, farbige Ampelpunkte, Quelle grau) als docx-Absätze
+function legendDocx(intro){
+  var x = DX.p([{ t:"Referenzen & Ampel-Legende", b:true, sz:19, color:"333333" }], { before:200, after:60 });
+  (intro || []).forEach(function(t){ x += DX.p([{ t:t, sz:15, color:"555555" }], { after:60 }); });
+  legendBlocks().forEach(function(b){
+    var runs = [{ t:b.title + "    ", b:true, sz:16, color:"222222" }];
+    b.chips.forEach(function(segs, i){
+      if(i) runs.push({ t:"    ", sz:16 });
+      segs.forEach(function(g){ runs.push(g.dot ? { t:"● ", sz:20, color:g.dot } : { t:g.text + (g.bold ? " " : ""), b:!!g.bold, sz:16, color:"333333" }); });
     });
-    return s + "</tr>";
+    x += DX.p(runs, { before:80 });
+    if(b.note) x += DX.p([{ t:b.note, sz:13, i:true, color:"8A949C" }], { after:20 });
+  });
+  return x + DX.p([{ t:REFERENCE_NOTES[REFERENCE_NOTES.length - 1], sz:13, color:"AAAAAA" }], { before:120 });
+}
+function imgRatio(b64){
+  return new Promise(function(res){ var im = new Image(); im.onload = function(){ res(im.naturalWidth && im.naturalHeight ? im.naturalWidth / im.naturalHeight : 1); }; im.onerror = function(){ res(1); }; im.src = "data:image/png;base64," + b64; });
+}
+async function ovExportWord(){
+  var D = ovData(); if(!D.cols.length){ alert("Keine Spalten gewählt."); return; }
+  var L = curLayout(), ratio = await imgRatio(L.logo);
+  var W = 15704, nameW = 2100, n = D.cols.length, sz = n <= 12 ? 16 : n <= 20 ? 14 : 12;
+  // Datumsspalten breiter als Δ-Spalten, damit „05.09.2026" nicht umbricht
+  var wt = function(c){ return c.kind === "val" ? 1.35 : c.kind === "p" ? 1 : 0.9; }, wsum = D.cols.reduce(function(a, c){ return a + wt(c); }, 0);
+  var cw = D.cols.map(function(c){ return Math.floor((W - nameW) * wt(c) / wsum); });
+  var grid = [nameW].concat(cw);
+  // Kopfbanner
+  var banner = docxTable([1500, W - 1500], ["<w:tr>" +
+    DX.tc({ w:1500, fill:L.accent, runs:[docxLogoRun(560000, ratio)] }) +
+    "<w:tc><w:tcPr><w:tcW w:w='" + (W - 1500) + "' w:type='dxa'/><w:shd w:val='clear' w:color='auto' w:fill='" + DX.hex(L.accent) + "'/><w:vAlign w:val='center'/></w:tcPr>" +
+      DX.p([{ t:"PERFORMANCE-TEST · GESAMTÜBERSICHT", b:true, sz:28, color:"FFFFFF" }]) + DX.p([{ t:ovHeadInfo(D), sz:17, color:"FFFFFF" }]) + "</w:tc></w:tr>"], DX.hex(L.accent));
+  var rows = [];
+  var h1 = "<w:tr><w:trPr><w:tblHeader/></w:trPr>" + DX.tc({ w:nameW, vm:"restart", fill:L.dark, align:"left", runs:[{ t:"Spielerin", b:true, sz:sz, color:"FFFFFF" }] });
+  D.fields.forEach(function(f){ var cnt = 0, w = 0; D.cols.forEach(function(c, i){ if(c.f === f){ cnt++; w += cw[i]; } }); h1 += DX.tc({ w:w, span:cnt, fill:L.dark, runs:[{ t:f.label, b:true, sz:sz, color:"FFFFFF" }] }); });
+  rows.push(h1 + "</w:tr>");
+  rows.push("<w:tr><w:trPr><w:tblHeader/></w:trPr>" + DX.tc({ w:nameW, vm:"cont", fill:L.dark }) +
+    D.cols.map(function(c, i){ return DX.tc({ w:cw[i], fill:L.blue, nowrap:true, runs:[{ t:c.label, b:true, sz:sz - 2, color:"FFFFFF" }] }); }).join("") + "</w:tr>");
+  var row = function(name, vals, avg){
+    var r = "<w:tr><w:trPr><w:cantSplit/></w:trPr>" + DX.tc({ w:nameW, align:"left", fill:avg ? "EFF2F5" : "", runs:[{ t:name, b:true, sz:sz }] });
+    D.cols.forEach(function(c, i){
+      var v = vals[c.id], cell = { w:cw[i], nowrap:true, fill:avg ? "EFF2F5" : "" }, run = { t:ovCellText(c, v), sz:sz, b:!!avg };
+      if(v == null) run.color = "AAAAAA";
+      else if(c.kind !== "val"){
+        var bc = ovBetterCls(c, v); run.b = true;
+        run.color = bc === "delta-up" ? "1C7A3D" : bc === "delta-down" ? "B0281C" : "888888";
+        if(avg) cell.fill = bc === "delta-up" ? "DCEFE2" : bc === "delta-down" ? "F6DFDB" : "EFF2F5";
+      }
+      else if(!avg && OV.best && D.best[c.id] === v){ cell.fill = "E2EEE7"; run.color = "2F6E4F"; run.b = true; }
+      cell.runs = [run];
+      r += DX.tc(cell);
+    });
+    return r + "</w:tr>";
   };
-  D.rows.forEach(function(p){ html += row(p.nachname + ", " + p.vorname, p.vals); });
-  if(OV.avg) html += row("Teamschnitt (Ø)", D.avg, true);
-  html += "</tbody></table><p style='font-size:7pt;color:#888;margin-top:6px;'>Grün = Verbesserung bzw. Bestwert des Testtags · Rot = Verschlechterung · Δ = Veränderung vom ersten zum letzten vorhandenen Wert · Δ % = Leistungsveränderung (+ = besser, bei Zeiten schneller) · — = nicht teilgenommen</p>" +
-    legendWordHtml() + "</div></body></html>";
+  D.rows.forEach(function(p){ rows.push(row(p.nachname + ", " + p.vorname, p.vals)); });
+  if(OV.avg) rows.push(row("Teamschnitt (Ø)", D.avg, true));
+  var body = banner + DX.p([], { after:120 }) + docxTable(grid, rows) +
+    DX.p([{ t:"Grün", b:true, sz:14, color:"1C7A3D" }, { t:" = Verbesserung bzw. Bestwert des Testtags   ·   ", sz:14, color:"666666" }, { t:"Rot", b:true, sz:14, color:"B0281C" },
+      { t:" = Verschlechterung   ·   Δ = Veränderung vom ersten zum letzten vorhandenen Wert   ·   Δ % = Leistungsveränderung (+ = besser, bei Zeiten schneller)   ·   — = nicht teilgenommen", sz:14, color:"666666" }], { before:100 }) +
+    legendDocx();
   var a2 = document.createElement("a");
-  a2.href = URL.createObjectURL(new Blob(["﻿" + html], { type:"application/msword" }));
-  a2.download = "Performance_Gesamtuebersicht_" + new Date().toISOString().slice(0, 10) + ".doc";
+  a2.href = URL.createObjectURL(docxBlob(body, L.logo));
+  a2.download = "Performance_Gesamtuebersicht_" + new Date().toISOString().slice(0, 10) + ".docx";
   document.body.appendChild(a2); a2.click(); document.body.removeChild(a2);
 }
 document.getElementById("ovExcelBtn").addEventListener("click", function(){ ovExportExcel(); });
-document.getElementById("ovWordBtn").addEventListener("click", ovExportWord);
+document.getElementById("ovWordBtn").addEventListener("click", function(){ ovExportWord(); });
 document.getElementById("ovPrintBtn").addEventListener("click", function(){
   document.body.classList.add("print-ov");
   setTimeout(function(){ window.print(); setTimeout(function(){ document.body.classList.remove("print-ov"); }, 500); }, 50);
