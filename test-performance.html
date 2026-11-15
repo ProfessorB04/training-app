@@ -1575,20 +1575,7 @@ async function exportExcel(){
   // ---- Referenzen & Ampel-Legende (wie unter dem Tool) ----
   var noteEndCol = Math.max(4, cols.length);
   r++;
-  ws.mergeCells(r, 1, r, noteEndCol);
-  var refHead = ws.getCell(r, 1);
-  refHead.value = "Referenzen & Ampel-Legende";
-  refHead.font = {bold:true, size:9, color:{argb:argb(curLayout().dark)}};
-  r++;
-  REFERENCE_NOTES.forEach(function(line){
-    ws.mergeCells(r, 1, r, noteEndCol);
-    var nc = ws.getCell(r, 1);
-    nc.value = line;
-    nc.font = {size:8, color:{argb:"FF6B7680"}};
-    nc.alignment = {wrapText:true, vertical:'top', horizontal:'left'};
-    ws.getRow(r).height = Math.max(14, Math.ceil(line.length / 140) * 12 + 4);
-    r++;
-  });
+  r = legendExcel(ws, r, noteEndCol, [REFERENCE_NOTES[0]], curLayout().dark);
 
   ws.views = [{state:'frozen', ySplit:subRow, xSplit:3}];
   ws.pageSetup = {orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, paperSize:9};
@@ -1664,7 +1651,7 @@ function exportWord(){
   });
 
   html += "</table>";
-  html += "<p style='margin-top:8px;font-size:7.5pt;color:#888;'><b>Referenzen &amp; Ampel-Legende</b><br>" + REFERENCE_NOTES.map(function(x){ return esc(x); }).join("<br>") + "</p>";
+  html += legendWordHtml([REFERENCE_NOTES[0]]);
   html += "</body></html>";
 
   var blob = new Blob(["﻿" + html], {type:"application/msword"});
@@ -2145,15 +2132,7 @@ async function ovExportExcel(){
   ws.getCell(r + 1, 1).value = "Grün = Verbesserung bzw. Bestwert des Testtags · Rot = Verschlechterung · Δ = Veränderung vom ersten zum letzten vorhandenen Wert · Δ % = Leistungsveränderung (+ = besser, bei Zeiten schneller) · — = nicht teilgenommen";
   ws.getCell(r + 1, 1).font = { size:8, color:{ argb:"FF888888" } };
   r += 3;
-  var noteEnd = Math.max(8, n);
-  ws.mergeCells(r, 1, r, noteEnd); ws.getCell(r, 1).value = "Referenzen & Ampel-Legende"; ws.getCell(r, 1).font = { bold:true, size:9, color:{ argb:argb(L.dark) } }; r++;
-  REFERENCE_NOTES.forEach(function(line){
-    ws.mergeCells(r, 1, r, noteEnd);
-    var nc = ws.getCell(r, 1); nc.value = line; nc.font = { size:8, color:{ argb:"FF6B7680" } };
-    nc.alignment = { wrapText:true, vertical:"top", horizontal:"left" };
-    ws.getRow(r).height = Math.max(14, Math.ceil(line.length / 140) * 12 + 4);
-    r++;
-  });
+  r = legendExcel(ws, r, Math.max(14, n), null, L.dark);
   ws.views = [{ state:"frozen", xSplit:1, ySplit:sr }];
   ws.pageSetup = { orientation:"landscape", fitToPage:true, fitToWidth:1, fitToHeight:0, paperSize:9 };
   var buffer = await wb.xlsx.writeBuffer();
@@ -2188,7 +2167,7 @@ function ovExportWord(){
   D.rows.forEach(function(p){ html += row(p.nachname + ", " + p.vorname, p.vals); });
   if(OV.avg) html += row("Teamschnitt (Ø)", D.avg, true);
   html += "</tbody></table><p style='font-size:7pt;color:#888;margin-top:6px;'>Grün = Verbesserung bzw. Bestwert des Testtags · Rot = Verschlechterung · Δ = Veränderung vom ersten zum letzten vorhandenen Wert · Δ % = Leistungsveränderung (+ = besser, bei Zeiten schneller) · — = nicht teilgenommen</p>" +
-    "<p style='margin-top:8px;font-size:7.5pt;color:#888;'><b>Referenzen &amp; Ampel-Legende</b><br>" + REFERENCE_NOTES.map(function(x){ return esc(x); }).join("<br>") + "</p></div></body></html>";
+    legendWordHtml() + "</div></body></html>";
   var a2 = document.createElement("a");
   a2.href = URL.createObjectURL(new Blob(["﻿" + html], { type:"application/msword" }));
   a2.download = "Performance_Gesamtuebersicht_" + new Date().toISOString().slice(0, 10) + ".doc";
@@ -2215,6 +2194,62 @@ document.getElementById("ovPrintBtn").addEventListener("click", function(){
   d.insertBefore(mob, d.querySelector(".ffmi-legend"));
   box.appendChild(d);
 })();
+
+// Legende für Exporte strukturiert aus der Bildschirm-Legende lesen (Überschrift, farbige Punkte, Quelle in grau)
+function legendHex(el){
+  var m = (getComputedStyle(el).backgroundColor || "").match(/\d+/g);
+  return m ? "#" + m.slice(0, 3).map(function(x){ return ("0" + (+x).toString(16)).slice(-2); }).join("") : "#888888";
+}
+function legendBlocks(){
+  var root = document.querySelector("#ovRefs .pt-refs") || document.querySelector(".pt-refs");
+  if(!root) return [];
+  return [].map.call(root.querySelectorAll(".ffmi-legend"), function(box){
+    var b = { title:"", chips:[], note:"" };
+    [].forEach.call(box.children, function(ch){
+      if(ch.tagName === "B" && !b.title) b.title = ch.textContent.trim();
+      else if(ch.classList.contains("ffmi-chip")){
+        var segs = [];
+        [].forEach.call(ch.childNodes, function(n){
+          if(n.nodeType === 3){ var t = n.textContent.replace(/\u00a0/g, " "); if(t.trim()) segs.push({ text:t }); }
+          else if(n.classList && n.classList.contains("ffmi-dot")) segs.push({ dot:legendHex(n) });
+          else if(n.textContent.trim()) segs.push({ text:n.textContent, bold:n.tagName === "B" });
+        });
+        b.chips.push(segs);
+      }
+      else if(ch.tagName === "SPAN") b.note = ch.textContent.replace(/\s+/g, " ").trim();
+    });
+    return b;
+  });
+}
+function legendWordHtml(intro){
+  var h = "<p style='margin:10px 0 4px;font-size:9pt;font-weight:bold;color:#333;'>Referenzen &amp; Ampel-Legende</p>";
+  (intro || []).forEach(function(x){ h += "<p style='margin:0 0 4px;font-size:7.5pt;color:#555;'>" + esc(x) + "</p>"; });
+  legendBlocks().forEach(function(b){
+    h += "<p style='margin:5px 0 0;font-size:8pt;color:#222;'><b>" + esc(b.title) + "</b>&nbsp;&nbsp;&nbsp;" +
+      b.chips.map(function(segs){ return segs.map(function(g){
+        return g.dot ? "<span style='color:" + g.dot + ";font-size:10pt;'>&#9679;</span>&nbsp;" : (g.bold ? "<b>" + esc(g.text) + "</b>&nbsp;" : esc(g.text));
+      }).join(""); }).join("&nbsp;&nbsp;&nbsp;&nbsp;") + "</p>";
+    if(b.note) h += "<p style='margin:1px 0 3px;font-size:6.5pt;color:#888;'>" + esc(b.note) + "</p>";
+  });
+  return h + "<p style='margin:6px 0 0;font-size:6.5pt;color:#aaa;'>" + esc(REFERENCE_NOTES[REFERENCE_NOTES.length - 1]) + "</p>";
+}
+// schreibt die Legende ab Zeile r ins Arbeitsblatt, gibt die nächste freie Zeile zurück
+function legendExcel(ws, r, endCol, intro, dark){
+  var line = function(rt, plain, h){ ws.mergeCells(r, 1, r, endCol); var c = ws.getCell(r, 1); c.value = rt ? { richText:rt } : plain; c.alignment = { wrapText:true, vertical:"top", horizontal:"left" }; ws.getRow(r).height = h; r++; return c; };
+  line(null, "Referenzen & Ampel-Legende", 16).font = { bold:true, size:10, color:{ argb:argb(dark) } };
+  (intro || []).forEach(function(x){ line(null, x, 14).font = { size:8, color:{ argb:"FF555555" } }; });
+  legendBlocks().forEach(function(b){
+    var rt = [{ text:b.title + "     ", font:{ bold:true, size:9, color:{ argb:"FF222222" } } }];
+    b.chips.forEach(function(segs, i){
+      if(i) rt.push({ text:"     ", font:{ size:9 } });
+      segs.forEach(function(g){ rt.push(g.dot ? { text:"● ", font:{ size:11, color:{ argb:argb(g.dot) } } } : { text:g.text + (g.bold ? " " : ""), font:{ size:9, bold:!!g.bold, color:{ argb:"FF333333" } } }); });
+    });
+    line(rt, null, 17);
+    if(b.note) line(null, b.note, Math.max(13, Math.ceil(b.note.length / 160) * 11 + 3)).font = { size:7.5, italic:true, color:{ argb:"FF8A949C" } };
+  });
+  line(null, REFERENCE_NOTES[REFERENCE_NOTES.length - 1], 13).font = { size:7, color:{ argb:"FFAAAAAA" } };
+  return r;
+}
 
 // Legenden beim Drucken/PDF automatisch aufklappen, danach wieder einklappen
 window.addEventListener("beforeprint", function(){ document.querySelectorAll(".pt-refs").forEach(function(d){ d.dataset.wasOpen = d.open ? "1" : ""; d.open = true; }); });
