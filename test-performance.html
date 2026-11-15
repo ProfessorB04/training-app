@@ -283,6 +283,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   table.ov-table td.ov-empty{ color:#c3c9cd; }
   table.ov-table td.ov-best{ background:var(--zone-g-soft, #e2eee7); color:#2f6e4f; font-weight:700; }
   table.ov-table tr.ov-avg td{ background:#eff2f5; font-weight:700; border-top:2px solid var(--blue); }
+  table.ov-table tr.ov-avg td.delta-up{ background:#dcefe2; color:#1c7a3d; }
+  table.ov-table tr.ov-avg td.delta-down{ background:#f6dfdb; color:#b0281c; }
   .ov-print-title{ display:none; }
   table.ov-table .ov-pos{ font-size:.68rem; color:var(--ink-faint); margin-left:4px; }
 
@@ -2079,7 +2081,10 @@ function renderOverviewTable(){
   });
   if(OV.avg){
     h += "<tr class='ov-avg'><td class='ov-name'>Teamschnitt (Ø)</td>";
-    D.cols.forEach(function(c, i){ var first = i === 0 || D.cols[i - 1].f !== c.f; h += "<td" + (first ? " class='ov-gstart'" : "") + ">" + ovCellText(c, D.avg[c.id] == null ? null : D.avg[c.id]) + "</td>"; });
+    D.cols.forEach(function(c, i){
+      var first = i === 0 || D.cols[i - 1].f !== c.f, v = D.avg[c.id] == null ? null : D.avg[c.id];
+      var cls = (first ? "ov-gstart " : "") + (v != null && c.kind !== "val" ? ovBetterCls(c, v) : "");
+      h += "<td class='" + cls + "'>" + ovCellText(c, v) + "</td>"; });
     h += "</tr>";
   }
   h += "</tbody>";
@@ -2130,7 +2135,13 @@ async function ovExportExcel(){
     });
   };
   D.rows.forEach(function(p){ put(r++, { name:p.nachname + ", " + p.vorname, v:p.vals }); });
-  if(OV.avg){ put(r, { name:"Teamschnitt (Ø)", v:D.avg }, true); for(var i = 1; i <= n; i++) ws.getCell(r, i).fill = fill("FFEFF2F5"); r++; }
+  if(OV.avg){
+    put(r, { name:"Teamschnitt (Ø)", v:D.avg }, true);
+    for(var i = 1; i <= n; i++) ws.getCell(r, i).fill = fill("FFEFF2F5");
+    D.cols.forEach(function(col, i){ var v = D.avg[col.id]; if(v == null || col.kind === "val") return; var bc = ovBetterCls(col, v);
+      if(bc === "delta-up") ws.getCell(r, i + 2).fill = fill("FFDCEFE2"); if(bc === "delta-down") ws.getCell(r, i + 2).fill = fill("FFF6DFDB"); });
+    r++;
+  }
   ws.getCell(r + 1, 1).value = "Grün = Verbesserung bzw. Bestwert des Testtags · Rot = Verschlechterung · Δ = Veränderung vom ersten zum letzten vorhandenen Wert · Δ % = Leistungsveränderung (+ = besser, bei Zeiten schneller) · — = nicht teilgenommen";
   ws.getCell(r + 1, 1).font = { size:8, color:{ argb:"FF888888" } };
   r += 3;
@@ -2166,7 +2177,8 @@ function ovExportWord(){
     var s = "<tr><td style='text-align:left;font-weight:bold;" + (bold ? "background:#eff2f5;" : "") + "'>" + esc(name) + "</td>";
     D.cols.forEach(function(c){
       var v = vals[c.id], st = bold ? "background:#eff2f5;font-weight:bold;" : "";
-      if(v != null && c.kind !== "val"){ var bc = ovBetterCls(c, v); st += "font-weight:bold;" + (bc === "delta-up" ? "color:#1c7a3d;" : bc === "delta-down" ? "color:#b0281c;" : "color:#888;"); }
+      if(v != null && c.kind !== "val"){ var bc = ovBetterCls(c, v); st += "font-weight:bold;" + (bc === "delta-up" ? "color:#1c7a3d;" : bc === "delta-down" ? "color:#b0281c;" : "color:#888;");
+        if(bold) st += bc === "delta-up" ? "background:#dcefe2;" : bc === "delta-down" ? "background:#f6dfdb;" : ""; }
       if(v != null && !bold && OV.best && c.kind === "val" && D.best[c.id] === v) st += "background:#e2eee7;color:#2f6e4f;font-weight:bold;";
       if(v == null) st += "color:#aaa;";
       s += "<td style='" + st + "'>" + esc(ovCellText(c, v)) + "</td>";
