@@ -85,6 +85,7 @@
     (pr.data || []).forEach(p => { P.names[p.id] = p.name; });
     (at.data || []).forEach(a => { if(a.profile_id) P.athleteProfile[a.id] = a.profile_id; });
   }
+  const progressOf = id => (P.status && window.TpStatus) ? TpStatus.planProgress(P.status, id) : [];
   const planById = id => (P.plans || []).find(p => p.id === id);
   const membersOf = id => [...new Set(P.asgAll.filter(a => a.plan_id === id).map(a => a.user_id))]
     .sort((x, y) => (P.names[x] || '').localeCompare(P.names[y] || '', 'de'));
@@ -107,6 +108,7 @@
 
   async function loadRef(){
     await loadBase();
+    if(window.TpStatus){ try { P.status = await TpStatus.loadAll(); } catch(e){ P.status = null; } }
     const ref = currentRef();
     P.ref = ref;
     if(!ref){ P.data = null; return; }
@@ -115,9 +117,10 @@
     if(P.loadingKey === key) return;
     P.loadingKey = key;
     const sb = sbc();
+    const single = ref.uid && ref.uid !== '__done';
     const [lg, vs] = await Promise.all([
-      ref.uid ? sb.from('tp_logs').select('*').eq('plan_id', ref.planId).eq('user_id', ref.uid)
-              : sb.from('tp_logs').select('*').eq('plan_id', ref.planId),
+      single ? sb.from('tp_logs').select('*').eq('plan_id', ref.planId).eq('user_id', ref.uid)
+             : sb.from('tp_logs').select('*').eq('plan_id', ref.planId),
       sb.from('tp_plan_versions').select('*').eq('plan_id', ref.planId).order('from_week'),
     ]);
     P.loadingKey = '';
@@ -139,7 +142,7 @@
     }));
     const latest = (vs.data || []).filter(v => !v.user_ids).pop() || (vs.data || []).slice(-1)[0] || null;
     P.data = { key, plan, logs, per, versions: vs.data || [], content: latest ? latest.content : null,
-      users: ref.uid ? [ref.uid] : membersOf(ref.planId) };
+      users: single ? [ref.uid] : (ref.uid === '__done' ? progressOf(ref.planId).filter(x => x.left === 0 && x.total > 0).map(x => x.uid) : membersOf(ref.planId)) };
   }
 
   // Vorschlag für eine Übung des neuen Plans
@@ -222,11 +225,16 @@
   /* ---------- Reiter „Abgeschlossener Plan“ ---------- */
   function refBarHtml(){
     const ref = P.ref;
-    const opts = P.plans.map(p => `<option value="${p.id}" ${ref && ref.planId === p.id ? 'selected' : ''}>${H(p.title || 'Ohne Titel')}${p.team ? ' · ' + H(p.team) : ''} (${new Date(p.created_at).toLocaleDateString('de-DE')})${p.archived ? ' – archiviert' : ''}</option>`).join('');
+    const finTxt = id => { const pr = progressOf(id); const f = pr.filter(x => x.left === 0 && x.total > 0).length; return pr.length ? ` · ${f}/${pr.length} fertig` : ''; };
+    const opts = P.plans.map(p => `<option value="${p.id}" ${ref && ref.planId === p.id ? 'selected' : ''}>${H(p.title || 'Ohne Titel')}${p.team ? ' · ' + H(p.team) : ''} (${new Date(p.created_at).toLocaleDateString('de-DE')})${finTxt(p.id)}${p.archived ? ' – archiviert' : ''}</option>`).join('');
     const mem = ref ? membersOf(ref.planId) : [];
+    const prog = {}; (ref ? progressOf(ref.planId) : []).forEach(x => { prog[x.uid] = x; });
+    const nFin = mem.filter(u => prog[u] && prog[u].left === 0 && prog[u].total > 0).length;
+    const st = u => { const x = prog[u]; if(!x) return ''; return x.left === 0 ? ' – ✓ fertig' : ` – noch ${x.left} von ${x.total}`; };
+    const sorted = mem.slice().sort((a, b) => ((prog[a] || {}).left || 0) - ((prog[b] || {}).left || 0) || (P.names[a] || '').localeCompare(P.names[b] || '', 'de'));
     return `<div class="tpp-tools">
       <div><label>Bezugsplan (abgeschlossen)</label><select id="tppPlan"><option value="">– wählen –</option>${opts}</select></div>
-      <div><label>Für wen</label><select id="tppWho"><option value="">Ganze Gruppe (${mem.length})</option>${mem.map(u => `<option value="${u}" ${ref && ref.uid === u ? 'selected' : ''}>${H(P.names[u] || 'Unbekannt')}</option>`).join('')}</select></div>
+      <div><label>Für wen</label><select id="tppWho"><option value="">Ganze Gruppe (${mem.length})</option>${nFin ? `<option value="__done" ${ref && ref.uid === '__done' ? 'selected' : ''}>✓ Nur fertige (${nFin})</option>` : ''}${sorted.map(u => `<option value="${u}" ${ref && ref.uid === u ? 'selected' : ''}>${H(P.names[u] || 'Unbekannt')}${st(u)}</option>`).join('')}</select></div>
       ${ref && ref.auto ? '<span class="tpp-d" style="align-self:center;">automatisch gewählt (letzter Plan der Person/Gruppe im Entwurf)</span>' : ''}
     </div>`;
   }
@@ -254,14 +262,17 @@
   function renderView(){
     const view = document.getElementById('tppView'); if(!view) return;
     if(!P.plans){ view.innerHTML = '<div class="card"><p class="hint" style="margin:0;">Lade …</p></div>'; return; }
-    let html = `<div class="card">${refBarHtml()}`;
+    // Karte „Anschlusspläne vorbereiten“ (fertig / noch 1–2 Einheiten) oben im Reiter
+    let html = '';
+    if(window.TpStatus && P.status){ try { TpStatus.css(); html += TpStatus.cardHtml(P.status); } catch(e){} }
+    html += `<div class="card">${refBarHtml()}`;
     if(!P.ref || !P.data){
       html += `<p class="hint">Noch kein Bezugsplan. Wähle oben einen abgeschlossenen Plan – oder in der Auswertung „➜ Anschlussplan“.</p></div>`;
       view.innerHTML = html; wire(); return;
     }
     const d = P.data, weeks = Array.from({ length: d.plan.weeks || 1 }, (_, i) => i + 1);
     const withData = d.users.filter(u => Object.values(d.per).some(e => e.users[u] && e.users[u].last));
-    html += `<p class="tpp-d" style="margin:10px 0;">${H(d.plan.title || 'Ohne Titel')} · ${d.plan.weeks} Wochen · ${P.ref.uid ? H(P.names[P.ref.uid] || '') : withData.length + ' von ' + d.users.length + ' Personen mit Einträgen'}. Vorschlag aus der jeweils letzten Einheit: <span class="tpp-up">↑ steigern</span> (alle Sätze am oberen Ende der Vorgabe) · <span class="tpp-same">= halten</span> · <span class="tpp-down">↓ zurücknehmen</span> (deutlich unter der Vorgabe).</p>`;
+    html += `<p class="tpp-d" style="margin:10px 0;">${H(d.plan.title || 'Ohne Titel')} · ${d.plan.weeks} Wochen · ${P.ref.uid && P.ref.uid !== '__done' ? H(P.names[P.ref.uid] || '') : (P.ref.uid === '__done' ? d.users.length + ' fertige Person(en): ' + d.users.map(u => H(P.names[u] || '')).join(', ') : withData.length + ' von ' + d.users.length + ' Personen mit Einträgen')}. Vorschlag aus der jeweils letzten Einheit: <span class="tpp-up">↑ steigern</span> (alle Sätze am oberen Ende der Vorgabe) · <span class="tpp-same">= halten</span> · <span class="tpp-down">↓ zurücknehmen</span> (deutlich unter der Vorgabe).</p>`;
     // Reihenfolge wie im Bezugsplan (Tag, Kategorie), danach übrige Übungen
     const order = [], seen = {};
     const c = d.content || {};
@@ -331,7 +342,7 @@
   }
 
   /* ---------- Anschlussplan aus der Auswertung (#folge=) ---------- */
-  async function loadFollowUp(planId, uid){
+  async function loadFollowUp(planId, uid, wer){
     await loadBase();
     const sb = sbc();
     const p = planById(planId);
@@ -345,21 +356,28 @@
       if(!ver || x.from_week > ver.from_week || (x.from_week === ver.from_week && x.user_ids && !ver.user_ids) || (x.from_week === ver.from_week && !!x.user_ids === !!ver.user_ids && x.id > ver.id)) ver = x;
     });
     ver = ver || vs[vs.length - 1];
-    const who = uid ? (P.names[uid] || 'diese Person') : '';
-    if(!confirm('Anschlussplan an „' + (p.title || 'Ohne Titel') + '“' + (uid ? ' für ' + who : '') + ' erstellen?\n\nDie Übungen werden als Vorlage geladen (der aktuell geöffnete Entwurf wird ersetzt). Unter jeder Übung steht dann der Steigerungsvorschlag aus dem abgeschlossenen Plan.')) return;
+    if(window.TpStatus){ try { P.status = await TpStatus.loadAll(); } catch(e){} }
+    const fertig = wer === 'fertig' ? progressOf(planId).filter(x => x.left === 0 && x.total > 0) : [];
+    const who = uid ? (P.names[uid] || 'diese Person') : (fertig.length ? 'die ' + fertig.length + ' Fertigen (' + fertig.map(x => x.name).join(', ') + ')' : '');
+    if(!confirm('Anschlussplan an „' + (p.title || 'Ohne Titel') + '“' + (who ? ' für ' + who : '') + ' erstellen?\n\nDie Übungen werden als Vorlage geladen (der aktuell geöffnete Entwurf wird ersetzt). Unter jeder Übung steht dann der Steigerungsvorschlag aus dem abgeschlossenen Plan.')) return;
     const c = ver.content || {};
     let start = '';
-    if(p.start_date){ const dt = new Date(p.start_date + 'T00:00:00'); dt.setDate(dt.getDate() + 7 * (p.weeks || 4)); start = dt.toISOString().slice(0, 10); }
+    if(p.start_date){ const dt = new Date(p.start_date + 'T00:00:00'); dt.setDate(dt.getDate() + 7 * (p.weeks || 4)); start = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0'); }
+    if(!start || (window.TpStatus && start < TpStatus.todayIso())) start = window.TpStatus ? TpStatus.todayIso() : start;
     const base = /\(Folgeplan\)$/.test(p.title || '') ? p.title : (p.title || 'Plan') + ' (Folgeplan)';
     state = Object.assign(defaultState(), JSON.parse(JSON.stringify({ plan: c.plan || {}, prescription: c.prescription, cooldown: c.cooldown || {},
       prepNote: c.prepNote || {}, lang: c.lang || 'de', days: parseInt(c.days, 10) || p.days || 3, weeks: p.weeks || 4, title: base,
       team: p.team || c.team || '', layout: c.layout || (typeof LAYOUTS !== 'undefined' ? LAYOUTS[0].key : ''), start, rotate: c.rotate != null ? !!c.rotate : !!p.rotate })));
     if(!state.prescription && typeof DEFAULT_PRESCRIPTION !== 'undefined') state.prescription = JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION));
     state.publishedPlanId = ''; state.editingFromApp = false; state.editTargetUid = ''; state.editTargetName = '';
-    state.progRef = { planId, uid: uid || '' };
+    state.progRef = { planId, uid: uid || (fertig.length ? '__done' : '') };
+    state.startAfterPrev = true;   // Anschluss: startet spätestens am Startdatum, früher sobald der laufende Plan erledigt ist
     state.athleteIdx = '';
-    if(uid){ const aid = Object.keys(P.athleteProfile).find(a => P.athleteProfile[a] === uid); if(aid){ state.athleteIdx = aid; state.pickAthletes = [aid]; } }
-    else state.pickAthletes = [];
+    const aidOf = u => Object.keys(P.athleteProfile).find(a => P.athleteProfile[a] === u);
+    if(uid){ const aid = aidOf(uid); if(aid){ state.athleteIdx = aid; state.pickAthletes = [aid]; } }
+    else state.pickAthletes = fertig.map(x => aidOf(x.uid)).filter(Boolean);
+    // BM-App: Empfänger:innen im Veröffentlichen-Dialog (Zugangs-IDs) vorauswählen
+    state.appTargets = { title: state.title, ids: uid ? [uid] : fertig.map(x => x.uid) };
     if(typeof ensurePrescription === 'function') ensurePrescription();
     state.activeDay = 1;
     for(let d = 1; d <= state.days; d++) ensureDayStructure(d);
@@ -369,6 +387,7 @@
     if(typeof renderTabs === 'function') renderTabs();
     if(typeof tpEditBanner === 'function') tpEditBanner();
     if(typeof tpStep4Render === 'function') tpStep4Render();
+    if(typeof renderAppTargets === 'function') renderAppTargets();
     P.data = null;
     await refresh();
     if(typeof toast === 'function') toast('Anschlussplan geladen – Vorschläge stehen unter den Übungen, Ergebnisse im Reiter „📊 Abgeschlossener Plan“');
@@ -405,7 +424,9 @@
       .tpp-hint button{ padding:2px 8px; font-size:11.5px; margin-left:4px; }
       .tpp-det{ display:inline-block; margin-left:6px; } .tpp-det summary{ cursor:pointer; color:var(--muted, #667); font-size:12px; }
       .tpp-det div{ font-size:12px; padding:2px 0; }
-      .tpp-sug{ min-width:200px; }`;
+      .tpp-sug{ min-width:200px; }
+      .tpp-sched{ margin:6px 0 4px; font-size:13px; } .tpp-sched label{ display:flex; gap:6px; align-items:center; font-weight:500; text-transform:none; letter-spacing:0; }
+      .tpp-sched #tppSchedInfo{ margin-top:3px; }`;
     document.head.appendChild(st);
     let bar = document.querySelector('.tpv-bar');
     if(bar){
@@ -428,14 +449,44 @@
     const orig = renderPanels;
     renderPanels = function(){ orig.apply(this, arguments); try { decorate(); } catch(e){ console.warn(e); } };
 
-    const m = location.hash.match(/^#folge=([0-9a-f-]{36})(?:&uid=([0-9a-f-]{36}))?$/i);
-    if(m){ history.replaceState(null, '', location.pathname + location.search); await loadFollowUp(m[1], m[2] || ''); return; }
+    schedUi();
+    const m = location.hash.match(/^#folge=([0-9a-f-]{36})(?:&uid=([0-9a-f-]{36}))?(?:&wer=(fertig))?$/i);
+    if(m){ history.replaceState(null, '', location.pathname + location.search); await loadFollowUp(m[1], m[2] || '', m[3] || ''); schedSync(); return; }
     await refresh();
   }
+  /* ---------- Terminieren: Startdatum in der Zukunft + „früher starten“ ---------- */
+  function schedUi(){
+    const inp = document.getElementById('cfgStart'); if(!inp || document.getElementById('tppSched')) return;
+    const box = document.createElement('div');
+    box.id = 'tppSched'; box.className = 'tpp-sched';
+    box.innerHTML = `<label><input type="checkbox" id="tppAfter"> erst nach Abschluss des laufenden Plans starten</label><div id="tppSchedInfo" class="tpp-d"></div>`;
+    inp.parentNode.appendChild(box);
+    box.querySelector('#tppAfter').addEventListener('change', e => { state.startAfterPrev = e.target.checked; saveState(true); schedSync(); });
+    inp.addEventListener('change', () => setTimeout(schedSync, 0));
+    inp.addEventListener('input', () => setTimeout(schedSync, 0));
+    if(typeof syncConfigInputs === 'function'){ const o = syncConfigInputs; syncConfigInputs = function(){ const r = o.apply(this, arguments); schedSync(); return r; }; }
+    schedSync();
+  }
+  function schedSync(){
+    const cb = document.getElementById('tppAfter'), info = document.getElementById('tppSchedInfo'); if(!cb || !info) return;
+    cb.checked = !!state.startAfterPrev;
+    const fut = window.TpStatus && TpStatus.isFuture(state.start);
+    info.innerHTML = state.startAfterPrev
+      ? `⏭ Wer noch einen laufenden Plan hat, macht ihn zuerst fertig und bekommt diesen Plan direkt danach${fut ? ` – spätestens am ${TpStatus.deDate(state.start)}` : ''}. Wer schon fertig ist, bekommt ihn sofort.`
+      : (fut ? `📅 <b>Terminiert:</b> Wer schon einen Plan hat, behält ihn bis ${TpStatus.deDate(state.start)}; danach gilt dieser Plan automatisch.` : '');
+  }
+
   // Bezug neu bestimmen, wenn Person/Gruppe im Entwurf wechselt (nur automatischer Bezug)
   document.addEventListener('change', ev => {
     const id = ev.target && ev.target.id;
     if((id === 'cfgAthlete' || id === 'cfgTeam') && !(state.progRef && state.progRef.planId)){ P.data = null; setTimeout(refresh, 50); }
+  });
+  // Links „➜ Anschlussplan“ auf derselben Seite (nur der #-Teil ändert sich) direkt ausführen
+  window.addEventListener('hashchange', async () => {
+    const m = location.hash.match(/^#folge=([0-9a-f-]{36})(?:&uid=([0-9a-f-]{36}))?(?:&wer=(fertig))?$/i);
+    if(!m) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    await loadFollowUp(m[1], m[2] || '', m[3] || ''); schedSync(); show(false);
   });
   window.TpProgression = { judge, refresh, show };
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

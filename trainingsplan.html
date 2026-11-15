@@ -2532,7 +2532,7 @@ async function openPublishDialog(){
     }
     if(p && normT(p.title) !== normT(state.title) && !confirm('Achtung: Der geöffnete Plan „' + (state.title || 'ohne Titel') + '“ wird in den laufenden Plan „' + (p.title || 'Ohne Titel') + '“ geschrieben.\n\nWirklich den bestehenden Plan ändern? (Abbrechen → oben „Als neuen Plan veröffentlichen“ wählen)')) return;
     const content = JSON.parse(JSON.stringify({ plan: state.plan, prescription: state.prescription, cooldown: state.cooldown,
-      prepNote: state.prepNote, lang: state.lang, days: state.days, weeks: state.weeks, title: state.title, team: state.team, layout: state.layout }));
+      prepNote: state.prepNote, lang: state.lang, days: state.days, weeks: state.weeks, title: state.title, team: state.team, layout: state.layout, startAfterPrev: !!state.startAfterPrev }));
     const btn = box.querySelector('#pubGo'); btn.disabled = true; btn.textContent = 'Veröffentliche …';
     try{
       const { data: { user } } = await sb.auth.getUser();
@@ -2554,7 +2554,7 @@ async function openPublishDialog(){
       const v = await sb.from('tp_plan_versions').insert({ plan_id: planId, from_week: fromWeek, content, user_ids: userIds });
       if(v.error) throw v.error;
       for(const uid of ids){
-        await sb.from('tp_assignments').update({ active: false }).eq('user_id', uid).neq('plan_id', planId);
+        if(!(window.TpStatus && (TpStatus.isFuture(state.start) || state.startAfterPrev))) await sb.from('tp_assignments').update({ active: false }).eq('user_id', uid).neq('plan_id', planId);   // Start in der Zukunft: laufender Plan bleibt bis dahin
         const a = await sb.from('tp_assignments').upsert({ plan_id: planId, user_id: uid, active: true }, { onConflict: 'plan_id,user_id' });
         if(a.error) throw a.error;
       }
@@ -3006,7 +3006,8 @@ if(window.__tpSeedInfo){
 <script src="athlete-picker.js?v=20260924f"></script>
 <script src="app-rail.js?v=20260929c"></script>
 <script src="idle-logout.js?v=20260926a"></script>
-<script src="tp_progression.js?v=20261115a"></script>
+<script src="tp_status.js?v=20261115b"></script>
+<script src="tp_progression.js?v=20261115b"></script>
 <script>
 /* Trainings-App: Anbindung Athletenverwaltung */
 (function(){

@@ -98,7 +98,9 @@ async function tpLoadMine() {
   const { data: { user } } = await sb.auth.getUser();
   const { data: asg, error } = await sb.from('tp_assignments').select('plan_id, active, assigned_at').eq('user_id', user.id).order('assigned_at', { ascending: false });
   if (error) throw error;
-  const act = (asg || []).find(a => a.active);
+  let act = (asg || []).find(a => a.active), queued = [];
+  // terminierte Pläne (Start in der Zukunft) – gilt erst ab dem Startdatum bzw. nach Abschluss des laufenden Plans
+  if (window.TpStatus) { try { const r = await TpStatus.currentFor(user.id, asg); act = r.current; queued = r.queued || []; } catch (e) { console.warn(e); } }
   const pastIds = [...new Set((asg || []).filter(a => !a.active && (!act || a.plan_id !== act.plan_id)).map(a => a.plan_id))];
   if (!act) return { user, plan: null, pastIds };
   const [pRes, vRes, lRes] = await Promise.all([
@@ -114,7 +116,7 @@ async function tpLoadMine() {
     const k = tpExerciseKey(ex);
     if (!last[k] && (ex.sets || []).some(s => s.done)) last[k] = ex.sets.filter(s => s.done);
   }));
-  return { user, plan: pRes.data, versions: vRes.data || [], logs: lRes.data || [], last, pastIds };
+  return { user, plan: pRes.data, versions: vRes.data || [], logs: lRes.data || [], last, pastIds, queued };
 }
 
 // ---------- Frühere Pläne (nur ansehen) ----------
@@ -216,7 +218,7 @@ async function renderMyPlan(profile) {
       <div class="mp-big">Woche ${next.w} &middot; Tag ${next.d}</div>
       <div class="muted-inline">${esc(P.title || 'Trainingsplan')}${P.team ? ' &middot; ' + esc(P.team) : ''}</div></div>
       <button type="button" id="mpStart">${canEdit ? 'Training starten' : 'Ansehen'} &rarr;</button>
-    </div>` : `<div class="card"><h2>&#127881; Alle Einheiten erledigt</h2><p class="muted">Stark! Dein Trainer stellt den n&auml;chsten Block ein.</p></div>`}
+    </div>` : `<div class="card"><h2>&#127881; Alle Einheiten erledigt</h2><p class="muted">${D.queued && D.queued.length ? `Stark! Dein n&auml;chster Plan &bdquo;${esc(D.queued[0].plan.title || 'Trainingsplan')}&ldquo; startet ${D.queued[0].afterPrev ? 'gleich' : 'am ' + wDate(D.queued[0].plan.start_date)}.` : 'Stark! Dein Trainer stellt den n&auml;chsten Block ein.'}</p></div>`}
     <div class="card">
       <h2>${esc(P.title || 'Trainingsplan')}</h2>
       <p class="hint" style="margin-top:0;">${P.weeks} Wochen &middot; ${P.days} Einheiten pro Woche${P.start_date ? ' &middot; ab ' + wDate(P.start_date) : ''}. Tippe auf eine Einheit zum &Ouml;ffnen.</p>
