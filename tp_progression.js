@@ -426,7 +426,8 @@
       .tpp-det div{ font-size:12px; padding:2px 0; }
       .tpp-sug{ min-width:200px; }
       .tpp-sched{ margin:6px 0 4px; font-size:13px; } .tpp-sched label{ display:flex; gap:6px; align-items:center; font-weight:500; text-transform:none; letter-spacing:0; }
-      .tpp-sched #tppSchedInfo{ margin-top:3px; }`;
+      .tpp-sched #tppSchedInfo{ margin-top:3px; }
+      .tpp-sched2{ margin:4px 0 12px; padding:10px 12px; border:1px solid var(--border, #d7dcda); border-radius:10px; background:#f6fbf7; }`;
     document.head.appendChild(st);
     let bar = document.querySelector('.tpv-bar');
     if(bar){
@@ -464,16 +465,32 @@
     box.querySelector('#tppAfter').addEventListener('change', e => { state.startAfterPrev = e.target.checked; saveState(true); schedSync(); });
     inp.addEventListener('change', () => setTimeout(schedSync, 0));
     inp.addEventListener('input', () => setTimeout(schedSync, 0));
+    // zweites Häkchen direkt über dem Veröffentlichen-Knopf (Schritt 4), damit es nicht übersehen wird
+    const mirror = () => {
+      const go = document.getElementById('btnPublishApp');
+      if(!go || document.getElementById('tppSched2')) return;
+      const b2 = document.createElement('div');
+      b2.id = 'tppSched2'; b2.className = 'tpp-sched tpp-sched2';
+      b2.innerHTML = `<label><input type="checkbox" id="tppAfter2"> <b>erst nach Abschluss des laufenden Plans starten</b></label><div id="tppSchedInfo2" class="tpp-d"></div>`;
+      const host = go.parentNode;
+      host.parentNode.insertBefore(b2, host);
+      b2.querySelector('#tppAfter2').addEventListener('change', e => { state.startAfterPrev = e.target.checked; saveState(true); schedSync(); });
+      schedSync();
+    };
+    mirror(); setTimeout(mirror, 1500); setTimeout(mirror, 4000);
     if(typeof syncConfigInputs === 'function'){ const o = syncConfigInputs; syncConfigInputs = function(){ const r = o.apply(this, arguments); schedSync(); return r; }; }
     schedSync();
   }
   function schedSync(){
     const cb = document.getElementById('tppAfter'), info = document.getElementById('tppSchedInfo'); if(!cb || !info) return;
     cb.checked = !!state.startAfterPrev;
+    const cb2 = document.getElementById('tppAfter2'), info2 = document.getElementById('tppSchedInfo2');
+    if(cb2) cb2.checked = !!state.startAfterPrev;
     const fut = window.TpStatus && TpStatus.isFuture(state.start);
     info.innerHTML = state.startAfterPrev
       ? `⏭ Wer noch einen laufenden Plan hat, macht ihn zuerst fertig und bekommt diesen Plan direkt danach${fut ? ` – spätestens am ${TpStatus.deDate(state.start)}` : ''}. Wer schon fertig ist, bekommt ihn sofort.`
       : (fut ? `📅 <b>Terminiert:</b> Wer schon einen Plan hat, behält ihn bis ${TpStatus.deDate(state.start)}; danach gilt dieser Plan automatisch.` : '');
+    if(info2) info2.innerHTML = info.innerHTML || 'Nicht angehakt: Wer noch einen laufenden Plan hat, wechselt beim Veröffentlichen sofort.';
   }
 
   // Bezug neu bestimmen, wenn Person/Gruppe im Entwurf wechselt (nur automatischer Bezug)
