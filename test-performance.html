@@ -521,6 +521,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         <span><b style="color:#b0281c;">Rot</b> = Verschlechterung</span>
         <span>Δ = Veränderung vom ersten zum letzten vorhandenen Wert der Spielerin · Δ % = Leistungsveränderung (+ = besser, bei Zeiten also schneller) · — = nicht teilgenommen · Spaltenkopf antippen = sortieren</span>
       </div>
+      <div id="ovRefs"></div>
     </div>
   </div>
 
@@ -2132,6 +2133,16 @@ async function ovExportExcel(){
   if(OV.avg){ put(r, { name:"Teamschnitt (Ø)", v:D.avg }, true); for(var i = 1; i <= n; i++) ws.getCell(r, i).fill = fill("FFEFF2F5"); r++; }
   ws.getCell(r + 1, 1).value = "Grün = Verbesserung bzw. Bestwert des Testtags · Rot = Verschlechterung · Δ = Veränderung vom ersten zum letzten vorhandenen Wert · Δ % = Leistungsveränderung (+ = besser, bei Zeiten schneller) · — = nicht teilgenommen";
   ws.getCell(r + 1, 1).font = { size:8, color:{ argb:"FF888888" } };
+  r += 3;
+  var noteEnd = Math.max(8, n);
+  ws.mergeCells(r, 1, r, noteEnd); ws.getCell(r, 1).value = "Referenzen & Ampel-Legende"; ws.getCell(r, 1).font = { bold:true, size:9, color:{ argb:argb(L.dark) } }; r++;
+  REFERENCE_NOTES.forEach(function(line){
+    ws.mergeCells(r, 1, r, noteEnd);
+    var nc = ws.getCell(r, 1); nc.value = line; nc.font = { size:8, color:{ argb:"FF6B7680" } };
+    nc.alignment = { wrapText:true, vertical:"top", horizontal:"left" };
+    ws.getRow(r).height = Math.max(14, Math.ceil(line.length / 140) * 12 + 4);
+    r++;
+  });
   ws.views = [{ state:"frozen", xSplit:1, ySplit:sr }];
   ws.pageSetup = { orientation:"landscape", fitToPage:true, fitToWidth:1, fitToHeight:0, paperSize:9 };
   var buffer = await wb.xlsx.writeBuffer();
@@ -2164,7 +2175,8 @@ function ovExportWord(){
   };
   D.rows.forEach(function(p){ html += row(p.nachname + ", " + p.vorname, p.vals); });
   if(OV.avg) html += row("Teamschnitt (Ø)", D.avg, true);
-  html += "</tbody></table><p style='font-size:7pt;color:#888;margin-top:6px;'>Grün = Verbesserung bzw. Bestwert des Testtags · Rot = Verschlechterung · Δ = Veränderung vom ersten zum letzten vorhandenen Wert · Δ % = Leistungsveränderung (+ = besser, bei Zeiten schneller) · — = nicht teilgenommen</p></div></body></html>";
+  html += "</tbody></table><p style='font-size:7pt;color:#888;margin-top:6px;'>Grün = Verbesserung bzw. Bestwert des Testtags · Rot = Verschlechterung · Δ = Veränderung vom ersten zum letzten vorhandenen Wert · Δ % = Leistungsveränderung (+ = besser, bei Zeiten schneller) · — = nicht teilgenommen</p>" +
+    "<p style='margin-top:8px;font-size:7.5pt;color:#888;'><b>Referenzen &amp; Ampel-Legende</b><br>" + REFERENCE_NOTES.map(function(x){ return esc(x); }).join("<br>") + "</p></div></body></html>";
   var a2 = document.createElement("a");
   a2.href = URL.createObjectURL(new Blob(["﻿" + html], { type:"application/msword" }));
   a2.download = "Performance_Gesamtuebersicht_" + new Date().toISOString().slice(0, 10) + ".doc";
@@ -2177,6 +2189,20 @@ document.getElementById("ovPrintBtn").addEventListener("click", function(){
   setTimeout(function(){ window.print(); setTimeout(function(){ document.body.classList.remove("print-ov"); }, 500); }, 50);
 });
 
+
+// Ampel-Legenden & Referenzen auch unter der Gesamtübersicht (Kopie der Legende aus dem Protokoll)
+(function(){
+  var src = document.querySelector(".pt-refs"), box = document.getElementById("ovRefs");
+  if(!src || !box) return;
+  var d = src.cloneNode(true); d.open = false;
+  var mob = document.createElement("div"); mob.className = "ffmi-legend";
+  mob.innerHTML = "<b style='color:var(--ink);'>Mobility-Ampel (BWS-Rotation, Overhead Squat, Toe-Touch)</b>" +
+    "<span class='ffmi-chip'><span class='ffmi-dot' style='background:#2f6e4f;'></span>G = unauffällig</span>" +
+    "<span class='ffmi-chip'><span class='ffmi-dot' style='background:#f0b429;'></span>Y = leichte Einschränkung</span>" +
+    "<span class='ffmi-chip'><span class='ffmi-dot' style='background:#a63a2c;'></span>R = deutliche Einschränkung/Schmerz</span>";
+  d.insertBefore(mob, d.querySelector(".ffmi-legend"));
+  box.appendChild(d);
+})();
 
 // Legenden beim Drucken/PDF automatisch aufklappen, danach wieder einklappen
 window.addEventListener("beforeprint", function(){ document.querySelectorAll(".pt-refs").forEach(function(d){ d.dataset.wasOpen = d.open ? "1" : ""; d.open = true; }); });
