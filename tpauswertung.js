@@ -117,6 +117,7 @@ async function renderTpEval(profile) {
         ${TP_EVAL_USER ? `<button type="button" id="tpUserOpen">&#128202; &Uuml;bersicht ${esc(names[TP_EVAL_USER] || '')} &ouml;ffnen</button>` : ''}
         <span class="spacer"></span>
         <button type="button" class="secondary" id="tpEdit">&#9998; Plan bearbeiten</button>
+        <button type="button" id="tpFolge" title="Neuen Plan auf Basis dieses Plans – mit Steigerungsvorschlag je &Uuml;bung">&#10140; Anschlussplan${TP_EVAL_USER ? ' f&uuml;r ' + esc(names[TP_EVAL_USER] || '') : ''}</button>
         <button type="button" class="secondary" id="tpArchive">Plan archivieren</button>
       </div>
       <div class="tablewrap"><table class="tp-table">
@@ -132,6 +133,7 @@ async function renderTpEval(profile) {
   if (uo) uo.onclick = () => renderTpAthlete(profile, plan, TP_EVAL_USER, names[TP_EVAL_USER] || '');
   document.getElementById('tpPlanSel').onchange = (e) => { TP_EVAL_PLAN = e.target.value; renderTpEval(profile); };
   document.getElementById('tpEdit').onclick = () => { window.location.href = 'trainingsplan.html#edit=' + plan.id; };
+  document.getElementById('tpFolge').onclick = () => { window.location.href = 'trainingsplan.html#folge=' + plan.id + (TP_EVAL_USER ? '&uid=' + TP_EVAL_USER : ''); };
   document.getElementById('tpArchive').onclick = async () => {
     if (!confirm('Plan „' + (plan.title || '') + '“ archivieren? Er verschwindet aus dieser Liste; Einträge bleiben für Block-Vergleiche erhalten.')) return;
     await sb.from('tp_plans').update({ archived: true }).eq('id', plan.id);
@@ -258,6 +260,7 @@ async function renderTpAthlete(profile, plan, uid, name, weekSel) {
       <div class="ath-toolbar" style="margin-bottom:10px;">
         <h2 style="margin:0;">Wochen&uuml;bersicht &mdash; S&auml;tze, Wiederholungen &amp; Gewicht</h2>
         <span class="spacer"></span>
+        <button type="button" id="tpFolgeOne" title="Neuen Plan auf Basis dieses Plans erstellen – mit Steigerungsvorschlag je &Uuml;bung">&#10140; Anschlussplan f&uuml;r ${esc(name || 'diese Person')}</button>
         <select id="tpWeekSel">${weeks.map(w => `<option value="${w}" ${w === week ? 'selected' : ''}>Woche ${w}${weeksWithLogs.includes(w) ? '' : ' (leer)'}</option>`).join('')}</select>
       </div>
       ${tpWeekView(plan, logs, week)}
@@ -282,6 +285,7 @@ async function renderTpAthlete(profile, plan, uid, name, weekSel) {
   renderShell(profile, 'trainingsplan', name, content, back);
   appEl.querySelectorAll('tr[data-cds]').forEach(r => { r.onclick = () => renderCdAthleteDetail(profile, CD.sessions.find(s => s.id === r.dataset.cds), uid, name, CD, { label: name, go: () => renderTpAthlete(profile, plan, uid, name, weekSel) }); });
   document.getElementById('tpWeekSel').onchange = (e) => renderTpAthlete(profile, plan, uid, name, +e.target.value);
+  document.getElementById('tpFolgeOne').onclick = () => { window.location.href = 'trainingsplan.html#folge=' + plan.id + '&uid=' + uid; };
   appEl.querySelectorAll('tr.tp-row[data-w]').forEach(r => { r.onclick = () => { renderTpAthlete(profile, plan, uid, name, +r.dataset.w); window.scrollTo(0, 0); }; });
 }
 
