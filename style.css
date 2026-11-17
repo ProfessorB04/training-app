@@ -769,3 +769,19 @@ td.lm-man sup{ font-size:.65em; margin-left:2px; }
 .invite-sd legend { font-size: .8rem; color: #5a6072; padding: 0 4px; }
 .invite-sd label { flex: 1 1 140px; }
 .sd-info { font-size: .8rem; color: #5a6072; margin-bottom: 4px; }
+
+/* 2026-11-17: Athletenverwaltung – Vor/Zurück + Schnellsuche im Bearbeiten-Dialog (wie NRW 1.0.9) */
+.ath-nav{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; margin:-4px 0 14px; padding-bottom:12px; border-bottom:1px solid var(--line); }
+.ath-nav button{ max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ath-nav-pos{ color:var(--ink-soft); font-size:.85rem; min-width:56px; text-align:center; }
+.ath-search-wrap{ position:relative; }
+.ath-nav-search{ flex:1 1 200px; max-width:280px; margin-left:auto; }
+.ath-search-wrap input[type=search]{ width:100%; box-sizing:border-box; }
+.ath-suggest{ position:absolute; z-index:70; left:0; right:0; top:calc(100% + 4px); margin:0; padding:4px; list-style:none; background:#fff;
+  border:1px solid var(--line); border-radius:10px; box-shadow:0 12px 30px rgba(0,17,61,.16); max-height:300px; overflow-y:auto; }
+.ath-suggest[hidden]{ display:none; }
+.ath-suggest li{ padding:9px 10px; border-radius:7px; cursor:pointer; display:flex; gap:8px; align-items:baseline; font-size:.92rem; }
+.ath-suggest li .sc{ margin-left:auto; color:var(--ink-soft); font-size:.8rem; white-space:nowrap; }
+.ath-suggest li:hover, .ath-suggest li.on{ background:var(--brand-pale); }
+.ath-suggest li.more{ cursor:default; color:var(--ink-soft); font-size:.8rem; }
+@media (max-width:640px){ .ath-nav-search{ max-width:none; margin-left:0; } .ath-nav button{ max-width:42vw; } }

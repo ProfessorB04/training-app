@@ -74,6 +74,8 @@ async function renderAthletesPage(profile, reuse) {
     if (vx !== null) c = (typeof vx === 'number' ? vx - vy : String(vx).localeCompare(String(vy), 'de')) * st.sort.dir;
     return c || x.last_name.localeCompare(y.last_name, 'de') || x.first_name.localeCompare(y.first_name, 'de');
   });
+  // Reihenfolge für „‹ Vorherige / Nächste ›“ im Bearbeiten-Dialog (gefiltert + sortiert wie die Tabelle)
+  st.navIds = list.map(a => a.id);
   // Auswahl auf sichtbare Personen begrenzen
   const visibleIds = new Set(list.map(a => a.id));
   [...st.selected].forEach(id => { if (!visibleIds.has(id)) st.selected.delete(id); });
@@ -235,12 +237,32 @@ async function renderAthletesPage(profile, reuse) {
 }
 
 // ---------- Dialog: Athlet:in bearbeiten ----------
+// Suche: alle Wörter der Eingabe müssen im Vor- oder Nachnamen vorkommen (groß/klein egal)
+function athNameHit(a, q) {
+  const hay = `${a.first_name || ''} ${a.last_name || ''}`.toLowerCase();
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.includes(w));
+}
+
 function openAthleteDialog(a, groups, done) {
   const box = document.getElementById('athModal');
+  // Vor/Zurück in der Reihenfolge der (gefilterten, sortierten) Tabelle – sonst alle nach Nachname
+  const all = (ATH_STATE.cache && ATH_STATE.cache.athletes) || [];
+  let nav = (ATH_STATE.navIds || []).filter(x => all.some(y => y.id === x));
+  if (a.id && !nav.includes(a.id)) nav = all.slice().sort((x, y) => x.last_name.localeCompare(y.last_name, 'de') || x.first_name.localeCompare(y.first_name, 'de')).map(x => x.id);
+  const navPos = a.id ? nav.indexOf(a.id) : -1;
+  const prevId = navPos > 0 ? nav[navPos - 1] : null, nextId = navPos >= 0 ? nav[navPos + 1] || null : null;
+  const nameOf = x => { const y = all.find(z => z.id === x); return y ? `${y.first_name} ${y.last_name}` : ''; };
+  const navHtml = a.id && navPos >= 0 ? `
+        <div class="ath-nav">
+          <button type="button" class="secondary small-btn" id="apPrev" ${prevId ? '' : 'disabled'} title="${esc(prevId ? nameOf(prevId) : '')} (Taste ←)">&lsaquo; ${esc(prevId ? nameOf(prevId) : 'Vorherige')}</button>
+          <span class="ath-nav-pos">${navPos + 1} / ${nav.length}</span>
+          <button type="button" class="secondary small-btn" id="apNext" ${nextId ? '' : 'disabled'} title="${esc(nextId ? nameOf(nextId) : '')} (Taste →)">${esc(nextId ? nameOf(nextId) : 'Nächste')} &rsaquo;</button>
+          <div class="ath-search-wrap ath-nav-search"><input type="search" id="apFind" placeholder="Andere Person suchen …" autocomplete="off"><ul id="apFindSug" class="ath-suggest" hidden></ul></div>
+        </div>` : '';
   box.innerHTML = `
     <div class="modal-scrim">
       <div class="modal">
-        <h2>${a.id ? 'Athlet:in bearbeiten' : 'Neue Athlet:in'}</h2>
+        <h2>${a.id ? 'Athlet:in bearbeiten' : 'Neue Athlet:in'}</h2>${navHtml}
         <form id="athForm" class="modal-form">
           <label>Vorname<input type="text" id="fFirst" value="${esc(a.first_name)}" required></label>
           <label>Nachname<input type="text" id="fLast" value="${esc(a.last_name)}" required></label>
@@ -271,12 +293,56 @@ function openAthleteDialog(a, groups, done) {
             <span class="spacer"></span>
             <button type="button" class="secondary" id="fCancel">Abbrechen</button>
             <button type="submit">Speichern</button>
+            ${nextId ? '<button type="button" id="fSaveNext" title="Speichern und die nächste Person öffnen">Speichern &amp; weiter &rsaquo;</button>' : ''}
           </div>
         </form>
       </div>
     </div>`;
-  const close = () => { box.innerHTML = ''; };
+  const unkey = () => { if (window.__athNavKey) { document.removeEventListener('keydown', window.__athNavKey); window.__athNavKey = null; } };
+  const close = () => { unkey(); box.innerHTML = ''; };
   document.getElementById('fCancel').onclick = close;
+  const form = document.getElementById('athForm');
+  let dirty = false, target = null;   // target = Person, die nach dem Speichern geöffnet wird
+  form.addEventListener('input', () => { dirty = true; }); form.addEventListener('change', () => { dirty = true; });
+  const openId = (x) => { const y = ((ATH_STATE.cache && ATH_STATE.cache.athletes) || []).find(z => z.id === x); if (y) openAthleteDialog(y, (ATH_STATE.cache && ATH_STATE.cache.groups) || groups, done); };
+  const go = (x) => {
+    if (!x) return;
+    if (dirty && confirm(`Änderungen an ${a.first_name} ${a.last_name} noch nicht gespeichert.\n\nOK = speichern und weiter · Abbrechen = ohne Speichern weiter`)) {
+      target = x; form.requestSubmit(); return;
+    }
+    openId(x);
+  };
+  unkey();
+  if (navHtml) {
+    document.getElementById('apPrev').onclick = () => go(prevId);
+    document.getElementById('apNext').onclick = () => go(nextId);
+    const sn = document.getElementById('fSaveNext');
+    if (sn) sn.onclick = () => { target = nextId; form.requestSubmit(); };
+    window.__athNavKey = (e) => {
+      const t = e.target;
+      if (!document.getElementById('apNext') || (t && t.closest && t.closest('input, textarea, select, [contenteditable]')) || e.altKey || e.metaKey || e.ctrlKey) return;
+      if (e.key === 'ArrowRight') { e.preventDefault(); go(nextId); } else if (e.key === 'ArrowLeft') { e.preventDefault(); go(prevId); }
+    };
+    document.addEventListener('keydown', window.__athNavKey);
+    // Schnellsuche: andere Person direkt öffnen
+    const fi = document.getElementById('apFind'), fs = document.getElementById('apFindSug');
+    let fIdx = -1;
+    fi.oninput = () => {
+      const q = fi.value.trim();
+      if (!q) { fs.hidden = true; return; }
+      const hits = all.filter(x => athNameHit(x, q)).sort((x, y) => x.last_name.localeCompare(y.last_name, 'de')).slice(0, 12);
+      fIdx = -1;
+      fs.innerHTML = hits.length ? hits.map(x => `<li data-sid="${x.id}"><span class="sn"><b>${esc(x.last_name)}</b>, ${esc(x.first_name)}</span><span class="sc">${esc(x.position || '')}</span></li>`).join('') : '<li class="more">Keine Treffer</li>';
+      fs.hidden = false;
+    };
+    fi.onkeydown = (e) => {
+      const items = [...fs.querySelectorAll('li[data-sid]')];
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { if (!items.length) return; e.preventDefault(); fIdx = (fIdx + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length; items.forEach((li, i) => li.classList.toggle('on', i === fIdx)); }
+      else if (e.key === 'Enter') { e.preventDefault(); const li = items[fIdx >= 0 ? fIdx : 0]; if (li) go(li.dataset.sid); }
+      else if (e.key === 'Escape') { e.stopPropagation(); fs.hidden = true; }
+    };
+    fs.onmousedown = (e) => { const li = e.target.closest('li[data-sid]'); if (li) { e.preventDefault(); go(li.dataset.sid); } };
+  }
   box.querySelector('.modal-scrim').onclick = (e) => { if (e.target.classList.contains('modal-scrim')) close(); };
 
   document.getElementById('athForm').onsubmit = async (e) => {
@@ -313,7 +379,9 @@ function openAthleteDialog(a, groups, done) {
       if (error) { toast('Fehler Gruppen: ' + error.message); return; }
     }
     toast('Gespeichert.');
-    close(); done();
+    close();
+    const next = target; target = null; dirty = false;
+    Promise.resolve(done()).then(() => { if (next) openId(next); });
   };
   const del = document.getElementById('fDelete');
   if (del) del.onclick = async () => {

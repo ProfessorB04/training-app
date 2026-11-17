@@ -388,6 +388,7 @@ function renderMySession(profile, D, week, day) {
       ${canEdit ? `<div class="mp-exbtns">
         <button type="button" class="secondary small-btn" data-i="${i}" data-f="allplan">Leere S&auml;tze wie Satz 1</button>
         <button type="button" class="secondary small-btn" data-i="${i}" data-f="addset">+ Satz</button>
+        ${typeof mpTimerBtn === 'function' ? mpTimerBtn(ex, i) : ''}
       </div>` : ''}`;
     }
     const lastSets = D.last[tpExerciseKey(ex)];
@@ -471,6 +472,20 @@ function renderMySession(profile, D, week, day) {
         el.oninput = () => { ex.athleteNote = el.value; persistSoon(); };
       } else if (f === 'checkdone') {
         el.onchange = () => { ex.status = el.checked ? 'done' : 'open'; persistSoon(); };
+      } else if (f === 'timer') {
+        // Stoppuhr für Zeit-Übungen (mp_timer.js): trägt die gehaltene Zeit in den nächsten offenen Satz ein
+        el.onclick = () => mpTimer({
+          name: ex.status === 'swapped' && ex.swappedTo ? ex.swappedTo : tpLabel(ex),
+          target: mpTimeTarget(ex),
+          setCount: () => ex.sets.length,
+          nextSet: () => ex.sets.findIndex(s => !s.done && !(parseFloat(s.reps) > 0)),
+          save: (j, sec) => {
+            const s = ex.sets[j]; if (!s) return;
+            s.sec = sec; s.reps = ''; s.done = tpSetDone(s);
+            if (ex.status === 'open' && ex.sets.some(x => x.done)) ex.status = 'done';
+            persistSoon(); draw();
+          },
+        });
       } else if (el.tagName === 'BUTTON') {
         el.onclick = () => {
           if (f === 'tick') {
