@@ -120,14 +120,20 @@ async function tpLoadMine() {
 }
 
 // ---------- Frühere Pläne (nur ansehen) ----------
+// Name, den Athlet:innen sehen: „Name in der App“ (content.appTitle) – sonst der interne Plantitel
+function tpAppTitle(plan, content) { return ((content && content.appTitle) || '').trim() || (plan && plan.title) || 'Trainingsplan'; }
+
 async function tpLoadPast(D) {
   const ids = D.pastIds || [];
   if (!ids.length) return [];
-  const [pRes, lRes] = await Promise.all([
+  const [pRes, lRes, vRes] = await Promise.all([
     sb.from('tp_plans').select('*').in('id', ids),
     sb.from('tp_logs').select('plan_id, completed, entry_date').eq('user_id', D.user.id).in('plan_id', ids),
+    sb.from('tp_plan_versions').select('id, plan_id, from_week, user_ids, content').in('plan_id', ids),
   ]);
   return (pRes.data || []).map(p => {
+    const shown = tpAppTitle(p, tpContentFor((vRes.data || []).filter(v => v.plan_id === p.id), 1, D.user.id));
+    p = Object.assign({}, p, { title: shown });   // frühere Pläne: Athlet:innen sehen den Namen in der App
     const ls = (lRes.data || []).filter(l => l.plan_id === p.id);
     const dates = ls.map(l => l.entry_date).filter(Boolean).sort();
     return { plan: p, done: ls.filter(l => l.completed).length, total: p.weeks * p.days, from: dates[0], to: dates[dates.length - 1] };
@@ -190,6 +196,7 @@ async function renderMyPlan(profile) {
     return;
   }
   const P = D.plan;
+  const PT = tpAppTitle(P, tpContentFor(D.versions, Math.max(1, Math.min(tpWeekOfDate(P.start_date, P.weeks) || 1, P.weeks)), D.user.id));
   const logBy = {};
   D.logs.forEach(l => { logBy[l.week + '_' + l.day] = l; });
   // „Heute dran“: erste nicht abgeschlossene Einheit (ab der Kalenderwoche des Plans)
@@ -216,11 +223,11 @@ async function renderMyPlan(profile) {
     <div class="card mp-next" style="--lay-main:${tpLayoutOf(P, tpContentFor(D.versions, next.w, D.user.id)).main};--lay-accent:${tpLayoutOf(P, tpContentFor(D.versions, next.w, D.user.id)).accent};">
       <div><div class="mp-kicker">Als N&auml;chstes dran</div>
       <div class="mp-big">Woche ${next.w} &middot; Tag ${next.d}</div>
-      <div class="muted-inline">${esc(P.title || 'Trainingsplan')}${P.team ? ' &middot; ' + esc(P.team) : ''}</div></div>
+      <div class="muted-inline">${esc(PT)}</div></div>
       <button type="button" id="mpStart">${canEdit ? 'Training starten' : 'Ansehen'} &rarr;</button>
-    </div>` : `<div class="card"><h2>&#127881; Alle Einheiten erledigt</h2><p class="muted">${D.queued && D.queued.length ? `Stark! Dein n&auml;chster Plan &bdquo;${esc(D.queued[0].plan.title || 'Trainingsplan')}&ldquo; startet ${D.queued[0].afterPrev ? 'gleich' : 'am ' + wDate(D.queued[0].plan.start_date)}.` : 'Stark! Dein Trainer stellt den n&auml;chsten Block ein.'}</p></div>`}
+    </div>` : `<div class="card"><h2>&#127881; Alle Einheiten erledigt</h2><p class="muted">${D.queued && D.queued.length ? `Stark! Dein n&auml;chster Plan &bdquo;${esc(D.queued[0].appTitle || D.queued[0].plan.title || 'Trainingsplan')}&ldquo; startet ${D.queued[0].afterPrev ? 'gleich' : 'am ' + wDate(D.queued[0].plan.start_date)}.` : 'Stark! Dein Trainer stellt den n&auml;chsten Block ein.'}</p></div>`}
     <div class="card">
-      <h2>${esc(P.title || 'Trainingsplan')}</h2>
+      <h2>${esc(PT)}</h2>
       <p class="hint" style="margin-top:0;">${P.weeks} Wochen &middot; ${P.days} Einheiten pro Woche${P.start_date ? ' &middot; ab ' + wDate(P.start_date) : ''}. Tippe auf eine Einheit zum &Ouml;ffnen.</p>
       <div class="mp-grid">${grid}</div>
       <p class="hint">&#10003; erledigt &middot; &#9680; angefangen</p>
@@ -414,7 +421,7 @@ function renderMySession(profile, D, week, day) {
     const content = `
       <div class="card mp-sesshead" style="--lay-main:${LAY.main};--lay-dark:${LAY.dark};--lay-accent:${LAY.accent};">
         ${LAY.logo ? `<img src="${LAY.logo}" alt="" class="mp-laylogo">` : ''}
-        <div><div class="mp-kicker">${esc(P.title || 'Trainingsplan')}</div><div class="mp-big">Woche ${week} &middot; Tag ${day}</div>
+        <div><div class="mp-kicker">${esc(tpAppTitle(P, content0))}</div><div class="mp-big">Woche ${week} &middot; Tag ${day}</div>
         <div class="muted-inline">${doneCnt} von ${exs.length} &Uuml;bungen begonnen${existing && existing.completed ? ' &middot; abgeschlossen' : ''}</div></div>
       </div>
       ${prep ? `<div class="card mp-info">&#128221; ${esc(prep)}</div>` : ''}

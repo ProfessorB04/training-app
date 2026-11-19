@@ -61,7 +61,7 @@
     }
     const i = pick(list);
     if(i < 0) return { current: null, queued: [], superseded: [] };
-    const queued = list.slice(0, i).reverse().map(a => ({ a, plan: D.plans[a.plan_id], afterPrev: !!(contentFor(D.versions[a.plan_id], 1, uid) || {}).startAfterPrev }));
+    const queued = list.slice(0, i).reverse().map(a => ({ a, plan: D.plans[a.plan_id], afterPrev: !!(contentFor(D.versions[a.plan_id], 1, uid) || {}).startAfterPrev, appTitle: ((contentFor(D.versions[a.plan_id], 1, uid) || {}).appTitle || '').trim() }));
     return { current: list[i], queued, superseded: list.slice(i + 1) };
   }
 

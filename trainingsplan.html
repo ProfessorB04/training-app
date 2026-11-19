@@ -348,7 +348,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           <button type="button" id="cfgTeamDel" class="ghost small" title="Ausgewählte Gruppe aus der Liste entfernen">🗑</button>
         </div>
       </div>
-      <div class="field"><label>Plan-Titel / Block</label><input type="text" id="cfgTitle" placeholder="z. B. Vorbereitung Block 1"></div>
+      <div class="field"><label>Interner Name / Block</label><input type="text" id="cfgTitle" placeholder="z. B. Astroladies U18 – Block 2"></div>
+      <div class="field"><label>Name in der App (sehen die Athlet:innen)</label><input type="text" id="cfgAppTitle" placeholder="leer = interner Name, z. B. Kraft – Block 2"></div>
       <div class="field"><label>Tage / Woche</label>
         <div class="stepper">
           <button type="button" data-step="days" data-dir="-1" aria-label="weniger">−</button>
@@ -1206,6 +1207,7 @@ function renderGroupOptions(){
 function syncConfigInputs(){
   renderGroupOptions();
   cfgTitle.value = state.title;
+  { const e = document.getElementById('cfgAppTitle'); if(e) e.value = state.appTitle || ''; }
   cfgDays.value = state.days; cfgWeeks.value = state.weeks; cfgStart.value = state.start;
   renderLayoutOptions(); cfgLayout.value = state.layout || LAYOUTS[0].key;
   cfgNameOrder.value = state.nameOrder || "first";
@@ -1250,6 +1252,8 @@ cfgTeamDel.addEventListener('click', ()=>{
   saveState(true);
 });
 cfgTitle.addEventListener('input', ()=>{ state.title = cfgTitle.value; saveState(true); });
+// „Name in der App“ (content.appTitle): sehen die Athlet:innen, darf bei mehreren Plänen gleich sein
+document.getElementById('cfgAppTitle').addEventListener('input', e=>{ state.appTitle = e.target.value; saveState(true); });
 cfgStart.addEventListener('input', ()=>{ state.start = cfgStart.value; saveState(true); });
 cfgLayout.addEventListener('change', ()=>{ state.layout = cfgLayout.value; saveState(true); });
 cfgAthlete.addEventListener('change', ()=>{ state.athleteIdx = cfgAthlete.value; saveState(true); renderAthletePlanOptions(); });
@@ -2532,7 +2536,7 @@ async function openPublishDialog(){
     }
     if(p && normT(p.title) !== normT(state.title) && !confirm('Achtung: Der geöffnete Plan „' + (state.title || 'ohne Titel') + '“ wird in den laufenden Plan „' + (p.title || 'Ohne Titel') + '“ geschrieben.\n\nWirklich den bestehenden Plan ändern? (Abbrechen → oben „Als neuen Plan veröffentlichen“ wählen)')) return;
     const content = JSON.parse(JSON.stringify({ plan: state.plan, prescription: state.prescription, cooldown: state.cooldown,
-      prepNote: state.prepNote, lang: state.lang, days: state.days, weeks: state.weeks, title: state.title, team: state.team, layout: state.layout, startAfterPrev: !!state.startAfterPrev }));
+      prepNote: state.prepNote, lang: state.lang, days: state.days, weeks: state.weeks, title: state.title, team: state.team, layout: state.layout, startAfterPrev: !!state.startAfterPrev, appTitle: (state.appTitle || '').trim() }));
     const btn = box.querySelector('#pubGo'); btn.disabled = true; btn.textContent = 'Veröffentliche …';
     try{
       const { data: { user } } = await sb.auth.getUser();
@@ -2698,7 +2702,7 @@ async function openAppTargetsDialog(){
   const c = ver.content || {};
   state = Object.assign(defaultState(), JSON.parse(JSON.stringify({ plan: c.plan || {}, prescription: c.prescription, cooldown: c.cooldown || {},
     prepNote: c.prepNote || {}, lang: c.lang || 'de', days: p.data.days, weeks: p.data.weeks, title: p.data.title || c.title || '',
-    team: p.data.team || c.team || '', layout: c.layout || LAYOUTS[0].key, start: p.data.start_date || '' })));
+    team: p.data.team || c.team || '', layout: c.layout || LAYOUTS[0].key, start: p.data.start_date || '', appTitle: c.appTitle || '' })));
   if(!state.prescription) state.prescription = JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION));
   state.publishedPlanId = p.data.id; state.editingFromApp = true; state.editTargetUid = uid; state.editTargetName = whoName;
   ensurePrescription(); state.activeDay = 1;
@@ -2916,7 +2920,7 @@ setTimeout(function tpTidyConfig(){
     return g;
   };
   const wrap = document.createElement('div'); wrap.id = 'tpCfgNew';
-  wrap.appendChild(group('1 &middot; Plan', ['cfgTitle','cfgTeam','cfgDays','cfgWeeks','cfgStart','cfgLayout'], 'plan'));
+  wrap.appendChild(group('1 &middot; Plan', ['cfgTitle','cfgAppTitle','cfgTeam','cfgDays','cfgWeeks','cfgStart','cfgLayout'], 'plan'));
   wrap.appendChild(group('2 &middot; F&uuml;r wen?', ['cfgAthlete','appTargetsBox'], 'narrow'));
   const exp = group('3 &middot; Export: Sprache &amp; Namensformat', ['cfgLang','cfgNameOrder'], 'narrow');
   // alte Einzel-Lader (Pläne dieser Athletin / letzter Plan der Gruppe) stecken jetzt in „📂 Pläne öffnen“
@@ -3006,7 +3010,7 @@ if(window.__tpSeedInfo){
 <script src="athlete-picker.js?v=20260924f"></script>
 <script src="app-rail.js?v=20260929c"></script>
 <script src="idle-logout.js?v=20260926a"></script>
-<script src="tp_status.js?v=20261115b"></script>
+<script src="tp_status.js?v=20261119a"></script>
 <script src="tp_progression.js?v=20261115c"></script>
 <script>
 /* Trainings-App: Anbindung Athletenverwaltung */
@@ -3248,7 +3252,7 @@ if(window.__tpSeedInfo){
       if(!confirm('Woche ' + week + ' von „' + (p.title || 'Ohne Titel') + '“' + (e.name ? ' (' + e.name + ')' : '') + ' als Vorlage in die Planung laden?\nDer aktuell geöffnete Entwurf wird dabei ersetzt.')) return;
       const c = content;
       tpApplyLoadedState({ plan: c.plan || {}, prescription: c.prescription || JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION)), cooldown: c.cooldown || {}, prepNote: c.prepNote || {},
-        lang: c.lang || 'de', layout: c.layout || LAYOUTS[0].key, days: p.days, weeks: p.weeks, title: p.title || '', team: p.team || '', start: '' },
+        lang: c.lang || 'de', layout: c.layout || LAYOUTS[0].key, days: p.days, weeks: p.weeks, title: p.title || '', team: p.team || '', start: '', appTitle: c.appTitle || '' },
         { savedPlanId: null, savedPlanName: null, publishedPlanId: null, editingFromApp: false, athleteIdx: state.athleteIdx });
       show('plan'); toast('Als Vorlage geladen – Startdatum setzen und anpassen');
     };

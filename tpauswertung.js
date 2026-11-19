@@ -297,7 +297,7 @@ async function renderTpOverview(profile) {
   const [pRes, aRes, vRes, prRes, lRes, CD] = await Promise.all([
     sb.from('tp_plans').select('*').eq('archived', false).order('created_at', { ascending: false }),
     sb.from('tp_assignments').select('plan_id, user_id, active').eq('active', true),
-    sb.from('tp_plan_versions').select('id, plan_id, from_week, user_ids, created_at'),
+    sb.from('tp_plan_versions').select('id, plan_id, from_week, user_ids, created_at, content'),
     sb.from('profiles').select('id, name'),
     sb.from('tp_logs').select('plan_id, user_id, completed'),
     typeof cdLoadAll === 'function' ? cdLoadAll().catch(() => ({ sessions: [], asg: [], logs: [] })) : { sessions: [], asg: [], logs: [] },
@@ -311,12 +311,14 @@ async function renderTpOverview(profile) {
       .sort((x, y) => (names[x] || '').localeCompare(names[y] || '', 'de'));
     const vers = (vRes.data || []).filter(v => v.plan_id === p.id);
     const variantUsers = new Set(); vers.forEach(v => (v.user_ids || []).forEach(u => variantUsers.add(u)));
-    return { p, members, cur: tpWeekOfDate(p.start_date, p.weeks) || 1, variantUsers, changes: vers.filter(v => !v.user_ids && v.from_week > 1).length };
+    const g = vers.filter(v => !v.user_ids).sort((x, y) => y.from_week - x.from_week || y.id - x.id)[0];
+    const appTitle = ((g && g.content && g.content.appTitle) || '').trim();
+    return { p, members, appTitle, cur: tpWeekOfDate(p.start_date, p.weeks) || 1, variantUsers, changes: vers.filter(v => !v.user_ids && v.from_week > 1).length };
   }).filter(x => x.members.length);
   const cards = plans.map(x => `
     <div class="card tpo-card">
       <div class="tpo-head">
-        <div><div class="tpo-title">${esc(x.p.title || 'Ohne Titel')}</div>
+        <div><div class="tpo-title">${esc(x.p.title || 'Ohne Titel')}${x.appTitle && x.appTitle !== x.p.title ? ` <span class="muted-inline" style="font-weight:400;" title="So heißt der Plan bei den Athlet:innen">&#128241; ${esc(x.appTitle)}</span>` : ''}</div>
           <div class="muted-inline">${x.p.team ? esc(x.p.team) + ' &middot; ' : ''}${x.p.weeks} Wochen &middot; ${x.p.days} Einheiten/Woche${x.p.start_date ? ' &middot; ab ' + new Date(x.p.start_date + 'T00:00:00').toLocaleDateString('de-DE') : ''}</div></div>
         <span class="tpo-week">Woche ${x.cur} von ${x.p.weeks}</span>
       </div>
