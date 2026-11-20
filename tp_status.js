@@ -137,7 +137,9 @@
     return `<span class="tps-q" title="bereits terminiert">&#128197; ${H(x.plan.title || 'Ohne Titel')} ${x.afterPrev ? 'nach Abschluss' + (isFuture(x.plan.start_date) ? ', spätestens ' + deDate(x.plan.start_date) : '') : 'ab ' + deDate(x.plan.start_date)}</span>`;
   }
   function cardHtml(D){
-    const done = D.people.filter(p => p.left === 0 && p.total > 0), soon = D.people.filter(p => p.left > 0 && p.left <= 2);
+    // Wer schon einen Folgeplan hat (terminiert / „nach Abschluss“), braucht keinen Hinweis mehr → ausblenden
+    const open = D.people.filter(p => !(p.queued && p.queued.length));
+    const done = open.filter(p => p.left === 0 && p.total > 0), soon = open.filter(p => p.left > 0 && p.left <= 2);
     if(!done.length && !soon.length) return '';
     const row = p => `<div class="tps-row"><span class="tps-n"><b>${H(p.name)}</b> <span class="tps-m">${H(p.plan.title || 'Ohne Titel')} · ${p.done}/${p.total}${p.left ? ' · noch ' + p.left + ' Einheit' + (p.left === 1 ? '' : 'en') : ''}</span></span>` +
       (p.queued.length ? queuedText(p.queued) : `<a class="tps-btn" href="${TOOL_URL}#folge=${p.plan.id}&uid=${p.uid}">&#10140; Anschlussplan</a>`) + `</div>`;

@@ -331,12 +331,18 @@
     if(typeof renderPanels === 'function') renderPanels();
   }
 
+  // Karte „Anschlusspläne vorbereiten“ frisch berechnen (z. B. nach dem Veröffentlichen eines Folgeplans)
+  async function reloadStatus(){
+    if(!window.TpStatus) return;
+    try { P.status = await TpStatus.loadAll(true); } catch(e){}
+  }
+
   function show(on){
     const wrap = document.querySelector('.wrap');
     wrap.classList.toggle('tpp-on', on);
     if(on) wrap.classList.remove('tpv-cur');
     document.querySelectorAll('.tpp-bar .tab, .tpv-bar .tab').forEach(t => t.classList.toggle('active', on ? t.dataset.v === 'ref' : t.dataset.v === 'plan' && !wrap.classList.contains('tpv-cur')));
-    if(on) renderView();
+    if(on){ renderView(); reloadStatus().then(() => { if(wrap.classList.contains('tpp-on')) renderView(); }); }
     else if(dirty){ dirty = false; const bd = document.getElementById('tppBadge'); if(bd) bd.hidden = true; renderPanels(); }
     window.scrollTo({ top: 0 });
   }
@@ -505,6 +511,6 @@
     history.replaceState(null, '', location.pathname + location.search);
     await loadFollowUp(m[1], m[2] || '', m[3] || ''); schedSync(); show(false);
   });
-  window.TpProgression = { judge, refresh, show };
+  window.TpProgression = { judge, refresh, show, reloadStatus };
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
