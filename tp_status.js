@@ -14,6 +14,11 @@
   const isFuture = iso => !!iso && String(iso).slice(0, 10) > todayIso();
   const deDate = iso => iso ? new Date(String(iso).slice(0, 10) + 'T00:00:00').toLocaleDateString('de-DE') : '';
   // Auf der Planungsseite selbst nur den #-Teil ändern (wird dort per hashchange geladen), sonst zur Planungsseite
+  // BM-App (Supabase, ohne sb-shim): Pläne enden nach Kalender – wer in der letzten Planwoche ist, gilt als „bald fertig“,
+  // danach als „fertig“, auch wenn Einheiten offen geblieben sind (Maiks Vorgabe 21.11.2026). Sportschule: nur nach Einheiten.
+  const BY_DATE = !document.querySelector('script[src*="sb-shim"]');
+  // Kalenderwoche des Plans (1 = erste Woche, > weeks = Zeitraum abgelaufen), null ohne Startdatum
+  const weekNo = iso => { if(!iso) return null; const d = Math.floor((new Date(todayIso() + 'T00:00:00') - new Date(String(iso).slice(0, 10) + 'T00:00:00')) / 86400000); return d < 0 ? 0 : Math.floor(d / 7) + 1; };
   const TOOL_URL = document.getElementById('dayPanels') ? '' : (/\.php(\?|#|$)/.test(location.pathname) || document.querySelector('script[src*="sb-shim"]') ? 'trainingsplan.php' : 'trainingsplan.html');
 
   // gültige Fassung für Woche w und Person (höchste „ab Woche“, eigene Variante hat Vorrang)
@@ -49,7 +54,10 @@
   function resolve(uid, actives, D){
     const list = (actives || []).filter(a => a.active && D.plans[a.plan_id])
       .sort((x, y) => String(y.assigned_at || '').localeCompare(String(x.assigned_at || '')) || ((y.id || 0) - (x.id || 0)));
-    const isDone = a => { const p = D.plans[a.plan_id]; return doneCount(D.logs, a.plan_id, uid) >= total(p, D.versions[a.plan_id], uid); };
+    const isDone = a => { const p = D.plans[a.plan_id]; if(doneCount(D.logs, a.plan_id, uid) >= total(p, D.versions[a.plan_id], uid)) return true;
+      // BM: Plan endet spätestens mit seiner letzten Kalenderwoche (nur mit festem Startdatum)
+      if(!BY_DATE || afterOf(a, contentFor(D.versions[a.plan_id], 1, uid) || {})) return false;
+      const w = weekNo(startOf(a, p)); return w != null && w > (p.weeks || 1); };
     function pick(arr){
       for(let i = 0; i < arr.length; i++){
         const a = arr[i], older = arr.slice(i + 1), p = D.plans[a.plan_id];
@@ -124,7 +132,10 @@
       if(!r.current) return;
       const plan = D.plans[r.current.plan_id];
       const tot = total(plan, D.versions[plan.id], uid), dn = doneCount(D.logs, plan.id, uid);
-      D.people.push({ uid, name: D.names[uid] || 'Unbekannt', plan, total: tot, done: dn, left: Math.max(0, tot - dn), queued: r.queued });
+      const c1 = contentFor(D.versions[plan.id], 1, uid) || {};
+      const wk = BY_DATE && !afterOf(r.current, c1) ? weekNo(startOf(r.current, plan)) : null;
+      D.people.push({ uid, name: D.names[uid] || 'Unbekannt', plan, total: tot, done: dn, left: Math.max(0, tot - dn), queued: r.queued,
+        week: wk, lastWeek: wk != null && wk === (plan.weeks || 1), expired: wk != null && wk > (plan.weeks || 1) });
       r.superseded.forEach(x => D.housekeep.push(x));
     });
     D.people.sort((x, y) => x.left - y.left || x.name.localeCompare(y.name, 'de'));
@@ -154,23 +165,23 @@
   function cardHtml(D, opts){
     // Wer schon einen Folgeplan hat (terminiert / „nach Abschluss“), braucht keinen Hinweis mehr → ausblenden
     const open = D.people.filter(p => !(p.queued && p.queued.length));
-    const done = open.filter(p => p.left === 0 && p.total > 0), soon = open.filter(p => p.left > 0 && p.left <= 2);
+    const done = open.filter(p => (p.left === 0 && p.total > 0) || p.expired), soon = open.filter(p => p.left > 0 && !p.expired && (p.left <= 2 || p.lastWeek));
     if(!done.length && !soon.length) return (opts && opts.always) ? `<div class="card tps-card">
       <h2 style="margin-top:0;">&#9203; Anschlusspläne vorbereiten</h2>
-      <p class="hint" style="margin:0;">&#10003; Aktuell ist niemand mit dem Plan fertig oder kurz davor (noch 1–2 Einheiten)${D.people.length ? ' – ' + D.people.length + ' Person' + (D.people.length === 1 ? '' : 'en') + ' mit laufendem Plan' : ''}. Sobald jemand so weit ist, erscheint die Person hier mit „➜ Anschlussplan“.</p>
+      <p class="hint" style="margin:0;">&#10003; Aktuell ist niemand mit dem Plan fertig oder kurz davor (noch 1–2 Einheiten${BY_DATE ? ' oder letzte Planwoche' : ''})${D.people.length ? ' – ' + D.people.length + ' Person' + (D.people.length === 1 ? '' : 'en') + ' mit laufendem Plan' : ''}. Sobald jemand so weit ist, erscheint die Person hier mit „➜ Anschlussplan“.</p>
     </div>` : '';
-    const row = p => `<div class="tps-row"><span class="tps-n"><b>${H(p.name)}</b> <span class="tps-m">${H(p.plan.title || 'Ohne Titel')} · ${p.done}/${p.total}${p.left ? ' · noch ' + p.left + ' Einheit' + (p.left === 1 ? '' : 'en') : ''}</span></span>` +
+    const row = p => `<div class="tps-row"><span class="tps-n"><b>${H(p.name)}</b> <span class="tps-m">${H(p.plan.title || 'Ohne Titel')} · ${p.done}/${p.total}${p.left ? ' · noch ' + p.left + ' Einheit' + (p.left === 1 ? '' : 'en') : ''}${p.expired ? ' · <b>Zeitraum beendet</b>' : p.lastWeek ? ' · <b>letzte Woche (' + p.week + '/' + (p.plan.weeks || 1) + ')</b>' : ''}</span></span>` +
       (p.queued.length ? queuedText(p.queued) : `<a class="tps-btn" href="${TOOL_URL}#folge=${p.plan.id}&uid=${p.uid}">&#10140; Anschlussplan</a>`) + `</div>`;
     // Pläne, in denen mehrere fertig sind und noch keinen Anschluss haben → ein Plan für alle Fertigen
     const byPlan = {};
-    done.filter(p => !p.queued.length).forEach(p => { (byPlan[p.plan.id] = byPlan[p.plan.id] || []).push(p); });
+    done.filter(p => !p.queued.length && p.left === 0).forEach(p => { (byPlan[p.plan.id] = byPlan[p.plan.id] || []).push(p); });
     const groupBtns = Object.keys(byPlan).filter(id => byPlan[id].length > 1).map(id => `<a class="tps-btn" href="${TOOL_URL}#folge=${id}&wer=fertig">&#10140; Ein Anschlussplan für alle ${byPlan[id].length} Fertigen aus „${H(D.plans[id].title || 'Ohne Titel')}“</a>`).join(' ');
     return `<div class="card tps-card">
       <h2 style="margin-top:0;">&#9203; Anschlusspläne vorbereiten</h2>
-      ${done.length ? `<div class="tps-h">&#10003; Plan fertig (${done.length})</div>${done.map(row).join('')}` : ''}
-      ${soon.length ? `<div class="tps-h">&#9203; Noch 1–2 Einheiten (${soon.length})</div>${soon.map(row).join('')}` : ''}
+      ${done.length ? `<div class="tps-h">&#10003; Plan fertig${BY_DATE ? ' / Zeitraum beendet' : ''} (${done.length})</div>${done.map(row).join('')}` : ''}
+      ${soon.length ? `<div class="tps-h">&#9203; Noch 1–2 Einheiten${BY_DATE ? ' oder letzte Planwoche' : ''} (${soon.length})</div>${soon.map(row).join('')}` : ''}
       ${groupBtns ? `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;">${groupBtns}</div>` : ''}
-      <p class="hint" style="margin-bottom:0;">„➜ Anschlussplan“ legt den neuen Plan mit „erst nach Abschluss des laufenden Plans starten“ an: Wer noch Einheiten offen hat, macht den alten Plan fertig und bekommt den neuen automatisch direkt im Anschluss. Alternativ ein Startdatum in der Zukunft wählen.</p>
+      <p class="hint" style="margin-bottom:0;">„➜ Anschlussplan“ legt den neuen Plan mit „erst nach Abschluss des laufenden Plans starten“ an: Wer noch Einheiten offen hat, macht den alten Plan fertig${BY_DATE ? ' (spätestens bis zum Ende seiner letzten Woche)' : ''} und bekommt den neuen automatisch direkt im Anschluss. Alternativ ein Startdatum in der Zukunft wählen.</p>
     </div>`;
   }
   function css(){
