@@ -38,6 +38,9 @@
     }
     return t;
   }
+  // Start/Sichtbarkeit je Zuteilung (Sportschule ab 1.2: je Gruppe) – sonst die des Plans
+  const startOf = (a, p) => (a && a.start_date != null && a.start_date !== '') ? a.start_date : (p && p.start_date) || null;
+  const afterOf = (a, c) => (a && a.after_prev != null) ? !!a.after_prev : !!(c && c.startAfterPrev);
   const doneCount = (logs, planId, uid) => new Set((logs || []).filter(l => l.plan_id === planId && l.user_id === uid && l.completed).map(l => l.week + '_' + l.day)).size;
 
   /* Plan, der für die Person gerade gilt.
@@ -52,17 +55,17 @@
         const a = arr[i], older = arr.slice(i + 1), p = D.plans[a.plan_id];
         if(!older.length) return i;
         const c = contentFor(D.versions[a.plan_id], 1, uid) || {};
-        const after = !!c.startAfterPrev, assigned = String(a.assigned_at || '').slice(0, 10);
+        const after = afterOf(a, c), assigned = String(a.assigned_at || '').slice(0, 10);
         // Startdatum erreicht → gilt. Ausnahme „erst nach Abschluss“: NUR wenn der vorige Plan komplett erledigt ist,
         // das Startdatum öffnet ihn nie vorzeitig (Maiks Vorgabe 21.11.2026)
-        if(!after && !isFuture(p.start_date)) return i;
+        if(!after && !isFuture(startOf(a, p))) return i;
         if(after){ const j = pick(older); if(j >= 0 && isDone(older[j])) return i; }
       }
       return arr.length ? arr.length - 1 : -1;
     }
     const i = pick(list);
     if(i < 0) return { current: null, queued: [], superseded: [] };
-    const queued = list.slice(0, i).reverse().map(a => ({ a, plan: D.plans[a.plan_id], afterPrev: !!(contentFor(D.versions[a.plan_id], 1, uid) || {}).startAfterPrev, appTitle: ((contentFor(D.versions[a.plan_id], 1, uid) || {}).appTitle || '').trim() }));
+    const queued = list.slice(0, i).reverse().map(a => ({ a, plan: D.plans[a.plan_id], afterPrev: afterOf(a, contentFor(D.versions[a.plan_id], 1, uid)), start: startOf(a, D.plans[a.plan_id]), appTitle: ((contentFor(D.versions[a.plan_id], 1, uid) || {}).appTitle || '').trim() }));
     return { current: list[i], queued, superseded: list.slice(i + 1) };
   }
 
@@ -135,7 +138,7 @@
   function queuedText(q){
     if(!q || !q.length) return '';
     const x = q[0];
-    return `<span class="tps-q" title="bereits terminiert">&#128197; ${H(x.plan.title || 'Ohne Titel')} ${x.afterPrev ? 'nach Abschluss des laufenden Plans' : 'ab ' + deDate(x.plan.start_date)}</span>`;
+    return `<span class="tps-q" title="bereits terminiert">&#128197; ${H(x.plan.title || 'Ohne Titel')} ${x.afterPrev ? 'nach Abschluss des laufenden Plans' : 'ab ' + deDate(x.start || x.plan.start_date)}</span>`;
   }
   function cardHtml(D){
     // Wer schon einen Folgeplan hat (terminiert / „nach Abschluss“), braucht keinen Hinweis mehr → ausblenden
@@ -193,5 +196,5 @@
     }
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook); else hook();
-  window.TpStatus = { _cardHtml: cardHtml, cardHtml, css, isFuture, todayIso, deDate, contentFor, total, doneCount, resolve, currentFor, loadAll, planProgress };
+  window.TpStatus = { _cardHtml: cardHtml, cardHtml, css, isFuture, todayIso, deDate, contentFor, total, doneCount, resolve, currentFor, loadAll, planProgress, startOf, afterOf };
 })();

@@ -199,6 +199,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   .tp-cfg-group.narrow .config-grid{ grid-template-columns:repeat(auto-fill, minmax(220px, 320px)); }
   .tp-actbar{ display:flex; flex-wrap:wrap; gap:10px 18px; align-items:flex-end; margin-top:6px; padding-top:14px; border-top:1px solid var(--grid); }
   .tp-actgrp{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .tp-actgrp-app{ flex-basis:100%; } .tp-actgrp-app .tpp-sched2{ margin:0 6px 0 0 !important; padding:8px 12px !important; }
   .tp-actlbl{ width:100%; font-size:10.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; }
   .tp-more{ margin-left:auto; position:relative; }
   .tp-more > summary{ list-style:none; cursor:pointer; padding:9px 14px; border:1px solid var(--grid); border-radius:9px; font-size:13px; font-weight:600; background:#fff; }
@@ -1323,7 +1324,7 @@ function renderCopyBar(){
   if(state.days < 2) return;
   const src = state.activeDay;
   const label = document.createElement('span');
-  label.textContent = `Tag ${src} kopieren nach:`;
+  label.textContent = `Tag ${src} kopieren / tauschen mit:`;
   const sel = document.createElement('select');
   for(let d=1; d<=state.days; d++){
     if(d===src) continue;
@@ -1345,7 +1346,21 @@ function renderCopyBar(){
     if(state.activeDay===target) renderPanels();
     toast(`Tag ${src} → Tag ${target} kopiert`);
   });
-  bar.appendChild(label); bar.appendChild(sel); bar.appendChild(btn);
+  // Tage 1:1 tauschen (z. B. Tag 1 ⇄ Tag 2) – Übungen, Vorbereitung und Cool-down
+  const sw = document.createElement('button');
+  sw.textContent = '⇄ Tauschen';
+  sw.title = 'Inhalte der beiden Tage 1:1 tauschen (Übungen, Vorbereitung, Cool-down)';
+  sw.addEventListener('click', ()=>{
+    const target = parseInt(sel.value);
+    ensureDayStructure(src); ensureDayStructure(target);
+    [state.plan[src], state.plan[target]] = [state.plan[target], state.plan[src]];
+    [state.cooldown[src], state.cooldown[target]] = [state.cooldown[target], state.cooldown[src]];
+    [state.prepNote[src], state.prepNote[target]] = [state.prepNote[target], state.prepNote[src]];
+    saveState(true);
+    renderPanels();
+    toast(`Tag ${src} ⇄ Tag ${target} getauscht`);
+  });
+  bar.appendChild(label); bar.appendChild(sel); bar.appendChild(btn); bar.appendChild(sw);
 }
 
 function renderPanels(){
@@ -2920,9 +2935,12 @@ setTimeout(function tpTidyConfig(){
     return g;
   };
   const wrap = document.createElement('div'); wrap.id = 'tpCfgNew';
-  wrap.appendChild(group('1 &middot; Plan', ['cfgTitle','cfgAppTitle','cfgTeam','cfgDays','cfgWeeks','cfgStart','cfgLayout'], 'plan'));
-  wrap.appendChild(group('2 &middot; F&uuml;r wen?', ['cfgAthlete','appTargetsBox'], 'narrow'));
-  const exp = group('3 &middot; Export: Sprache &amp; Namensformat', ['cfgLang','cfgNameOrder'], 'narrow');
+  // 2026-11-21 aufgeräumt: „In der App für (mehrere)“ entfällt (Auswahl passiert im Veröffentlichen-Dialog),
+  // „Für wen?“ wirkt nur auf den Excel-Export → in die Export-Gruppe
+  wrap.appendChild(group('1 &middot; Plan', ['cfgTitle','cfgAppTitle','cfgTeam','cfgDays','cfgWeeks','cfgStart'], 'plan'));
+  const atb = fieldOf('appTargetsBox'); if(atb) atb.style.display = 'none';
+  const athLbl = fieldOf('cfgAthlete') && fieldOf('cfgAthlete').querySelector('label'); if(athLbl) athLbl.textContent = 'Athlet:in (Name im Excel)';
+  const exp = group('2 &middot; Excel-Export', ['cfgAthlete','cfgLayout','cfgLang','cfgNameOrder'], 'narrow');
   // alte Einzel-Lader (Pläne dieser Athletin / letzter Plan der Gruppe) stecken jetzt in „📂 Pläne öffnen“
   const apf = document.getElementById('athletePlanField'); if(apf) apf.style.display = 'none';
   wrap.appendChild(exp);
@@ -2936,7 +2954,7 @@ setTimeout(function tpTidyConfig(){
   g1.innerHTML = '<span class="tp-actlbl">Speichern</span>';
   g1.append(mk('btnCloudSave', '💾 Plan speichern', 'primary', tpSavePlanDialog), mk('btnCloudOpen', '📂 Pläne öffnen', '', tpOpenPlansDialog));
   const g2 = document.createElement('div'); g2.className = 'tp-actgrp';
-  g2.innerHTML = '<span class="tp-actlbl">Athlet:innen</span>';
+  g2.innerHTML = '<span class="tp-actlbl">In der App</span>';
   if(btn('btnPublishApp')) g2.append(btn('btnPublishApp'));
   const g3 = document.createElement('div'); g3.className = 'tp-actgrp';
   g3.innerHTML = '<span class="tp-actlbl">Export</span>';
@@ -2950,7 +2968,8 @@ setTimeout(function tpTidyConfig(){
   const status = document.createElement('span'); status.id = 'cloudStatus'; status.className = 'cloud-status';
   if(window.__tpCloudStatus){ status.textContent = window.__tpCloudStatus.t; status.className = 'cloud-status ' + window.__tpCloudStatus.cls; }
   const info = document.createElement('div'); info.id = 'tpOpenInfo'; info.className = 'tp-openinfo';
-  bar.append(g1, g2, g3, more);
+  bar.append(g1, g3, more, g2);   // „In der App“ (Sichtbarkeit + Veröffentlichen) als eigene Zeile
+  g2.classList.add('tp-actgrp-app');
   acts.replaceWith(bar);
   const fi = document.getElementById('fullBackupFileInput'); if(fi) bar.append(fi);
   const foot = document.createElement('div'); foot.className = 'tp-cfg-foot'; foot.append(info, status);
@@ -3010,8 +3029,9 @@ if(window.__tpSeedInfo){
 <script src="athlete-picker.js?v=20260924f"></script>
 <script src="app-rail.js?v=20260929c"></script>
 <script src="idle-logout.js?v=20260926a"></script>
-<script src="tp_status.js?v=20261121a"></script>
-<script src="tp_progression.js?v=20261121b"></script>
+<script src="tp_status.js?v=20261121b"></script>
+<script src="tp_progression.js?v=20261121c"></script>
+<script src="tp_board.js?v=20261121a"></script>
 <script>
 /* Trainings-App: Anbindung Athletenverwaltung */
 (function(){

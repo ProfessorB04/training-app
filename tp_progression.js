@@ -476,12 +476,9 @@
     }));
   }
   function schedUi(){
-    const inp = document.getElementById('cfgStart'); if(!inp || document.getElementById('tppSched')) return;
-    const box = document.createElement('div');
-    box.id = 'tppSched'; box.className = 'tpp-sched';
-    box.innerHTML = MODE_HTML('') + `<div id="tppSchedInfo" hidden></div>`;
-    inp.parentNode.appendChild(box);
-    wireMode(box, '');
+    // nur noch EINE Auswahl – direkt am Veröffentlichen-Knopf (vorher zusätzlich unter dem Startdatum, 1.1.4)
+    const inp = document.getElementById('cfgStart'); if(!inp || inp.dataset.tppSched) return;
+    inp.dataset.tppSched = '1';
     inp.addEventListener('change', () => setTimeout(schedSync, 0));
     inp.addEventListener('input', () => setTimeout(schedSync, 0));
     // zweites Häkchen direkt über dem Veröffentlichen-Knopf (Schritt 4), damit es nicht übersehen wird
@@ -492,7 +489,8 @@
       b2.id = 'tppSched2'; b2.className = 'tpp-sched tpp-sched2';
       b2.innerHTML = MODE_HTML('2') + `<div id="tppSchedInfo2" hidden></div>`;
       const host = go.parentNode;
-      host.parentNode.insertBefore(b2, host);
+      if(host.classList.contains('tp-actgrp')) host.insertBefore(b2, go);   // BM: in der Gruppe „In der App“ vor dem Knopf
+      else host.parentNode.insertBefore(b2, host);
       wireMode(b2, '2');
       schedSync();
     };
@@ -501,16 +499,9 @@
     schedSync();
   }
   function schedSync(){
-    const info = document.getElementById('tppSchedInfo'); if(!info) return;
     const after = !!state.startAfterPrev;
     ['', '2'].forEach(sfx => { const a = document.getElementById('tppAfter' + sfx), d = document.getElementById('tppDate' + sfx); if(a) a.checked = after; if(d) d.checked = !after; });
-    const info2 = document.getElementById('tppSchedInfo2');
-    const fut = window.TpStatus && TpStatus.isFuture(state.start);
-    info.innerHTML = after
-      ? `⏭ Wer noch einen laufenden Plan hat, sieht diesen Plan erst, wenn der alte komplett erledigt ist – auch nach dem Startdatum. Wer schon fertig ist, bekommt ihn sofort.`
-      : (fut ? `📅 Sichtbar ab <b>${TpStatus.deDate(state.start)}</b>. Bis dahin behalten alle ihren bisherigen Plan; danach ist er abgeschlossen und nur noch lesbar.`
-             : `📅 Sofort sichtbar (Startdatum heute oder leer). Ein laufender Plan ist dann abgeschlossen und nur noch lesbar – auch wenn noch Einheiten offen sind.`);
-    if(info2) info2.innerHTML = info.innerHTML;
+
   }
 
   // Bezug neu bestimmen, wenn Person/Gruppe im Entwurf wechselt (nur automatischer Bezug)
