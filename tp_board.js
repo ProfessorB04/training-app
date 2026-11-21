@@ -130,6 +130,7 @@
     </div>`;
     wire(el);
     applyMode();
+    refreshSums();
   }
 
   /* ---------- Bedienung ---------- */
@@ -195,6 +196,51 @@
   function outside(e){ const p = document.getElementById('tpbPop'); if(p && !p.contains(e.target)) closePop(); }
   function closePop(){ const p = document.getElementById('tpbPop'); if(p) p.remove(); document.removeEventListener('mousedown', outside); }
 
+  /* ---------- Einklappen (1.2.1): Karten mit Kurzfassung, Zustand je Karte gemerkt ---------- */
+  const COLLS = [];
+  function collapsible(card, key, head, summary){
+    if(!card || !head || card.dataset.tpc) return;
+    card.dataset.tpc = key; card.classList.add('tpc-card');
+    head.classList.add('tpc-keep', 'tpc-head');
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'tpc-tog tpc-keep';
+    card.insertBefore(btn, card.firstChild);
+    const sum = document.createElement('div'); sum.className = 'tpc-sum tpc-keep';
+    head.insertAdjacentElement('afterend', sum);
+    const set = c => {
+      card.classList.toggle('tpc-collapsed', c);
+      btn.innerHTML = c ? '&#9656; Aufklappen' : '&#9662; Einklappen';
+      sum.innerHTML = c ? summary() : '';
+      try { localStorage.setItem('tp_collapse_' + key, c ? '1' : '0'); } catch(e){}
+    };
+    btn.onclick = () => set(!card.classList.contains('tpc-collapsed'));
+    head.addEventListener('click', e => { if(e.target.closest('button, input, select, a, label')) return; btn.click(); });
+    COLLS.push({ card, sum, summary });
+    let c0 = false; try { c0 = localStorage.getItem('tp_collapse_' + key) === '1'; } catch(e){}
+    set(c0);
+  }
+  function refreshSums(){ COLLS.forEach(c => { if(c.card.classList.contains('tpc-collapsed')) try { c.sum.innerHTML = c.summary(); } catch(e){} }); }
+  const val = id => { const e = document.getElementById(id); return e ? String(e.value || '').trim() : ''; };
+  const deD = iso => iso ? new Date(iso + 'T00:00:00').toLocaleDateString('de-DE') : '';
+  function ensureCollapsibles(){
+    const pt = document.getElementById('prescriptionTable'), pc = pt && pt.closest('.card');
+    if(pc) collapsible(pc, 'presc', pc.querySelector('h2'), () => (typeof PRESCRIPTION_CATS !== 'undefined' ? PRESCRIPTION_CATS : Object.keys(S().prescription || {})).map(k => {
+      const p = (S().prescription || {})[k] || {}, c = (typeof CAT_MAP !== 'undefined' && CAT_MAP[k]) || { label: k, color: '#999' };
+      return `<span class="tpc-pill"><i style="background:${c.color}"></i>${H(c.label)} ${H([p.sets, p.reps].filter(Boolean).join(' × '))}</span>`; }).join(''));
+    const st = id => document.getElementById(id);
+    if(st('tpsStep1')){   // Sportschul-App: Schritte 1, 2, 4
+      collapsible(st('tpsStep1'), 'step1', st('tpsStep1').querySelector('.tps-head'), () => 'Gruppe: <b>' + H(S().team || '–') + '</b>');
+      collapsible(st('tpsStep2'), 'step2', st('tpsStep2') && st('tpsStep2').querySelector('.tps-head'), () => '<b>' + H(S().title || 'Ohne Titel') + '</b>'
+        + (S().appTitle ? ' &middot; &#128241; ' + H(S().appTitle) : '') + ' &middot; ' + days() + ' Tage' + (S().rotate ? ' im Wechsel' : '') + ' &times; ' + (S().weeks || '?') + ' Wochen' + (S().start ? ' &middot; ab ' + deD(S().start) : ''));
+      collapsible(st('tpsStep4'), 'step4', st('tpsStep4') && st('tpsStep4').querySelector('.tps-head'), () => H((st('tpsCount') || {}).textContent || ''));
+    } else {              // BM-App: Konfigurations-Karte
+      const cfg = st('cfgTeam') && st('cfgTeam').closest('.card');
+      if(cfg) collapsible(cfg, 'cfg', cfg.querySelector('h2') || cfg.firstElementChild, () => '<b>' + H(S().title || 'Ohne Titel') + '</b>' + (S().team ? ' &middot; ' + H(S().team) : '')
+        + ' &middot; ' + days() + ' Tage' + (S().rotate ? ' im Wechsel' : '') + ' &times; ' + (S().weeks || '?') + ' Wochen' + (S().start ? ' &middot; ab ' + deD(S().start) : ''));
+    }
+  }
+  let sumT = null;
+  ['input', 'change'].forEach(ev => document.addEventListener(ev, () => { clearTimeout(sumT); sumT = setTimeout(refreshSums, 150); }, true));
+
   /* ---------- Einhängen ---------- */
   function css(){
     if(document.getElementById('tpbCss')) return;
@@ -234,7 +280,17 @@
       .tpb-pop-l button{ display:flex; justify-content:space-between; gap:8px; background:none !important; color:#141824 !important; border:0 !important; text-align:left; padding:5px 6px !important; border-radius:7px; font-weight:400; box-shadow:none !important; }
       .tpb-pop-l button:hover{ background:#eef4ff !important; } .tpb-pop-l button.own{ color:var(--accent, #1257b0) !important; font-weight:600; }
       .tpb-pop-l small{ color:#8a8f9c; } .tpb-pop-e{ color:#8a8f9c; padding:6px; }
-      @media (max-width:760px){ .tpb-mode{ flex-direction:column; } .tpb-mode button + button{ border-left:0 !important; border-top:1px solid #e1e4ea !important; } }`;
+      .tpc-card{ position:relative; }
+      .tpc-tog{ position:absolute; top:16px; right:18px; z-index:2; background:#fff !important; color:#52514e !important; border:1px solid #e1e4ea !important; border-radius:8px !important; padding:4px 10px !important; font-size:12.5px !important; font-weight:600; box-shadow:none !important; min-height:0 !important; }
+      .tpc-head{ cursor:pointer; padding-right:130px; }
+      .tpc-card.tpc-collapsed > :not(.tpc-keep){ display:none !important; }
+      .tpc-card.tpc-collapsed .tpc-head{ margin-bottom:0 !important; }
+      .tpc-card.tpc-collapsed .tps-sub{ display:none; }
+      .tpc-sum{ font-size:13px; color:#52514e; display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; }
+      .tpc-card:not(.tpc-collapsed) .tpc-sum{ display:none; }
+      .tpc-card.tpc-collapsed .tpc-sum{ margin-top:6px; }
+      .tpc-pill{ display:inline-flex; align-items:center; gap:5px; } .tpc-pill i{ width:9px; height:9px; border-radius:50%; display:inline-block; }
+      @media (max-width:760px){ .tpc-tog{ position:static; float:right; margin:0 0 6px 8px; } .tpc-head{ padding-right:0; } .tpb-mode{ flex-direction:column; } .tpb-mode button + button{ border-left:0 !important; border-top:1px solid #e1e4ea !important; } }`;
     document.head.appendChild(st);
   }
   function hook(){
@@ -245,5 +301,6 @@
     });
   }
   css(); hook(); render();
+  ensureCollapsibles(); setTimeout(ensureCollapsibles, 600); setTimeout(ensureCollapsibles, 2000);
   window.TpBoard = { render, setBase, mode: m => { if(m){ mode = m; render(); } return mode; } };
 })();
