@@ -90,7 +90,7 @@
     const cats = CATS.filter(c => showPrep || PREP.indexOf(c.key) === -1);
     const prepCount = PREP.reduce((s, k) => { let n = 0; for(let d = 1; d <= N; d++) n += items(d, k).length; return s + n; }, 0);
     let grid = '';
-    for(let d = 1; d <= N; d++) grid += `<div class="tpb-col-h"><b>Tag ${d}</b><span class="tpb-bals">${balance(d)}</span></div>`;
+    for(let d = 1; d <= N; d++) grid += `<div class="tpb-col-h"><b>Tag ${d}</b><span class="tpb-bals">${balance(d)}</span>${N > 1 ? `<button type="button" class="tpb-day" data-day="${d}" title="Tag ${d} kopieren oder mit einem anderen Tag tauschen">⇄</button>` : ''}</div>`;
     cats.forEach(c => {
       const pr = S().prescription && S().prescription[c.key];
       grid += `<div class="tpb-cat"><i style="background:${c.color}"></i>${H(c.label)}${pr ? `<span>${H([pr.sets && pr.reps ? pr.sets + ' × ' + pr.reps : '', pr.tempo].filter(Boolean).join(' · '))}</span>` : ''}</div>`;
@@ -126,7 +126,7 @@
       </div>
       <div class="tpb-grid" style="grid-template-columns:repeat(${N}, minmax(190px, 1fr));">${grid}</div>
       ${gone}
-      <div class="tpb-next"><span class="hint" style="margin:0;flex:1;">Ziehen = verschieben &middot; ↻ = ersetzen &middot; Details (Position, Option, Sätze/Wdh/Zeit, Notiz) im nächsten Schritt.</span><button type="button" class="primary" data-mode="detail">Gerüst fertig → Konkretisieren</button></div>` : ''}
+      <div class="tpb-next"><span class="hint" style="margin:0;flex:1;">Ziehen = verschieben &middot; ↻ = ersetzen &middot; ⇄ am Tag = kopieren/tauschen &middot; Details (Position, Option, Sätze/Wdh/Zeit, Notiz) im nächsten Schritt.</span><button type="button" class="primary" data-mode="detail">Gerüst fertig → Konkretisieren</button></div>` : ''}
     </div>`;
     wire(el);
     applyMode();
@@ -145,6 +145,7 @@
       x.addEventListener('dragstart', ev => { drag = { d, k, i }; x.classList.add('drag'); try { ev.dataTransfer.setData('text/plain', 'tpb'); ev.dataTransfer.effectAllowed = 'move'; } catch(er){} });
       x.addEventListener('dragend', () => { x.classList.remove('drag'); drag = null; });
     });
+    el.querySelectorAll('.tpb-day').forEach(b => b.onclick = e => { e.stopPropagation(); dayMenu(e.currentTarget, +b.dataset.day); });
     el.querySelectorAll('.tpb-add').forEach(b => b.onclick = e => { e.stopPropagation(); pick(e.currentTarget, b.dataset.k, b.dataset.d, null); });
     el.querySelectorAll('.tpb-cell').forEach(c => {
       c.addEventListener('dragover', ev => { if(!drag) return; ev.preventDefault(); c.classList.add('over');
@@ -191,6 +192,34 @@
     };
     inp.oninput = draw; draw(); inp.focus();
     inp.addEventListener('keydown', e => { if(e.key === 'Escape') closePop(); if(e.key === 'Enter'){ const b = list.querySelector('[data-n]'); if(b) b.click(); } });
+    setTimeout(() => document.addEventListener('mousedown', outside), 0);
+  }
+  // Tag kopieren / tauschen (wie die Leiste unter den Tages-Reitern: Übungen, Vorbereitung, Cool-down)
+  function dayMenu(anchor, src){
+    closePop();
+    const st = S(), N = days();
+    const pop = document.createElement('div'); pop.className = 'tpb-pop'; pop.id = 'tpbPop';
+    let rows = '';
+    for(let d = 1; d <= N; d++) if(d !== src) rows += `<div class="tpb-dm"><b>Tag ${d}</b><button type="button" data-copy="${d}" title="Inhalt von Tag ${src} nach Tag ${d} kopieren (überschreibt Tag ${d})">📋 Tag ${src} → Tag ${d}</button><button type="button" data-swap="${d}">⇄ tauschen</button></div>`;
+    pop.innerHTML = `<div class="tpb-pop-h">Tag ${src} kopieren / tauschen mit:</div>${rows}`;
+    document.body.appendChild(pop);
+    const r = anchor.getBoundingClientRect();
+    pop.style.left = Math.max(8, Math.min(r.right + scrollX - 320, scrollX + innerWidth - 330)) + 'px'; pop.style.top = (r.bottom + scrollY + 4) + 'px';
+    const ens = d => { if(typeof ensureDayStructure === 'function') ensureDayStructure(d); if(!st.cooldown) st.cooldown = {}; if(!st.prepNote) st.prepNote = {}; };
+    pop.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => {
+      const t = +b.dataset.copy; ens(src); ens(t);
+      const has = CATS.some(c => items(t, c.key).length) || String(st.cooldown[t] || '').trim() || String(st.prepNote[t] || '').trim();
+      if(has && !confirm(`Tag ${t} enthält bereits Übungen. Mit den Inhalten von Tag ${src} überschreiben?`)) return;
+      st.plan[t] = JSON.parse(JSON.stringify(st.plan[src] || {})); st.cooldown[t] = st.cooldown[src]; st.prepNote[t] = st.prepNote[src];
+      closePop(); changed(); if(typeof toast === 'function') toast(`Tag ${src} → Tag ${t} kopiert`);
+    });
+    pop.querySelectorAll('[data-swap]').forEach(b => b.onclick = () => {
+      const t = +b.dataset.swap; ens(src); ens(t);
+      [st.plan[src], st.plan[t]] = [st.plan[t], st.plan[src]];
+      [st.cooldown[src], st.cooldown[t]] = [st.cooldown[t], st.cooldown[src]];
+      [st.prepNote[src], st.prepNote[t]] = [st.prepNote[t], st.prepNote[src]];
+      closePop(); changed(); if(typeof toast === 'function') toast(`Tag ${src} ⇄ Tag ${t} getauscht`);
+    });
     setTimeout(() => document.addEventListener('mousedown', outside), 0);
   }
   function outside(e){ const p = document.getElementById('tpbPop'); if(p && !p.contains(e.target)) closePop(); }
@@ -258,7 +287,12 @@
       .tpb-leg{ font-size:11px; font-weight:700; border-radius:4px; padding:0 5px; } .tpb-leg.old{ background:#ffe2a8; color:#9a6400; } .tpb-leg.new{ background:#c9ecd9; color:#1f8f5f; }
       .tpb-grid{ display:grid; gap:8px; overflow-x:auto; }
       .tpb-col-h{ background:var(--accent, var(--brand, #010d6e)); color:#fff; border-radius:9px; padding:6px 10px; display:flex; flex-wrap:wrap; gap:4px 8px; align-items:center; }
-      .tpb-col-h b{ flex:1; } .tpb-bals{ display:flex; gap:6px; font-size:11px; } .tpb-bal.zero{ opacity:.55; }
+      .tpb-col-h b{ flex:1; }
+      .tpb-day{ background:rgba(255,255,255,.14) !important; color:#fff !important; border:1px solid rgba(255,255,255,.45) !important; border-radius:6px !important; padding:0 7px !important; font-size:13px !important; line-height:20px; min-height:0 !important; box-shadow:none !important; }
+      .tpb-day:hover{ background:rgba(255,255,255,.3) !important; }
+      .tpb-dm{ display:flex; align-items:center; gap:6px; padding:5px 2px; border-top:1px solid #eef0f4; }
+      .tpb-dm b{ flex:1; font-size:13px; }
+      .tpb-dm button{ background:#fff !important; color:#141824 !important; border:1px solid #e1e4ea !important; border-radius:7px !important; padding:3px 8px !important; font-size:12.5px !important; box-shadow:none !important; min-height:0 !important; } .tpb-bals{ display:flex; gap:6px; font-size:11px; } .tpb-bal.zero{ opacity:.55; }
       .tpb-cat{ grid-column:1/-1; display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#5a6072; margin-top:6px; }
       .tpb-cat i{ width:10px; height:10px; border-radius:3px; display:inline-block; } .tpb-cat span{ font-weight:400; text-transform:none; letter-spacing:0; }
       .tpb-cell{ min-height:42px; border:1px dashed #d6dbe6; border-radius:10px; padding:5px; display:flex; flex-direction:column; gap:4px; background:#fcfdff; }
