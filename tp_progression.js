@@ -433,7 +433,7 @@
       .tpp-sug{ min-width:200px; }
       .tpp-sched{ margin:6px 0 4px; font-size:13px; } .tpp-sched label{ display:flex; gap:6px; align-items:center; font-weight:500; text-transform:none; letter-spacing:0; }
       .tpp-sched #tppSchedInfo{ margin-top:3px; }
-      .tpp-mode{ display:flex; flex-direction:column; gap:6px; } .tpp-mode label{ align-items:flex-start !important; line-height:1.35; cursor:pointer; } .tpp-mode input{ margin-top:2px; flex:none; } .tpp-mode .tpp-d{ display:inline; font-weight:400; }
+      .tpp-mode{ display:flex; flex-wrap:wrap; gap:4px 16px; } .tpp-mode label{ white-space:nowrap; cursor:pointer; } .tpp-mode input{ margin:0; flex:none; }
       .tpp-sched2{ margin:4px 0 12px; padding:10px 12px; border:1px solid var(--border, #d7dcda); border-radius:10px; background:#f6fbf7; }`;
     document.head.appendChild(st);
     let bar = document.querySelector('.tpv-bar');
@@ -466,8 +466,8 @@
      📅 Ab Startdatum sichtbar (ohne Datum sofort) – der bisherige Plan ist dann abgeschlossen und nur noch lesbar
      ⏭ Erst nach vollständigem Abschluss des laufenden Plans sichtbar (state.startAfterPrev / content.startAfterPrev) */
   const MODE_HTML = sfx => `<div class="tpp-mode">
-      <label><input type="radio" name="tppMode${sfx}" id="tppDate${sfx}" value="date"> &#128197; <b>Ab Startdatum sichtbar</b> <span class="tpp-d">(ohne Datum: sofort) &ndash; der bisherige Plan ist dann abgeschlossen und bleibt unter &bdquo;Fr&uuml;here Pl&auml;ne&ldquo; lesbar</span></label>
-      <label><input type="radio" name="tppMode${sfx}" id="tppAfter${sfx}" value="after"> &#9197; <b>Erst nach vollst&auml;ndigem Abschluss des laufenden Plans sichtbar</b> <span class="tpp-d">&ndash; danach bleibt der alte Plan unter &bdquo;Fr&uuml;here Pl&auml;ne&ldquo; lesbar</span></label>
+      <label title="Am Startdatum (ohne Datum: sofort) bekommen alle den neuen Plan; der bisherige ist dann abgeschlossen und nur noch lesbar."><input type="radio" name="tppMode${sfx}" id="tppDate${sfx}" value="date"> Ab Startdatum sichtbar</label>
+      <label title="Erst sichtbar, wenn der laufende Plan komplett erledigt ist; danach ist der alte nur noch lesbar."><input type="radio" name="tppMode${sfx}" id="tppAfter${sfx}" value="after"> Nach Abschluss sichtbar</label>
     </div>`;
   function wireMode(root, sfx){
     root.querySelectorAll(`input[name="tppMode${sfx}"]`).forEach(r => r.addEventListener('change', e => {
@@ -479,7 +479,7 @@
     const inp = document.getElementById('cfgStart'); if(!inp || document.getElementById('tppSched')) return;
     const box = document.createElement('div');
     box.id = 'tppSched'; box.className = 'tpp-sched';
-    box.innerHTML = MODE_HTML('') + `<div id="tppSchedInfo" class="tpp-d"></div>`;
+    box.innerHTML = MODE_HTML('') + `<div id="tppSchedInfo" hidden></div>`;
     inp.parentNode.appendChild(box);
     wireMode(box, '');
     inp.addEventListener('change', () => setTimeout(schedSync, 0));
@@ -490,7 +490,7 @@
       if(!go || document.getElementById('tppSched2')) return;
       const b2 = document.createElement('div');
       b2.id = 'tppSched2'; b2.className = 'tpp-sched tpp-sched2';
-      b2.innerHTML = `<div style="font-weight:700;margin-bottom:4px;">Wann sehen die Athlet:innen den Plan?</div>` + MODE_HTML('2') + `<div id="tppSchedInfo2" class="tpp-d"></div>`;
+      b2.innerHTML = MODE_HTML('2') + `<div id="tppSchedInfo2" hidden></div>`;
       const host = go.parentNode;
       host.parentNode.insertBefore(b2, host);
       wireMode(b2, '2');
