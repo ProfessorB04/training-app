@@ -377,7 +377,7 @@
     if(!state.prescription && typeof DEFAULT_PRESCRIPTION !== 'undefined') state.prescription = JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION));
     state.publishedPlanId = ''; state.editingFromApp = false; state.editTargetUid = ''; state.editTargetName = '';
     state.progRef = { planId, uid: uid || (fertig.length ? '__done' : '') };
-    state.startAfterPrev = true;   // Anschluss: startet spätestens am Startdatum, früher sobald der laufende Plan erledigt ist
+    state.startAfterPrev = true;   // Anschluss: wird erst sichtbar, wenn der laufende Plan komplett erledigt ist (Startdatum öffnet ihn nie vorzeitig)
     state.athleteIdx = '';
     const aidOf = u => Object.keys(P.athleteProfile).find(a => P.athleteProfile[a] === u);
     if(uid){ const aid = aidOf(uid); if(aid){ state.athleteIdx = aid; state.pickAthletes = [aid]; } }
@@ -433,6 +433,7 @@
       .tpp-sug{ min-width:200px; }
       .tpp-sched{ margin:6px 0 4px; font-size:13px; } .tpp-sched label{ display:flex; gap:6px; align-items:center; font-weight:500; text-transform:none; letter-spacing:0; }
       .tpp-sched #tppSchedInfo{ margin-top:3px; }
+      .tpp-mode{ display:flex; flex-direction:column; gap:6px; } .tpp-mode label{ align-items:flex-start !important; line-height:1.35; cursor:pointer; } .tpp-mode input{ margin-top:2px; flex:none; } .tpp-mode .tpp-d{ display:inline; font-weight:400; }
       .tpp-sched2{ margin:4px 0 12px; padding:10px 12px; border:1px solid var(--border, #d7dcda); border-radius:10px; background:#f6fbf7; }`;
     document.head.appendChild(st);
     let bar = document.querySelector('.tpv-bar');
@@ -461,14 +462,26 @@
     if(m){ history.replaceState(null, '', location.pathname + location.search); await loadFollowUp(m[1], m[2] || '', m[3] || ''); schedSync(); return; }
     await refresh();
   }
-  /* ---------- Terminieren: Startdatum in der Zukunft + „früher starten“ ---------- */
+  /* ---------- Terminieren: zwei Optionen (Maiks Vorgabe 21.11.2026) ----------
+     📅 Ab Startdatum sichtbar (ohne Datum sofort) – der bisherige Plan ist dann abgeschlossen und nur noch lesbar
+     ⏭ Erst nach vollständigem Abschluss des laufenden Plans sichtbar (state.startAfterPrev / content.startAfterPrev) */
+  const MODE_HTML = sfx => `<div class="tpp-mode">
+      <label><input type="radio" name="tppMode${sfx}" id="tppDate${sfx}" value="date"> &#128197; <b>Ab Startdatum sichtbar</b> <span class="tpp-d">(ohne Datum: sofort) &ndash; der bisherige Plan ist dann abgeschlossen und bleibt unter &bdquo;Fr&uuml;here Pl&auml;ne&ldquo; lesbar</span></label>
+      <label><input type="radio" name="tppMode${sfx}" id="tppAfter${sfx}" value="after"> &#9197; <b>Erst nach vollst&auml;ndigem Abschluss des laufenden Plans sichtbar</b> <span class="tpp-d">&ndash; danach bleibt der alte Plan unter &bdquo;Fr&uuml;here Pl&auml;ne&ldquo; lesbar</span></label>
+    </div>`;
+  function wireMode(root, sfx){
+    root.querySelectorAll(`input[name="tppMode${sfx}"]`).forEach(r => r.addEventListener('change', e => {
+      if(!e.target.checked) return;
+      state.startAfterPrev = e.target.value === 'after'; saveState(true); schedSync();
+    }));
+  }
   function schedUi(){
     const inp = document.getElementById('cfgStart'); if(!inp || document.getElementById('tppSched')) return;
     const box = document.createElement('div');
     box.id = 'tppSched'; box.className = 'tpp-sched';
-    box.innerHTML = `<label><input type="checkbox" id="tppAfter"> erst nach Abschluss des laufenden Plans starten</label><div id="tppSchedInfo" class="tpp-d"></div>`;
+    box.innerHTML = MODE_HTML('') + `<div id="tppSchedInfo" class="tpp-d"></div>`;
     inp.parentNode.appendChild(box);
-    box.querySelector('#tppAfter').addEventListener('change', e => { state.startAfterPrev = e.target.checked; saveState(true); schedSync(); });
+    wireMode(box, '');
     inp.addEventListener('change', () => setTimeout(schedSync, 0));
     inp.addEventListener('input', () => setTimeout(schedSync, 0));
     // zweites Häkchen direkt über dem Veröffentlichen-Knopf (Schritt 4), damit es nicht übersehen wird
@@ -477,10 +490,10 @@
       if(!go || document.getElementById('tppSched2')) return;
       const b2 = document.createElement('div');
       b2.id = 'tppSched2'; b2.className = 'tpp-sched tpp-sched2';
-      b2.innerHTML = `<label><input type="checkbox" id="tppAfter2"> <b>erst nach Abschluss des laufenden Plans starten</b></label><div id="tppSchedInfo2" class="tpp-d"></div>`;
+      b2.innerHTML = `<div style="font-weight:700;margin-bottom:4px;">Wann sehen die Athlet:innen den Plan?</div>` + MODE_HTML('2') + `<div id="tppSchedInfo2" class="tpp-d"></div>`;
       const host = go.parentNode;
       host.parentNode.insertBefore(b2, host);
-      b2.querySelector('#tppAfter2').addEventListener('change', e => { state.startAfterPrev = e.target.checked; saveState(true); schedSync(); });
+      wireMode(b2, '2');
       schedSync();
     };
     mirror(); setTimeout(mirror, 1500); setTimeout(mirror, 4000);
@@ -488,15 +501,16 @@
     schedSync();
   }
   function schedSync(){
-    const cb = document.getElementById('tppAfter'), info = document.getElementById('tppSchedInfo'); if(!cb || !info) return;
-    cb.checked = !!state.startAfterPrev;
-    const cb2 = document.getElementById('tppAfter2'), info2 = document.getElementById('tppSchedInfo2');
-    if(cb2) cb2.checked = !!state.startAfterPrev;
+    const info = document.getElementById('tppSchedInfo'); if(!info) return;
+    const after = !!state.startAfterPrev;
+    ['', '2'].forEach(sfx => { const a = document.getElementById('tppAfter' + sfx), d = document.getElementById('tppDate' + sfx); if(a) a.checked = after; if(d) d.checked = !after; });
+    const info2 = document.getElementById('tppSchedInfo2');
     const fut = window.TpStatus && TpStatus.isFuture(state.start);
-    info.innerHTML = state.startAfterPrev
-      ? `⏭ Wer noch einen laufenden Plan hat, macht ihn zuerst fertig und bekommt diesen Plan direkt danach${fut ? ` – spätestens am ${TpStatus.deDate(state.start)}` : ''}. Wer schon fertig ist, bekommt ihn sofort.`
-      : (fut ? `📅 <b>Terminiert:</b> Wer schon einen Plan hat, behält ihn bis ${TpStatus.deDate(state.start)}; danach gilt dieser Plan automatisch.` : '');
-    if(info2) info2.innerHTML = info.innerHTML || 'Nicht angehakt: Wer noch einen laufenden Plan hat, wechselt beim Veröffentlichen sofort.';
+    info.innerHTML = after
+      ? `⏭ Wer noch einen laufenden Plan hat, sieht diesen Plan erst, wenn der alte komplett erledigt ist – auch nach dem Startdatum. Wer schon fertig ist, bekommt ihn sofort.`
+      : (fut ? `📅 Sichtbar ab <b>${TpStatus.deDate(state.start)}</b>. Bis dahin behalten alle ihren bisherigen Plan; danach ist er abgeschlossen und nur noch lesbar.`
+             : `📅 Sofort sichtbar (Startdatum heute oder leer). Ein laufender Plan ist dann abgeschlossen und nur noch lesbar – auch wenn noch Einheiten offen sind.`);
+    if(info2) info2.innerHTML = info.innerHTML;
   }
 
   // Bezug neu bestimmen, wenn Person/Gruppe im Entwurf wechselt (nur automatischer Bezug)

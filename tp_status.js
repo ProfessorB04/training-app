@@ -53,8 +53,9 @@
         if(!older.length) return i;
         const c = contentFor(D.versions[a.plan_id], 1, uid) || {};
         const after = !!c.startAfterPrev, assigned = String(a.assigned_at || '').slice(0, 10);
-        // Startdatum erreicht – bei „erst nach Abschluss“ zählt es nur, wenn es beim Zuteilen in der Zukunft lag („spätestens“)
-        if(!isFuture(p.start_date) && (!after || (p.start_date && String(p.start_date).slice(0, 10) > assigned))) return i;
+        // Startdatum erreicht → gilt. Ausnahme „erst nach Abschluss“: NUR wenn der vorige Plan komplett erledigt ist,
+        // das Startdatum öffnet ihn nie vorzeitig (Maiks Vorgabe 21.11.2026)
+        if(!after && !isFuture(p.start_date)) return i;
         if(after){ const j = pick(older); if(j >= 0 && isDone(older[j])) return i; }
       }
       return arr.length ? arr.length - 1 : -1;
@@ -68,7 +69,7 @@
   // Für „Mein Trainingsplan“: aktuelle Zuordnung der eingeloggten Person bestimmen
   async function currentFor(uid, asg){
     const act = (asg || []).filter(a => a.active);
-    if(act.length <= 1) return { current: act[0] || null, queued: [] };
+    if(act.length <= 1) return { current: act[0] || null, queued: [], superseded: [] };
     const ids = [...new Set(act.map(a => a.plan_id))];
     const s = client();
     const [p, v, l] = await Promise.all([
@@ -80,7 +81,7 @@
     (p.data || []).forEach(x => { D.plans[x.id] = x; });
     (v.data || []).forEach(x => { (D.versions[x.plan_id] = D.versions[x.plan_id] || []).push(x); });
     const r = resolve(uid, act, D);
-    return { current: r.current, queued: r.queued };
+    return { current: r.current, queued: r.queued, superseded: r.superseded || [] };
   }
 
   /* ---------- Übersicht für Admin/Trainer ---------- */
@@ -134,7 +135,7 @@
   function queuedText(q){
     if(!q || !q.length) return '';
     const x = q[0];
-    return `<span class="tps-q" title="bereits terminiert">&#128197; ${H(x.plan.title || 'Ohne Titel')} ${x.afterPrev ? 'nach Abschluss' + (isFuture(x.plan.start_date) ? ', spätestens ' + deDate(x.plan.start_date) : '') : 'ab ' + deDate(x.plan.start_date)}</span>`;
+    return `<span class="tps-q" title="bereits terminiert">&#128197; ${H(x.plan.title || 'Ohne Titel')} ${x.afterPrev ? 'nach Abschluss des laufenden Plans' : 'ab ' + deDate(x.plan.start_date)}</span>`;
   }
   function cardHtml(D){
     // Wer schon einen Folgeplan hat (terminiert / „nach Abschluss“), braucht keinen Hinweis mehr → ausblenden

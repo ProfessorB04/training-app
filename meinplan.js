@@ -98,10 +98,12 @@ async function tpLoadMine() {
   const { data: { user } } = await sb.auth.getUser();
   const { data: asg, error } = await sb.from('tp_assignments').select('plan_id, active, assigned_at').eq('user_id', user.id).order('assigned_at', { ascending: false });
   if (error) throw error;
-  let act = (asg || []).find(a => a.active), queued = [];
+  let act = (asg || []).find(a => a.active), queued = [], sup = [];
   // terminierte Pläne (Start in der Zukunft) – gilt erst ab dem Startdatum bzw. nach Abschluss des laufenden Plans
-  if (window.TpStatus) { try { const r = await TpStatus.currentFor(user.id, asg); act = r.current; queued = r.queued || []; } catch (e) { console.warn(e); } }
-  const pastIds = [...new Set((asg || []).filter(a => !a.active && (!act || a.plan_id !== act.plan_id)).map(a => a.plan_id))];
+  if (window.TpStatus) { try { const r = await TpStatus.currentFor(user.id, asg); act = r.current; queued = r.queued || []; sup = r.superseded || []; } catch (e) { console.warn(e); } }
+  // frühere Pläne (nur ansehen): beendete Zuordnungen + abgelöste Pläne (Startdatum erreicht / Folgeplan nach Abschluss)
+  const supIds = new Set((sup || []).map(a => a.plan_id)), qIds = new Set((queued || []).map(q => q.a && q.a.plan_id));
+  const pastIds = [...new Set((asg || []).filter(a => (!a.active || supIds.has(a.plan_id)) && (!act || a.plan_id !== act.plan_id) && !qIds.has(a.plan_id)).map(a => a.plan_id))];
   if (!act) return { user, plan: null, pastIds };
   const [pRes, vRes, lRes] = await Promise.all([
     sb.from('tp_plans').select('*').eq('id', act.plan_id).single(),
@@ -174,6 +176,7 @@ async function renderMyPastPlan(profile, plan, weekSel) {
         <h2 style="margin:0;">${esc(plan.title || 'Trainingsplan')}</h2><span class="spacer"></span>
         <select id="mpPastWeek" style="width:auto;">${weeks.map(w => `<option value="${w}" ${w === week ? 'selected' : ''}>Woche ${w}${withLogs.includes(w) ? '' : ' (leer)'}</option>`).join('')}</select>
       </div>
+      <p class="hint" style="margin-top:0;">&#128274; Abgeschlossener Plan &ndash; nur zum Ansehen.</p>
       ${tpWeekView(plan, logs || [], week)}
     </div>
     ${rows ? `<div class="card"><h2>Bestwerte je &Uuml;bung</h2><div class="tablewrap"><table class="tp-table">
@@ -200,7 +203,9 @@ async function renderMyPlan(profile) {
   const logBy = {};
   D.logs.forEach(l => { logBy[l.week + '_' + l.day] = l; });
   // „Heute dran“: erste nicht abgeschlossene Einheit (ab der Kalenderwoche des Plans)
-  const calWeek = tpWeekOfDate(P.start_date, P.weeks) || 1;
+  // „erst nach Abschluss“: Plan beginnt für jede Person mit Woche 1, wann immer sie den alten Plan fertig hat
+  const afterPrev = !!(tpContentFor(D.versions, 1, D.user.id) || {}).startAfterPrev;
+  const calWeek = afterPrev ? 1 : (tpWeekOfDate(P.start_date, P.weeks) || 1);
   let next = null;
   for (let w = 1; w <= P.weeks && !next; w++) for (let d = 1; d <= P.days && !next; d++) {
     const l = logBy[w + '_' + d];
@@ -228,7 +233,7 @@ async function renderMyPlan(profile) {
     </div>` : `<div class="card"><h2>&#127881; Alle Einheiten erledigt</h2><p class="muted">${D.queued && D.queued.length ? `Stark! Dein n&auml;chster Plan &bdquo;${esc(D.queued[0].appTitle || D.queued[0].plan.title || 'Trainingsplan')}&ldquo; startet ${D.queued[0].afterPrev ? 'gleich' : 'am ' + wDate(D.queued[0].plan.start_date)}.` : 'Stark! Dein Trainer stellt den n&auml;chsten Block ein.'}</p></div>`}
     <div class="card">
       <h2>${esc(PT)}</h2>
-      <p class="hint" style="margin-top:0;">${P.weeks} Wochen &middot; ${P.days} Einheiten pro Woche${P.start_date ? ' &middot; ab ' + wDate(P.start_date) : ''}. Tippe auf eine Einheit zum &Ouml;ffnen.</p>
+      <p class="hint" style="margin-top:0;">${P.weeks} Wochen &middot; ${P.days} Einheiten pro Woche${P.start_date && !afterPrev ? ' &middot; ab ' + wDate(P.start_date) : ''}. Tippe auf eine Einheit zum &Ouml;ffnen.</p>
       <div class="mp-grid">${grid}</div>
       <p class="hint">&#10003; erledigt &middot; &#9680; angefangen</p>
     </div>`;
