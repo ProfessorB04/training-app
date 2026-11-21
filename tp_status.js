@@ -89,6 +89,17 @@
 
   /* ---------- Übersicht für Admin/Trainer ---------- */
   let CACHE = null, CACHE_AT = 0;
+  // Supabase liefert max. 1000 Zeilen je Abfrage → seitenweise laden (sb-shim liefert alles auf einmal)
+  async function allRows(mk){
+    if(typeof mk().range !== 'function') return mk();
+    let out = [];
+    for(let from = 0; ; from += 1000){
+      const r = await mk().range(from, from + 999);
+      if(r.error) return r;
+      out = out.concat(r.data || []);
+      if(!r.data || r.data.length < 1000) return { data: out };
+    }
+  }
   async function loadAll(force){
     if(CACHE && !force && Date.now() - CACHE_AT < 20000) return CACHE;
     const s = client();
@@ -96,7 +107,7 @@
       s.from('tp_plans').select('*'),
       s.from('tp_assignments').select('*'),
       s.from('tp_plan_versions').select('id, plan_id, from_week, user_ids, content'),
-      s.from('tp_logs').select('plan_id, user_id, week, day, completed, updated_at'),
+      allRows(() => s.from('tp_logs').select('id, plan_id, user_id, week, day, completed, updated_at').eq('completed', true).order('id')),
       s.from('profiles').select('id, name'),
     ]);
     const D = { plans: {}, versions: {}, logs: l.data || [], asg: a.data || [], names: {} };
@@ -140,11 +151,14 @@
     const x = q[0];
     return `<span class="tps-q" title="bereits terminiert">&#128197; ${H(x.plan.title || 'Ohne Titel')} ${x.afterPrev ? 'nach Abschluss des laufenden Plans' : 'ab ' + deDate(x.start || x.plan.start_date)}</span>`;
   }
-  function cardHtml(D){
+  function cardHtml(D, opts){
     // Wer schon einen Folgeplan hat (terminiert / „nach Abschluss“), braucht keinen Hinweis mehr → ausblenden
     const open = D.people.filter(p => !(p.queued && p.queued.length));
     const done = open.filter(p => p.left === 0 && p.total > 0), soon = open.filter(p => p.left > 0 && p.left <= 2);
-    if(!done.length && !soon.length) return '';
+    if(!done.length && !soon.length) return (opts && opts.always) ? `<div class="card tps-card">
+      <h2 style="margin-top:0;">&#9203; Anschlusspläne vorbereiten</h2>
+      <p class="hint" style="margin:0;">&#10003; Aktuell ist niemand mit dem Plan fertig oder kurz davor (noch 1–2 Einheiten)${D.people.length ? ' – ' + D.people.length + ' Person' + (D.people.length === 1 ? '' : 'en') + ' mit laufendem Plan' : ''}. Sobald jemand so weit ist, erscheint die Person hier mit „➜ Anschlussplan“.</p>
+    </div>` : '';
     const row = p => `<div class="tps-row"><span class="tps-n"><b>${H(p.name)}</b> <span class="tps-m">${H(p.plan.title || 'Ohne Titel')} · ${p.done}/${p.total}${p.left ? ' · noch ' + p.left + ' Einheit' + (p.left === 1 ? '' : 'en') : ''}</span></span>` +
       (p.queued.length ? queuedText(p.queued) : `<a class="tps-btn" href="${TOOL_URL}#folge=${p.plan.id}&uid=${p.uid}">&#10140; Anschlussplan</a>`) + `</div>`;
     // Pläne, in denen mehrere fertig sind und noch keinen Anschluss haben → ein Plan für alle Fertigen
@@ -176,7 +190,7 @@
     const anchor = appEl.querySelector('.menu-grid, .card'); if(!anchor) return;
     let D; try { D = await loadAll(true); } catch(e){ return; }
     housekeep(D);
-    const html = cardHtml(D); if(!html) return;
+    const html = cardHtml(D, { always: true }); if(!html) return;
     if(!anchor.isConnected || appEl.querySelector('.tps-card')) return;
     css();
     const box = document.createElement('div'); box.innerHTML = html;
