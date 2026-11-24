@@ -452,6 +452,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <span style="width:100%;font-size:.65rem;color:var(--ink-faint);">Sprunggelenks-Dorsalflexion, Abstand Großzeh–Wand bei Knie-an-Wand ohne Fersenabheben. Grober Richtwert aus der Physiopraxis; &lt; 9–10 cm gilt verbreitet als eingeschränkte Dorsalflexion.</span>
     </div>
     <div class="ffmi-legend">
+      <b style="color:var(--ink);">Sprint 10 m / 30 m — Ampel (Referenz: Damenbasketball, Start 0,5 m hinter der Lichtschranke)</b>
+      <span class="ffmi-chip"><b>10 m:</b>&nbsp;<span class="ffmi-dot" style="background:#2f6e4f;"></span>≤ 1,90&nbsp; <span class="ffmi-dot" style="background:#f0b429;"></span>1,91–2,08&nbsp; <span class="ffmi-dot" style="background:#a63a2c;"></span>&gt; 2,08 s</span>
+      <span class="ffmi-chip"><b>30 m:</b>&nbsp;<span class="ffmi-dot" style="background:#2f6e4f;"></span>≤ 4,75&nbsp; <span class="ffmi-dot" style="background:#f0b429;"></span>4,76–5,00&nbsp; <span class="ffmi-dot" style="background:#a63a2c;"></span>&gt; 5,00 s</span>
+      <span style="width:100%;font-size:.65rem;color:var(--ink-faint);">Aus Studienmittelwerten abgeleitet, keine publizierte Norm; nur für Frauen. 10&nbsp;m: Liga N1 Spanien 2,01 ± 0,12 s, Quartile 1,91 / 2,09 (Barrera-Domínguez et&nbsp;al. 2025, J Hum Kinet; n&nbsp;=&nbsp;50, Start 0,5&nbsp;m) · NCAA Division I 1,93 ± 0,10 (Banda et&nbsp;al. 2019, J Hum Kinet; Start 0,5&nbsp;m) · Nationalteam Litauen U18/U20 1,91 / 1,90 (Lukonaitienė et&nbsp;al. 2020, J Sports Sci, zitiert nach Vretaros 2024) · Polen U13–U15 2,02–2,05 (Gryko et&nbsp;al. 2022, BMC Sports Sci Med Rehabil). 30&nbsp;m (dünne Datenlage): College-Meisterteam 4,78–4,80 (Zhang et&nbsp;al. 2023, Healthcare) · Elite 5,03–5,05 (Stanković et&nbsp;al. 2026, Sports; Start 0,3&nbsp;m) · Elite 5,11–5,16 (Cherni et&nbsp;al. 2020, Front Physiol; Start 0,2&nbsp;m). Je weiter der Start hinter der Lichtschranke, desto schneller die Zeit (5&nbsp;m: 1,09 s bei 0,3&nbsp;m, 1,05 s bei 0,5&nbsp;m, 0,98 s bei 1,0&nbsp;m; Altmann et&nbsp;al. 2015, J Strength Cond Res) — Startabstand immer gleich halten.</span>
+    </div>
+    <div class="ffmi-legend">
       <b style="color:var(--ink);">Lane Agility — Ampel positionsspezifisch (Referenz: NBA Draft Combine)</b>
       <span class="ffmi-chip"><b>Guard:</b>&nbsp;<span class="ffmi-dot" style="background:#2f6e4f;"></span>≤ 12,0&nbsp; <span class="ffmi-dot" style="background:#f0b429;"></span>≤ 13,0&nbsp; <span class="ffmi-dot" style="background:#a63a2c;"></span>&gt; 13,0 s</span>
       <span class="ffmi-chip"><b>Forward:</b>&nbsp;<span class="ffmi-dot" style="background:#2f6e4f;"></span>≤ 12,5&nbsp; <span class="ffmi-dot" style="background:#f0b429;"></span>≤ 13,5&nbsp; <span class="ffmi-dot" style="background:#a63a2c;"></span>&gt; 13,5 s</span>
@@ -837,6 +843,22 @@ function laBand(v, position){
   if(n <= b.y) return { cls:"z-y", hex:"f0b429", soft:"fdf1d6", label:"bis " + laDe(b.y) + " · Durchschnitt" + pl };
   return { cls:"z-r", hex:"a63a2c", soft:"f3ded9", label:"> " + laDe(b.y) + " · Entwicklungsbedarf" + pl };
 }
+// Sprint 10 m / 30 m (s) – Referenz Damenbasketball, Start 0,5 m hinter der ersten Lichtschranke.
+// 10 m: Quartile der Liga N1 Spanien (Barrera-Domínguez 2025, n = 50, Start ebenfalls 0,5 m).
+// 30 m: abgeleitet aus Zhang 2023 (4,78–4,80) und Stanković 2026 (5,03–5,05, Start 0,3 m → ca. −0,04 s). Dünne Datenlage.
+var SPRINT_BANDS = {
+  s10best: { g: 1.90, y: 2.08 },
+  s30best: { g: 4.75, y: 5.00 }
+};
+function sprintDe(x){ return Number(x).toFixed(2).replace(".", ",") + " s"; }
+function sprintBand(key, v, a){
+  var n = num(v);
+  if(n === null || (a && a._gender === "m")) return null;   // Referenz gilt nur für Frauen
+  var b = SPRINT_BANDS[key];
+  if(n <= b.g) return { cls:"z-g", hex:"2f6e4f", soft:"e2eee7", label:"≤ " + sprintDe(b.g) + " · schnell" };
+  if(n <= b.y) return { cls:"z-y", hex:"f0b429", soft:"fdf1d6", label:"bis " + sprintDe(b.y) + " · Durchschnitt" };
+  return { cls:"z-r", hex:"a63a2c", soft:"f3ded9", label:"> " + sprintDe(b.y) + " · Entwicklungsbedarf" };
+}
 // Jump & Reach (Sprunghöhe über Standreichweite, in m) – Referenz Profi-Damenbasketball.
 function vJumpBand(v){
   var n = num(v); // in Metern
@@ -887,11 +909,12 @@ function fatBand(v, age){
 }
 // Referenz-/Legendentext (wie unter dem Tool) – für Excel- und Word-Export.
 var REFERENCE_NOTES = [
-  "Vertical Jump = Reach Sprung − Reach Stand (m, 2 Nachkommastellen). Best = besserer der zwei Versuche. Der beste 10m- und 30m-Wert der Auswahl ist grün markiert.",
+  "Vertical Jump = Reach Sprung − Reach Stand (m, 2 Nachkommastellen). Best = besserer der zwei Versuche. Der beste 10m- und 30m-Wert der Auswahl ist kräftig grün hervorgehoben.",
   "Mobility-Ampel (BWS-Rotation, Overhead Squat, Toe-Touch): G = unauffällig · Y = leichte Einschränkung · R = deutliche Einschränkung/Schmerz.",
   "FFMI (Frauen): < 15 unterdurchschnittlich · 15–17 durchschnittlich · 17–19 überdurchschnittlich · 19–21 ausgezeichnet · ≥ 21 Obergrenze natürlicher Muskelaufbau (nach Kouri et al. 1995, Clin J Sport Med) – für Frauen weniger breit validiert, grobe Einordnung.",
   "Körperfettanteil (Frauen, altersabhängig, ACSM / Cooper Institute) – Fitnesskategorie sehr gering (grün) … sehr hoch (rot). Grenzen 20–29 J: 14,5–17,0 / 17,1–20,5 / 20,6–23,6 / 23,7–27,6 / > 27,6 %. Für ältere Altersgruppen höher; Alter < 30 wird mit der Spalte 20–29 bewertet.",
   "Knee-to-Wall (cm, Sprunggelenks-Dorsalflexion): rot ≤ 5 · gelb 5,1–9,9 · grün ≥ 10 cm. < 9–10 cm gilt verbreitet als eingeschränkte Dorsalflexion.",
+  "Sprint (Damenbasketball, Start 0,5 m hinter der ersten Lichtschranke): 10 m grün ≤ 1,90 · gelb 1,91–2,08 · rot > 2,08 s; 30 m grün ≤ 4,75 · gelb 4,76–5,00 · rot > 5,00 s. Aus Studienmittelwerten abgeleitet, keine publizierte Norm (Barrera-Domínguez et al. 2025; Zhang et al. 2023; Stanković et al. 2026).",
   "Lane Agility – positionsspezifisch (Referenz NBA Draft Combine, auf Damen-Leistungsbasketball justiert): Guard grün ≤ 12,0 / gelb ≤ 13,0 / rot > 13,0 s · Forward ≤ 12,5 / ≤ 13,5 / > 13,5 s · Center ≤ 13,0 / ≤ 14,0 / > 14,0 s (ohne eingetragene Position gilt die Forward-Referenz). Herren-Combine-Mittel: Guard ≈ 11,1 / Flügel ≈ 11,4 / Center ≈ 11,7 s; Elite-Prospects < 10,5 s (Ogata et al. 2026, Int J Strength Cond; LPS Athletic). Freizeit-/College-Frauen ≈ 13–15,5 s (Topend Sports).",
   "Jump & Reach (Sprunghöhe über Standreichweite, mit Armschwung): grün ≥ 45 · gelb 36–44 · rot ≤ 35 cm. Referenz Profi-Damenbasketball ≈ 45–55 cm; Elite-Athletinnen CMJ ≈ 42–43 cm auf der Kraftmessplatte (Laffaye et al. 2014, J Strength Cond Res) + ≈ 8–12 cm Armschwung/Reichweitenmethode; M-F-Unterschied im Vertikalsprung ≈ 25–30 %.",
   "VO₂max (Referenz Damen-Leistungsbasketball, semiprofessionell → elite): grün ≥ 48 · gelb 42–47 · rot < 42 ml/kg/min. Elite/Profi ≈ 44–54 ml/kg/min (Guards höher als Centerinnen), empfohlener Richtwert ≈ 44–48 (Ziv & Lidor 2009, Sports Med; Gatorade Sports Science Institute). Hier per 30-15 IFT nach Buchheit geschätzt – Einzelwerte mit Vorsicht, für Gruppen-Monitoring gut geeignet.",
@@ -902,6 +925,7 @@ var REFERENCE_NOTES = [
 function bandClsFor(key, val, a){
   if(key === "ffmi") return (ffmiBand(val) || {}).cls || "";
   if(key === "ktwLi" || key === "ktwRe") return (ktwBand(val) || {}).cls || "";
+  if(SPRINT_BANDS[key]) return (sprintBand(key, val, a) || {}).cls || "";
   if(key === "laBest") return (laBand(val, a && a.position) || {}).cls || "";
   if(key === "vJump") return (vJumpBand(val) || {}).cls || "";
   if(key === "vo2max") return (vo2maxBand(val) || {}).cls || "";
@@ -911,6 +935,7 @@ function bandClsFor(key, val, a){
 function bandInfoFor(key, val, a){
   if(key === "ffmi") return ffmiBand(val);
   if(key === "ktwLi" || key === "ktwRe") return ktwBand(val);
+  if(SPRINT_BANDS[key]) return sprintBand(key, val, a);
   if(key === "laBest") return laBand(val, a && a.position);
   if(key === "vJump") return vJumpBand(val);
   if(key === "vo2max") return vo2maxBand(val);
@@ -1335,9 +1360,9 @@ function updateComputedRow(idx){
     var span = row.querySelector("td[data-col='" + f.key + "'] .computed-val");
     if(!span) return;   // Spalte gerade ausgeblendet
     span.textContent = fmt(a[f.key]);
-    if(f.key === "laBest" || f.key === "vJump"){
+    if(f.key === "laBest" || f.key === "vJump" || SPRINT_BANDS[f.key]){
       var td = span.closest("td");
-      if(td) td.className = bandClsFor(f.key, a[f.key], a);
+      if(td){ var wasBest = td.classList.contains("col-best"); td.className = bandClsFor(f.key, a[f.key], a); if(wasBest) td.classList.add("col-best"); }
     }
   });
   // Körperfettanteil-Ampel ist altersabhängig – bei Alters-/Geburtsdatumsänderung mit nachziehen
@@ -1536,8 +1561,8 @@ async function exportExcel(){
         if(xband){ cell.font = {size:9,bold:true,color:{argb:"FF"+xband.hex.toUpperCase()}}; cell.fill = fill("FF"+xband.soft.toUpperCase()); }
         if((f.key==="s10best" && xBest10!==null && num(v)===xBest10) ||
            (f.key==="s30best" && xBest30!==null && num(v)===xBest30)){
-          cell.font = {size:9,bold:true,color:{argb:"FF2F6E4F"}};
-          cell.fill = fill("FFE2EEE7");
+          cell.font = {size:9,bold:true,color:{argb:"FFFFFFFF"}};   // Bestwert kräftig grün (hebt sich von der Ampel ab)
+          cell.fill = fill("FF2F6E4F");
         }
         cc++;
       });
@@ -1631,7 +1656,7 @@ function exportWord(){
         if(wband) style = "background:#" + wband.soft + ";color:#" + wband.hex + ";font-weight:bold;text-align:center;";
         if((f.key==="s10best" && wBest10!==null && num(a[f.key])===wBest10) ||
            (f.key==="s30best" && wBest30!==null && num(a[f.key])===wBest30)){
-          style = "background:#e2eee7;color:#2f6e4f;font-weight:bold;text-align:center;";
+          style = "background:#2f6e4f;color:#ffffff;font-weight:bold;text-align:center;";
         }
         html += "<td style='" + style + "'>" + esc(v) + "</td>";
       });
