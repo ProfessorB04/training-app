@@ -427,6 +427,7 @@ async function renderTpPlanDetail(profile, plan, uid, name, week) {
           <span class="spacer"></span>
           <label class="muted-inline">Woche <select id="tpoWeek" style="width:auto;">${Array.from({ length: plan.weeks }, (_, i) => `<option value="${i + 1}" ${i + 1 === w ? 'selected' : ''}>${i + 1}${i + 1 === cur ? ' (aktuell)' : ''}</option>`).join('')}</select></label>
           ${uid ? `<button type="button" id="tpoEditOne">&#9998; Nur f&uuml;r ${esc(name || 'diese Person')} &auml;ndern</button>` : ''}
+          <button type="button" class="secondary" id="tpoBase" title="Kopie dieses Plans in die Planung laden und f&uuml;r andere ver&auml;ndern">&#128203; Als Grundlage</button>
           <button type="button" class="${uid ? 'secondary' : ''}" id="tpoEditAll">&#9998; F&uuml;r alle &auml;ndern</button>
         </div>
         <p class="hint" style="margin:8px 0 0;">&Auml;ndern &ouml;ffnet den Plan in der Trainingsplanung. Nach &bdquo;&#128242; In App ver&ouml;ffentlichen&ldquo; gilt die &Auml;nderung ab der gew&auml;hlten Woche f&uuml;r alle <b>noch nicht erledigten Einheiten</b>${uid ? ` &ndash; bei &bdquo;Nur f&uuml;r ${esc(name || 'diese Person')}&ldquo; als eigene Variante, die anderen behalten den Gruppenplan` : ''}. Erledigte Einheiten bleiben unver&auml;ndert, in angefangenen bleiben eingetragene S&auml;tze erhalten.</p>
@@ -434,6 +435,7 @@ async function renderTpPlanDetail(profile, plan, uid, name, week) {
       <div class="tpo-days">${days}</div>`;
     renderShell(profile, 'trainingsplan', T, html, back);
     document.getElementById('tpoWeek').onchange = e => draw(+e.target.value);
+    document.getElementById('tpoBase').onclick = () => { window.location.href = 'trainingsplan.html#base=' + plan.id + (uid ? '&uid=' + uid : ''); };
     document.getElementById('tpoEditAll').onclick = () => { window.location.href = 'trainingsplan.html#edit=' + plan.id; };
     const one = document.getElementById('tpoEditOne');
     if (one) one.onclick = () => { window.location.href = 'trainingsplan.html#edit=' + plan.id + '&uid=' + uid; };
